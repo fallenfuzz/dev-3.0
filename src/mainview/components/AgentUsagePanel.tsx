@@ -68,6 +68,7 @@ function rowsForKind(
 	report: AgentRateLimitsReport,
 	pinnedLogins: PinnedClaudeLogin[],
 	labels: { systemLogin: string; unmanaged: string; projectLogin: (dir: string) => string },
+	projectPinned = false,
 ): UsageRow[] {
 	const rows: UsageRow[] = [];
 	const kindState = accounts?.[kind] ?? null;
@@ -83,7 +84,8 @@ function rowsForKind(
 	// The system login is a real default only for Claude; Codex's current login is
 	// unmanaged (dev3 never wrote it), so it stays informational — same rule the
 	// settings section and the launch-picker switcher follow.
-	if (kind === "claude") {
+	// Inside a project whose pin is in force, the default login is never used.
+	if (kind === "claude" && !projectPinned) {
 		const identity = resolveAccount("claude", accounts, null);
 		const snap = findRateLimitSnapshot(report, "claude", null);
 		// With no managed account there is nothing to switch between. Beside project
@@ -290,6 +292,7 @@ export default function AgentUsagePanel({
 	report,
 	accounts,
 	pinnedLogins = [],
+	projectPinned = false,
 	interactive,
 	onOpenSettings,
 }: {
@@ -297,6 +300,8 @@ export default function AgentUsagePanel({
 	accounts: AgentAccountsState | null;
 	/** Logins projects pin via `CLAUDE_CONFIG_DIR`; each gets an informational row. */
 	pinnedLogins?: PinnedClaudeLogin[];
+	/** The screen's project pins its own login, so the default login is left out. */
+	projectPinned?: boolean;
 	interactive: boolean;
 	onOpenSettings: () => void;
 }) {
@@ -332,7 +337,7 @@ export default function AgentUsagePanel({
 		unmanaged: t("settings.accountsUnmanaged"),
 		projectLogin: (dir: string) => t("settings.accountsProjectLogin", { dir }),
 	};
-	const blocks = KINDS.map((kind) => ({ kind, rows: rowsForKind(kind, accounts, report, pinnedLogins, labels) })).filter(
+	const blocks = KINDS.map((kind) => ({ kind, rows: rowsForKind(kind, accounts, report, pinnedLogins, labels, projectPinned) })).filter(
 		(block) => block.rows.length > 0,
 	);
 
