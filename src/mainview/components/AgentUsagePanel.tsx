@@ -236,7 +236,7 @@ function UsageRowCard({
 					/>
 				</span>
 				{row.chip && !row.configDir ? (
-					<span className="text-fg-3 text-micro px-1 py-px bg-raised rounded shrink-0">{row.chip}</span>
+					<span title={row.chip} className="text-fg-3 text-micro px-1 py-px bg-raised rounded truncate max-w-[45%] streamer-private">{row.chip}</span>
 				) : null}
 				{row.isDefault ? (
 					<span className="text-success text-micro px-1 py-px bg-success/15 rounded shrink-0">
