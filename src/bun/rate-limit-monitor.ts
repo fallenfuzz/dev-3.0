@@ -174,13 +174,13 @@ export function readClaudeSessionDumps(dir: string = CLAUDE_SESSION_STATS_DIR, n
 async function attachTaskIdentity(sessions: ClaudeSessionStats[]): Promise<ClaudeSessionStats[]> {
 	if (sessions.length === 0) return [];
 	const wanted = new Set(sessions.map((s) => s.taskId));
-	const found = new Map<string, { title: string; seq: number; projectName: string }>();
+	const found = new Map<string, { title: string; seq: number; projectName: string; projectId: string }>();
 	try {
 		for (const project of await loadProjects()) {
 			if (found.size === wanted.size) break;
 			for (const task of await loadTasks(project)) {
 				if (!wanted.has(task.id) || task.status === "completed" || task.status === "cancelled") continue;
-				found.set(task.id, { title: getTaskTitle(task), seq: task.seq, projectName: project.name });
+				found.set(task.id, { title: getTaskTitle(task), seq: task.seq, projectName: project.name, projectId: project.id });
 			}
 		}
 	} catch (err) {
@@ -192,7 +192,7 @@ async function attachTaskIdentity(sessions: ClaudeSessionStats[]): Promise<Claud
 		.slice(0, MAX_SESSION_STATS)
 		.map((s) => {
 			const task = found.get(s.taskId)!;
-			return { ...s, taskTitle: task.title, taskSeq: task.seq, projectName: task.projectName };
+			return { ...s, taskTitle: task.title, taskSeq: task.seq, projectName: task.projectName, projectId: task.projectId };
 		});
 }
 
