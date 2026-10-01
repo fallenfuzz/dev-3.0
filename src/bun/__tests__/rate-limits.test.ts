@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	extractCodexSnapshotFromRolloutLines,
+	findRateLimitSnapshot,
+	rateLimitLoginKey,
 	formatResetDelta,
 	formatStatusLineSegment,
 	isRateLimitSnapshotRecent,
@@ -255,5 +257,26 @@ describe("formatStatusLineSegment", () => {
 
 	it("returns empty for null/empty snapshots", () => {
 		expect(formatStatusLineSegment(null, NOW)).toBe("");
+	});
+});
+
+describe("findRateLimitSnapshot / rateLimitLoginKey", () => {
+	const base = { capturedAt: 1, windows: [], creditsBalance: null, monthlyCredits: null, planType: null };
+	const system = { ...base, source: "claude" as const, accountId: null };
+	const pinned = { ...base, source: "claude" as const, accountId: null, configDir: "/p/.claude" };
+	const managed = { ...base, source: "claude" as const, accountId: "acc" };
+	const report = { snapshots: [pinned, system, managed], generatedAt: 1 };
+
+	it("never hands a pinned dir's reading to the system row", () => {
+		expect(findRateLimitSnapshot(report, "claude", null)).toBe(system);
+		expect(findRateLimitSnapshot(report, "claude", null, "/p/.claude")).toBe(pinned);
+		expect(findRateLimitSnapshot(report, "claude", "acc")).toBe(managed);
+		expect(findRateLimitSnapshot(report, "claude", null, "/other/.claude")).toBeNull();
+	});
+
+	it("keys each login apart", () => {
+		const keys = new Set([system, pinned, managed].map(rateLimitLoginKey));
+		expect(keys.size).toBe(3);
+		expect(rateLimitLoginKey(system)).toBe("claude:system");
 	});
 });
