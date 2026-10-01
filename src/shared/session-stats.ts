@@ -24,6 +24,9 @@ export interface ClaudeSessionStats {
 	capturedAt: number;
 	model: string | null;
 	effort: string | null;
+	/** Claude Code's session name (`/rename`), when set. */
+	sessionName: string | null;
+	thinking: boolean | null;
 	contextPercent: number | null;
 	contextWindowSize: number | null;
 	/** Current context size: input plus output tokens. */
@@ -31,6 +34,9 @@ export interface ClaudeSessionStats {
 	/** Last request's tokens read from / written to the prompt cache. */
 	cacheReadTokens: number | null;
 	cacheWriteTokens: number | null;
+	/** Fresh (uncached) input and output tokens of the last request. */
+	turnInputTokens: number | null;
+	turnOutputTokens: number | null;
 	cache: ClaudeSessionCacheStats | null;
 	costUsd: number | null;
 	durationMs: number | null;
@@ -42,8 +48,11 @@ export interface ClaudeSessionStats {
 /** Fields the user can toggle in Settings for the usage panel's Sessions block. */
 export const SESSION_STAT_FIELDS = [
 	"model",
+	"sessionName",
+	"contextBar",
 	"context",
 	"tokens",
+	"turn",
 	"cacheStatus",
 	"cacheTokens",
 	"cacheHitRatio",
@@ -51,6 +60,7 @@ export const SESSION_STAT_FIELDS = [
 	"duration",
 	"lines",
 	"effort",
+	"thinking",
 ] as const;
 
 export type SessionStatField = (typeof SESSION_STAT_FIELDS)[number];
@@ -94,6 +104,7 @@ export function parseClaudeSessionStats(payload: unknown, taskId: string, captur
 	const inTok = num(ctx?.total_input_tokens);
 	const outTok = num(ctx?.total_output_tokens);
 	const expiresSec = num(pc?.expires_at);
+	const thinkingEnabled = asRecord(root.thinking)?.enabled;
 	return {
 		taskId,
 		taskTitle: null,
@@ -102,11 +113,15 @@ export function parseClaudeSessionStats(payload: unknown, taskId: string, captur
 		capturedAt,
 		model: str(model?.display_name) ?? str(model?.id),
 		effort: str(asRecord(root.effort)?.level),
+		sessionName: str(root.session_name),
+		thinking: typeof thinkingEnabled === "boolean" ? thinkingEnabled : null,
 		contextPercent: num(ctx?.used_percentage),
 		contextWindowSize: num(ctx?.context_window_size),
 		totalTokens: inTok == null && outTok == null ? null : (inTok ?? 0) + (outTok ?? 0),
 		cacheReadTokens: num(usage?.cache_read_input_tokens),
 		cacheWriteTokens: num(usage?.cache_creation_input_tokens),
+		turnInputTokens: num(usage?.input_tokens),
+		turnOutputTokens: num(usage?.output_tokens),
 		cache:
 			pc && typeof pc.warm === "boolean"
 				? {

@@ -11,6 +11,8 @@ import {
 const PAYLOAD = {
 	model: { id: "claude-opus-5-5[1m]", display_name: "Opus 5.5 (1M context)" },
 	effort: { level: "medium" },
+	session_name: "Status view display options",
+	thinking: { enabled: true },
 	cost: { total_cost_usd: 0.657, total_duration_ms: 62_816, total_api_duration_ms: 40_044, total_lines_added: 3, total_lines_removed: 1 },
 	context_window: {
 		total_input_tokens: 82_766,
@@ -33,11 +35,15 @@ describe("parseClaudeSessionStats", () => {
 			capturedAt: 1000,
 			model: "Opus 5.5 (1M context)",
 			effort: "medium",
+			sessionName: "Status view display options",
+			thinking: true,
 			contextPercent: 8,
 			contextWindowSize: 1_000_000,
 			totalTokens: 82_774,
 			cacheReadTokens: 79_694,
 			cacheWriteTokens: 3070,
+			turnInputTokens: 2,
+			turnOutputTokens: 8,
 			cache: { warm: true, ttl: "1h", expiresAt: 1_790_870_135_000, hitRatio: 0.8757, misses: 0 },
 			costUsd: 0.657,
 			durationMs: 62_816,
@@ -57,6 +63,8 @@ describe("parseClaudeSessionStats", () => {
 		expect(stats?.cache).toBeNull();
 		expect(stats?.totalTokens).toBeNull();
 		expect(stats?.costUsd).toBeNull();
+		expect(stats?.thinking).toBeNull();
+		expect(stats?.sessionName).toBeNull();
 	});
 });
 
