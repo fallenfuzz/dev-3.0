@@ -40,8 +40,8 @@ const PANEL_WIDTH = 26 * 16;
  * must not be one stray click away from a panel the pointer passed through.
  * Codex monthly credits come from a cached app-server account read; all other
  * data comes from local files — see rate-limit-monitor.ts.
- * Inside a project only that project's Claude login counts; with none in scope
- * (dashboard, settings) every login does.
+ * Inside a project the Sessions block lists only that project's tasks; with
+ * none in scope (dashboard, settings) it lists every project's.
  */
 function RateLimitIndicator({ compact = false, projectId = null }: { compact?: boolean; projectId?: string | null }) {
 	const t = useT();
