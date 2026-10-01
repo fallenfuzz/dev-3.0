@@ -584,6 +584,7 @@ const settings = {
 	"settings.agentAccounts": "Аккаунты агентов",
 	"settings.agentAccountsDesc": "Храните несколько логинов на агента и переключайте активный без повторного входа.",
 	"settings.accountsSystemLogin": "Системный логин (~/.claude)",
+	"settings.accountsProjectLogin": "Вход проекта ({dir})",
 	"settings.accountsActive": "По умолчанию",
 	"settings.accountsImportCurrent": "Импорт текущего логина",
 	"settings.accountsAdd": "Добавить аккаунт",
