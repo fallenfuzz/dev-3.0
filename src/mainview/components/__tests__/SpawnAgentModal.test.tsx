@@ -72,6 +72,7 @@ vi.mock("../../rpc", () => ({
 			}),
 			spawnAgentInTask: vi.fn().mockResolvedValue({ handoff: null }),
 			previewTaskHandoff: vi.fn().mockResolvedValue(null),
+			getProjectClaudeLogin: vi.fn().mockResolvedValue({ configDir: null, identity: null }),
 			listAgentAccounts: vi.fn().mockResolvedValue({
 				claude: { accounts: [], activeId: null, systemIdentity: null },
 				codex: { accounts: [], activeId: null, currentIdentity: null },

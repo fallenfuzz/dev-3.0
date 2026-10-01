@@ -281,6 +281,12 @@ function safeReadJson(path: string): unknown {
 	}
 }
 
+/** Identity of the Claude login stored in a `CLAUDE_CONFIG_DIR`. Claude Code keeps
+ *  `.claude.json` inside that directory when the variable is set. */
+export function readClaudeConfigDirIdentity(configDir: string): AgentAccountIdentity | null {
+	return parseClaudeIdentity(safeReadJson(join(configDir, ".claude.json")));
+}
+
 function withCodexWorkspaceName(
 	identity: AgentAccountIdentity | null,
 	workspaceName: string | null | undefined,
