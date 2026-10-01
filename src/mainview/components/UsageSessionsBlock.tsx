@@ -34,10 +34,29 @@ export function useSessionStatFields(): readonly SessionStatField[] {
 	return fields;
 }
 
+/** Context fills earlier than a limit window matters, so it escalates at 60/85, not 80/95. */
 function contextTone(percent: number): string {
 	if (percent >= 85) return "text-danger";
 	if (percent >= 60) return "text-warning-strong";
 	return "text-fg-2";
+}
+
+function contextFill(percent: number): string {
+	if (percent >= 85) return "bg-danger";
+	if (percent >= 60) return "bg-warning";
+	return "bg-accent";
+}
+
+function ContextBar({ percent }: { percent: number }) {
+	const clamped = Math.max(0, Math.min(100, percent));
+	return (
+		<span aria-hidden="true" className="relative inline-block h-1 w-10 overflow-hidden rounded-full bg-fg/10 align-middle">
+			<span
+				className={`absolute inset-y-0 left-0 rounded-full ${contextFill(percent)}`}
+				style={{ width: `${clamped}%`, minWidth: clamped > 0 ? "0.2rem" : undefined }}
+			/>
+		</span>
+	);
 }
 
 function SessionRow({ session, fields, now }: { session: ClaudeSessionStats; fields: Set<SessionStatField>; now: number }) {
@@ -48,20 +67,42 @@ function SessionRow({ session, fields, now }: { session: ClaudeSessionStats; fie
 	const push = (key: string, node: ReactNode) => items.push(<span key={key}>{node}</span>);
 
 	if (fields.has("model") && session.model) push("model", <span className="text-fg-2">{session.model}</span>);
+	if (fields.has("sessionName") && session.sessionName) {
+		push("sessionName", <span className="text-fg-2 streamer-private">{session.sessionName}</span>);
+	}
 	if (fields.has("effort") && session.effort) push("effort", t("rateLimits.sessionEffort", { level: session.effort }));
-	if (fields.has("context") && session.contextPercent != null) {
-		const percent = Math.round(session.contextPercent);
-		push("context", <span className={contextTone(percent)}>{t("rateLimits.sessionContext", { percent })}</span>);
+	if (fields.has("thinking") && session.thinking) push("thinking", t("rateLimits.sessionThinking"));
+	const percent = session.contextPercent != null ? Math.round(session.contextPercent) : null;
+	if (percent != null && (fields.has("contextBar") || fields.has("context"))) {
+		push(
+			"context",
+			<span className={`inline-flex items-center gap-1 ${contextTone(percent)}`}>
+				{fields.has("contextBar") && <ContextBar percent={percent} />}
+				{fields.has("context") && t("rateLimits.sessionContext", { percent })}
+			</span>,
+		);
 	}
 	if (fields.has("tokens") && session.totalTokens != null) {
 		push("tokens", t("rateLimits.sessionTokens", { tokens: formatTokenCount(session.totalTokens) }));
 	}
+	if (fields.has("turn") && (session.turnInputTokens || session.turnOutputTokens)) {
+		push(
+			"turn",
+			t("rateLimits.sessionTurn", {
+				input: formatTokenCount(session.turnInputTokens ?? 0),
+				output: formatTokenCount(session.turnOutputTokens ?? 0),
+			}),
+		);
+	}
 	if (fields.has("cacheStatus") && session.cache) {
 		const warm = isSessionCacheWarm(session.cache, now);
+		const ttl = session.cache.ttl;
 		const label = !warm
 			? t("rateLimits.sessionCacheCold")
 			: session.cache.expiresAt != null
-				? t("rateLimits.sessionCacheWarmUntil", { time: clock.format(session.cache.expiresAt) })
+				? ttl
+					? t("rateLimits.sessionCacheWarmTtlUntil", { ttl, time: clock.format(session.cache.expiresAt) })
+					: t("rateLimits.sessionCacheWarmUntil", { time: clock.format(session.cache.expiresAt) })
 				: t("rateLimits.sessionCacheWarm");
 		push("cache", <span className={warm ? "text-accent" : "text-fg-muted"}>{label}</span>);
 	}
