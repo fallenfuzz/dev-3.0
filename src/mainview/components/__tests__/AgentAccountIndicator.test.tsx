@@ -63,7 +63,7 @@ function makeState(overrides?: Partial<AgentAccountsState>): AgentAccountsState 
 				},
 			],
 			activeId: "cl-1",
-			systemIdentity: {
+			systemConfigDir: "/home/me/.claude", systemIdentity: {
 				email: "main@example.com",
 				organization: null,
 				plan: null,
@@ -149,7 +149,7 @@ describe("AgentAccountIndicator", () => {
 				claude: {
 					accounts: [],
 					activeId: null,
-					systemIdentity: {
+					systemConfigDir: "/home/me/.claude", systemIdentity: {
 						email: "solo@example.com",
 						organization: null,
 						plan: null,
@@ -307,7 +307,7 @@ describe("AgentAccountIndicator", () => {
 		renderIndicator(claudeAgent, { value: "cl-1", onSelect });
 
 		await user.click(await screen.findByTestId("agent-account-trigger"));
-		await user.click(screen.getByText("System login (~/.claude)"));
+		await user.click(screen.getByText("Default login (/home/me/.claude)"));
 
 		expect(onSelect).toHaveBeenCalledWith(null);
 		expect(mockedApi.request.setActiveAgentAccount).not.toHaveBeenCalled();
@@ -318,7 +318,7 @@ describe("AgentAccountIndicator", () => {
 		renderIndicator();
 
 		await user.click(await screen.findByTestId("agent-account-trigger"));
-		await user.click(screen.getByText("System login (~/.claude)"));
+		await user.click(screen.getByText("Default login (/home/me/.claude)"));
 
 		await waitFor(() => {
 			expect(mockedApi.request.setActiveAgentAccount).toHaveBeenCalledWith({
@@ -561,7 +561,7 @@ describe("project-pinned CLAUDE_CONFIG_DIR", () => {
 
 		await userEvent.click(trigger);
 		expect(await screen.findByText("Project login (…/thumbs/.claude)")).toBeTruthy();
-		expect(screen.queryByText("System login (~/.claude)")).toBeNull();
+		expect(screen.queryByText("Default login (/home/me/.claude)")).toBeNull();
 	});
 
 	it("shows the pinned dir's usage on that row, not ~/.claude's", async () => {
@@ -595,7 +595,7 @@ describe("project-pinned CLAUDE_CONFIG_DIR", () => {
 		await waitFor(() => expect(mockedApi.request.getProjectClaudeLogin).toHaveBeenCalled());
 		expect(trigger.textContent).not.toContain("project@example.com");
 		await userEvent.click(trigger);
-		expect(await screen.findByText("System login (~/.claude)")).toBeTruthy();
+		expect(await screen.findByText("Default login (/home/me/.claude)")).toBeTruthy();
 	});
 
 	it("keeps the system login when the project pins nothing", async () => {

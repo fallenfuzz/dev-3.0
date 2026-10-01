@@ -111,7 +111,7 @@ function pinnedConfigDir(): string | null {
  * file per directory; only `~/.claude` writes the shared claude.json. Keeping
  * them apart stops one login from clobbering another's slot - the cause of
  * accounts vanishing from the rate-limit panel the moment another account ran,
- * and of pinned logins' usage showing under "System login (~/.claude)".
+ * and of pinned logins' usage showing under the default `~/.claude` login.
  */
 export function claudeDumpFilePaths(
 	accountId: string | null,

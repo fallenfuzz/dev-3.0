@@ -111,6 +111,9 @@ export interface AgentAccountsState {
 		accounts: AgentAccount[];
 		/** Active managed account; null = system login (~/.claude, no env override). */
 		activeId: string | null;
+		/** Claude Code's own default config dir (`<home>/.claude`), used by any
+		 *  session no managed account or project pin redirects. Absolute. */
+		systemConfigDir: string;
 		/** Identity of the system login parsed from ~/.claude.json (null when absent). */
 		systemIdentity: AgentAccountIdentity | null;
 	};
