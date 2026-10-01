@@ -582,6 +582,7 @@ const settings = {
 	"settings.agentAccounts": "Agent accounts",
 	"settings.agentAccountsDesc": "Keep multiple logins per agent CLI and hot-swap the active one without re-login.",
 	"settings.accountsSystemLogin": "System login (~/.claude)",
+	"settings.accountsProjectLogin": "Project login ({dir})",
 	"settings.accountsActive": "Default",
 	"settings.accountsImportCurrent": "Import current login",
 	"settings.accountsAdd": "Add account",

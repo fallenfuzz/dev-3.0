@@ -38,6 +38,7 @@ vi.mock("../rpc", () => ({
 			getPreventSleepState: vi.fn().mockResolvedValue({ enabled: false, available: false, forcedByRemote: false }),
 			setPreventSleep: vi.fn(),
 			getAgentRateLimits: vi.fn().mockResolvedValue({ generatedAt: 0, snapshots: [] }),
+			getProjectClaudeLogin: vi.fn().mockResolvedValue({ configDir: null, identity: null }),
 			listAgentAccounts: vi.fn().mockResolvedValue({
 				claude: { accounts: [], activeId: null, systemIdentity: null },
 				codex: { accounts: [], activeId: null, currentIdentity: null },
