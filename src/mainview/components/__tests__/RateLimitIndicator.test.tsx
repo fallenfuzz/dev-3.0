@@ -618,3 +618,78 @@ describe("RateLimitIndicator", () => {
 		expect(screen.getAllByText("· Acme")).toHaveLength(1);
 	});
 });
+
+describe("RateLimitIndicator project scope", () => {
+	const request = api.request as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+	function claudeReading(percent: number, configDir?: string) {
+		return {
+			source: "claude" as const,
+			accountId: null,
+			...(configDir ? { configDir } : {}),
+			capturedAt: Date.now(),
+			windows: [{ id: "five_hour", usedPercent: percent, resetsAt: Date.now() + 3_600_000, windowMinutes: 300 }],
+			creditsBalance: null,
+			monthlyCredits: null,
+			planType: null,
+		};
+	}
+
+	beforeEach(() => {
+		mockedAccounts.mockResolvedValue(emptyAccounts());
+		mockedGet.mockResolvedValue({
+			generatedAt: Date.now(),
+			snapshots: [claudeReading(91, "/p/app/.claude"), claudeReading(12)],
+		});
+		request.getProjectClaudeLogin = vi.fn().mockResolvedValue({ configDir: "/p/app/.claude", identity: null });
+		request.listPinnedClaudeLogins = vi.fn().mockResolvedValue([
+			{ configDir: "/p/app/.claude", identity: null, projectNames: ["app"] },
+			{ configDir: "/p/other/.claude", identity: null, projectNames: ["other"] },
+		]);
+	});
+
+	function renderIn(projectId: string | null) {
+		return render(
+			<I18nProvider>
+				<RateLimitIndicator projectId={projectId} />
+			</I18nProvider>,
+		);
+	}
+
+	it("shows only the pinned login's usage inside a project that pins one", async () => {
+		renderIn("app-id");
+		expect(await screen.findByRole("button", { name: /91% used/ })).toBeTruthy();
+		await userEvent.click(getIndicator());
+		expect(await screen.findByText("Project login (…/app/.claude)")).toBeTruthy();
+		expect(screen.queryByText("Project login (…/other/.claude)")).toBeNull();
+		expect(screen.queryByText(/12% used/)).toBeNull();
+	});
+
+	it("shows the default login, not other projects' pins, inside a project without one", async () => {
+		request.getProjectClaudeLogin.mockResolvedValue({ configDir: null, identity: null });
+		renderIn("plain-id");
+		expect(await screen.findByRole("button", { name: /12% used/ })).toBeTruthy();
+		await userEvent.click(getIndicator());
+		expect(screen.queryByText(/Project login/)).toBeNull();
+		expect(screen.queryByText(/91% used/)).toBeNull();
+	});
+
+	it("follows the selected account once a managed account overrides the pin", async () => {
+		const state = emptyAccounts();
+		state.claude.accounts = [
+			{ id: "work", kind: "claude", label: "Work", identity: null, auth: "oauth", api: null, createdAt: 0 },
+		];
+		state.claude.activeId = "work";
+		mockedAccounts.mockResolvedValue(state);
+		renderIn("app-id");
+		expect(await screen.findByRole("button", { name: /12% used/ })).toBeTruthy();
+	});
+
+	it("shows every login with no project in scope", async () => {
+		renderIn(null);
+		await userEvent.click(await screen.findByRole("button", { name: /Agent rate limits/ }));
+		expect(await screen.findByText("Project login (…/other/.claude)")).toBeTruthy();
+		expect(screen.getByText("Project login (…/app/.claude)")).toBeTruthy();
+		expect(screen.getByText(/91% used/)).toBeTruthy();
+	});
+});
