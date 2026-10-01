@@ -86,11 +86,12 @@ function rowsForKind(
 	if (kind === "claude") {
 		const identity = resolveAccount("claude", accounts, null);
 		const snap = findRateLimitSnapshot(report, "claude", null);
-		// With no managed account there is nothing to switch between, so a default
-		// login with no account and no usage is noise - common when every project
-		// pins its own dir. Beside managed accounts it stays: it is a real choice.
+		// With no managed account there is nothing to switch between. Beside project
+		// pins, a default login nobody is signed into is noise, and any usage on it
+		// is a pre-pin reading older builds misfiled under ~/.claude.
 		const isChoice = (kindState?.accounts.length ?? 0) > 0;
-		if (identity || snap || isChoice) rows.push({
+		const misfiled = !identity && pinnedLogins.length > 0;
+		if (identity || isChoice || (snap && !misfiled)) rows.push({
 			key: "claude:system",
 			kind,
 			accountId: null,
@@ -153,6 +154,7 @@ function rowsForKind(
 	}
 
 	const known = new Set(rows.map((row) => rowIdentity(row.accountId, row.configDir)));
+	if (kind === "claude") known.add(rowIdentity(null, null)); // shown above, or deliberately left out
 	for (const snap of report.snapshots) {
 		if (snap.source !== kind) continue;
 		const id = snap.accountId ?? null;
@@ -231,7 +233,7 @@ function UsageRowCard({
 						unlimited={row.snap ? isUnlimitedRateLimitSnapshot(row.snap) : false}
 					/>
 				</span>
-				{row.chip ? (
+				{row.chip && !row.configDir ? (
 					<span className="text-fg-3 text-micro px-1 py-px bg-raised rounded shrink-0">{row.chip}</span>
 				) : null}
 				{row.isDefault ? (
@@ -248,6 +250,12 @@ function UsageRowCard({
 					</span>
 				) : null}
 			</div>
+			{/* A pinned dir's label is long; inline it squeezes the identity to "Cla". */}
+			{row.chip && row.configDir ? (
+				<div className="pl-[18px] text-fg-3 text-micro truncate streamer-private" title={row.configDir}>
+					{row.chip}
+				</div>
+			) : null}
 			{row.snap && hasQuotaLines(row.snap) ? <AccountQuotaLines snap={row.snap} now={now} /> : null}
 		</button>
 	);
