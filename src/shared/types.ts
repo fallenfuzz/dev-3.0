@@ -5,7 +5,7 @@ import type { ImportConversationsResult, ImportableConversationView } from "./co
 import type { HandoffPreview, SpawnAgentResult } from "./conversation-handoff-model";
 import type { TaskConversationView } from "./task-conversation-model";
 import type { AgentRateLimitsReport } from "./rate-limits";
-import type { AgentAccount, AgentAccountKind, AgentAccountsState, ClaudeSlotModels } from "./agent-accounts";
+import type { AgentAccount, AgentAccountKind, AgentAccountsState, ClaudeSlotModels, ProjectClaudeLogin } from "./agent-accounts";
 import type { TerminalBackendIdentity } from "./terminal-backend-identity";
 import type { TaskPaneState, TaskPaneAction, TaskPaneBackendKind } from "./task-panes";
 import type { DeepLinkNav } from "./deep-link";
@@ -5227,6 +5227,11 @@ export type AppRPCSchema = {
 			listAgentAccounts: {
 				params: void;
 				response: AgentAccountsState;
+			};
+			/** The Claude login a project pins via `CLAUDE_CONFIG_DIR` in its env. */
+			getProjectClaudeLogin: {
+				params: { projectId: string };
+				response: ProjectClaudeLogin;
 			};
 			importAgentAccount: {
 				params: { kind: AgentAccountKind };

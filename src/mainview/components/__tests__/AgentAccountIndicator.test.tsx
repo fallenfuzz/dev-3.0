@@ -10,6 +10,7 @@ vi.mock("../../rpc", () => ({
 			listAgentAccounts: vi.fn(),
 			setActiveAgentAccount: vi.fn(),
 			getAgentRateLimits: vi.fn(),
+			getProjectClaudeLogin: vi.fn(),
 		},
 	},
 }));
@@ -81,6 +82,7 @@ function renderIndicator(
 		value?: string | null;
 		onSelect?: (accountId: string | null) => void;
 		onAddAccount?: () => void;
+		projectId?: string;
 	},
 ) {
 	return render(
@@ -90,6 +92,7 @@ function renderIndicator(
 				value={opts?.value}
 				onSelect={opts?.onSelect}
 				onAddAccount={opts?.onAddAccount}
+				projectId={opts?.projectId}
 			/>
 		</I18nProvider>,
 	);
@@ -117,6 +120,7 @@ beforeEach(() => {
 	mockedApi.request.listAgentAccounts.mockResolvedValue(makeState());
 	mockedApi.request.setActiveAgentAccount.mockResolvedValue(undefined as any);
 	mockedApi.request.getAgentRateLimits.mockResolvedValue(makeReport([]));
+	mockedApi.request.getProjectClaudeLogin.mockResolvedValue({ configDir: null, identity: null });
 	mockedConfirm.mockResolvedValue(true);
 });
 
@@ -528,5 +532,45 @@ describe("AgentAccountIndicator", () => {
 
 		await user.click(await screen.findByTestId("agent-account-trigger"));
 		expect(screen.getByText("Workspace Acme")).toBeTruthy();
+	});
+});
+
+describe("project-pinned CLAUDE_CONFIG_DIR", () => {
+	const projectLogin = {
+		configDir: "/mnt/e/Projects/thumbs/.claude",
+		identity: { email: "project@example.com", organization: null, plan: null, planLabel: null, accountId: "uuid-p" },
+	};
+
+	function withNoManagedDefault() {
+		const base = makeState();
+		mockedApi.request.listAgentAccounts.mockResolvedValue(makeState({ claude: { ...base.claude, activeId: null } }));
+	}
+
+	it("shows the project's account, not ~/.claude's, when the project pins a config dir", async () => {
+		withNoManagedDefault();
+		mockedApi.request.getProjectClaudeLogin.mockResolvedValue(projectLogin);
+		renderIndicator(claudeAgent, { projectId: "p1", onSelect: vi.fn() });
+		const trigger = await screen.findByTestId("agent-account-trigger");
+		await waitFor(() => expect(trigger.textContent).toContain("project@example.com"));
+		expect(trigger.textContent).not.toContain("main@example.com");
+		expect(mockedApi.request.getProjectClaudeLogin).toHaveBeenCalledWith({ projectId: "p1" });
+
+		await userEvent.click(trigger);
+		expect(await screen.findByText("Project login (…/thumbs/.claude)")).toBeTruthy();
+		expect(screen.queryByText("System login (~/.claude)")).toBeNull();
+	});
+
+	it("keeps the system login when the project pins nothing", async () => {
+		withNoManagedDefault();
+		renderIndicator(claudeAgent, { projectId: "p1", onSelect: vi.fn() });
+		const trigger = await screen.findByTestId("agent-account-trigger");
+		await waitFor(() => expect(mockedApi.request.getProjectClaudeLogin).toHaveBeenCalled());
+		expect(trigger.textContent).toContain("main@example.com");
+	});
+
+	it("does not ask without a project in scope (global Settings switcher)", async () => {
+		renderIndicator(claudeAgent);
+		await screen.findByTestId("agent-account-trigger");
+		expect(mockedApi.request.getProjectClaudeLogin).not.toHaveBeenCalled();
 	});
 });

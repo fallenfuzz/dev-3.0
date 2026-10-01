@@ -565,6 +565,7 @@ const settings = {
 	"settings.agentAccounts": "Cuentas de agentes",
 	"settings.agentAccountsDesc": "Guarda varios inicios de sesión por agente y cambia el activo sin volver a iniciar sesión.",
 	"settings.accountsSystemLogin": "Sesión del sistema (~/.claude)",
+	"settings.accountsProjectLogin": "Sesión del proyecto ({dir})",
 	"settings.accountsActive": "Predeterminada",
 	"settings.accountsImportCurrent": "Importar sesión actual",
 	"settings.accountsAdd": "Añadir cuenta",

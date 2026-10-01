@@ -6,6 +6,7 @@ import type {
 	AgentAccountKind,
 	AgentAccountsState,
 	AgentApiProfileInfo,
+	ProjectClaudeLogin,
 } from "../../shared/agent-accounts";
 import { shortCodexWorkspaceId } from "../../shared/agent-accounts";
 import type { CodingAgent } from "../../shared/types";
@@ -75,6 +76,35 @@ function useAgentAccountsState(enabled: boolean): AgentAccountsState | null {
 		return () => window.removeEventListener(AGENT_ACCOUNTS_CHANGED_EVENT, reload);
 	}, [enabled, reload]);
 	return enabled ? state : null;
+}
+
+/** The login a project pins via `CLAUDE_CONFIG_DIR`, or null when it pins none
+ *  (or no project is in scope, e.g. the global Settings switcher). */
+function useProjectClaudeLogin(projectId: string | undefined, enabled: boolean): ProjectClaudeLogin | null {
+	const [login, setLogin] = useState<ProjectClaudeLogin | null>(null);
+	useEffect(() => {
+		if (!enabled || !projectId) {
+			setLogin(null);
+			return;
+		}
+		let cancelled = false;
+		api.request
+			.getProjectClaudeLogin({ projectId })
+			.then((res) => {
+				if (!cancelled) setLogin(res.configDir ? res : null);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectId, enabled]);
+	return login;
+}
+
+/** `/home/me/x/.claude` → `~/x/.claude`; long paths keep their last two segments. */
+function shortConfigDir(dir: string): string {
+	const parts = dir.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
+	return parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : dir;
 }
 
 /** Rate-limit report, fetched lazily (popover open) + refreshed by push. */
@@ -437,6 +467,7 @@ export default function AgentAccountIndicator({
 	value,
 	onSelect,
 	onAddAccount,
+	projectId,
 }: {
 	agent: CodingAgent | undefined | null;
 	/** Per-launch selection: `undefined` → the registry default (the preselect);
@@ -449,10 +480,15 @@ export default function AgentAccountIndicator({
 	 *  surface passes what it must do first (close itself); omit it where leaving
 	 *  is wrong — the blocked-CLI approval dialog. */
 	onAddAccount?: () => void;
+	/** The project the launch is for. When its env pins `CLAUDE_CONFIG_DIR`, the
+	 *  system-login row names that directory and shows its account instead of
+	 *  `~/.claude`'s, because that is the login the session will really use. */
+	projectId?: string;
 }) {
 	const t = useT();
 	const kind = agent ? agentAccountKindForCommand(agent.baseCommand) : null;
 	const state = useAgentAccountsState(kind !== null);
+	const projectLogin = useProjectClaudeLogin(projectId, kind === "claude");
 	const [anchor, setAnchor] = useState<DOMRect | null>(null);
 	const [busy, setBusy] = useState(false);
 	// Usage rings only matter while the popover is open — fetch lazily then.
@@ -506,9 +542,12 @@ export default function AgentAccountIndicator({
 	const effectiveSelectedId = isLocal && value !== undefined && !carriedOver ? value : kindState.activeId;
 
 	const selectedAccount: AgentAccount | null = kindState.accounts.find((a) => a.id === effectiveSelectedId) ?? null;
-	const fallbackIdentity = kind === "claude" ? state.claude.systemIdentity : state.codex.currentIdentity;
-	const fallbackLabel =
-		kind === "claude" ? t("settings.accountsSystemLogin") : t("settings.accountsUnmanaged");
+	const fallbackIdentity =
+		kind === "claude" ? (projectLogin ? projectLogin.identity : state.claude.systemIdentity) : state.codex.currentIdentity;
+	const systemLoginLabel = projectLogin?.configDir
+		? t("settings.accountsProjectLogin", { dir: shortConfigDir(projectLogin.configDir) })
+		: t("settings.accountsSystemLogin");
+	const fallbackLabel = kind === "claude" ? systemLoginLabel : t("settings.accountsUnmanaged");
 	const activeLabel = selectedAccount ? selectedAccount.label : (fallbackIdentity?.email ?? fallbackLabel);
 	const workspaceLabel = (identity: AgentAccountIdentity | null): string | null => {
 		if (kind !== "codex") return null;
@@ -533,7 +572,7 @@ export default function AgentAccountIndicator({
 	if (kind === "claude" || isLocal) {
 		rows.push({
 			key: "system",
-			label: kind === "claude" ? t("settings.accountsSystemLogin") : t("settings.accountsUnmanaged"),
+			label: fallbackLabel,
 			sub: fallbackIdentity?.email ?? null,
 			planLabel: identityBadge(fallbackIdentity),
 			workspaceLabel: workspaceLabel(fallbackIdentity),

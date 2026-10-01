@@ -3,10 +3,13 @@
  * hot-swap without re-login). Thin wrappers over src/bun/agent-accounts.ts.
  */
 
-import type { AgentAccount, AgentAccountKind, AgentAccountsState, ClaudeSlotModels } from "../../shared/agent-accounts";
+import type { AgentAccount, AgentAccountKind, AgentAccountsState, ClaudeSlotModels, ProjectClaudeLogin } from "../../shared/agent-accounts";
 import type { ClaudeApiProfileDraft } from "../agent-accounts";
 import { parseEnvLines, shortCodexWorkspaceId } from "../../shared/agent-accounts";
 import * as accounts from "../agent-accounts";
+import * as data from "../data";
+import { resolveProjectEnv } from "../repo-config";
+import { homedir } from "node:os";
 import { log } from "./shared";
 
 function accountLogDetails(account: AgentAccount) {
@@ -151,7 +154,23 @@ async function renameAgentAccount(params: { kind: AgentAccountKind; accountId: s
 	log.info("← renameAgentAccount done");
 }
 
+/** Which Claude login a project's sessions use. Read on demand so an edit to
+ *  `.dev3/config*.json` shows on the next open of the launch dialog. */
+async function getProjectClaudeLogin(params: { projectId: string }): Promise<ProjectClaudeLogin> {
+	try {
+		const project = await data.getProject(params.projectId);
+		const raw = (await resolveProjectEnv(project)).CLAUDE_CONFIG_DIR?.trim();
+		if (!raw) return { configDir: null, identity: null };
+		const configDir = raw === "~" || raw.startsWith("~/") ? homedir() + raw.slice(1) : raw;
+		return { configDir, identity: accounts.readClaudeConfigDirIdentity(configDir) };
+	} catch (err) {
+		log.warn("getProjectClaudeLogin failed", { projectId: params.projectId, error: String(err) });
+		return { configDir: null, identity: null };
+	}
+}
+
 export const agentAccountHandlers = {
+	getProjectClaudeLogin,
 	listAgentAccounts,
 	importAgentAccount,
 	addAgentApiProfile,
