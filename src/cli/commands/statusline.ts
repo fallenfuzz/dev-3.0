@@ -7,7 +7,8 @@
  * statusLine JSON (which includes `rate_limits` since v1.2.80) to us on every
  * refresh. We:
  *   1. dump the payload to ~/.dev3.0/data/rate-limits/claude.json (the app's
- *      rate-limit monitor reads it from there — no API calls anywhere);
+ *      rate-limit monitor reads it from there — no API calls anywhere), and
+ *      inside a dev3 task also to rate-limits/sessions/<taskId>.json;
  *   2. DELEGATE to the user's original statusLine command (resolved from the
  *      normal settings precedence: worktree settings.local.json → project
  *      settings.json → ~/.claude/settings.json), so injection never destroys
@@ -29,6 +30,7 @@ import { formatStatusLineSegment, parseClaudeStatusLinePayload } from "../../sha
 export const RATE_LIMITS_DIR = join(homedir(), ".dev3.0", "data", "rate-limits");
 export const CLAUDE_RATE_LIMIT_DUMP_PATH = join(RATE_LIMITS_DIR, "claude.json");
 export const CLAUDE_ACCOUNT_RATE_LIMITS_DIR = join(RATE_LIMITS_DIR, "claude");
+export const CLAUDE_SESSION_STATS_DIR = join(RATE_LIMITS_DIR, "sessions");
 
 const SAFE_ACCOUNT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -92,6 +94,12 @@ function runOriginalStatusLine(original: OriginalStatusLine, input: string, cwd:
 	return "";
 }
 
+/** Where the per-task session dump goes; null outside a dev3 task (no DEV3_TASK_ID). */
+export function sessionDumpFilePath(taskId: string | undefined, baseDir: string = RATE_LIMITS_DIR): string | null {
+	const id = taskId?.trim();
+	return id && SAFE_ACCOUNT_ID.test(id) ? join(baseDir, "sessions", `${id}.json`) : null;
+}
+
 function managedAccountId(): string | null {
 	const value = process.env[DEV3_AGENT_ACCOUNT_ID_ENV]?.trim();
 	return value && SAFE_ACCOUNT_ID.test(value) ? value : null;
@@ -123,6 +131,13 @@ function dumpPayload(raw: string): void {
 			// invariants about renames under ~/.dev3.0/).
 			mkdirSync(dirname(target), { recursive: true });
 			writeFileSync(target, serialized);
+		}
+		// One file per task feeds the usage panel's Sessions block; the account dumps
+		// above are last-writer-wins, so they cannot tell concurrent tasks apart.
+		const sessionTarget = sessionDumpFilePath(process.env.DEV3_TASK_ID);
+		if (sessionTarget) {
+			mkdirSync(dirname(sessionTarget), { recursive: true });
+			writeFileSync(sessionTarget, serialized);
 		}
 	} catch {
 		// disk/parse trouble must never break the visible statusLine

@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildClaudeManagedSettings, findLatestCodexRollout, readClaudeSnapshot, readCodexSnapshot } from "../rate-limit-monitor";
+import {
+	buildClaudeManagedSettings,
+	findLatestCodexRollout,
+	readClaudeSessionDumps,
+	readClaudeSnapshot,
+	readCodexSnapshot,
+} from "../rate-limit-monitor";
 
 let tmp: string;
 
@@ -117,5 +123,32 @@ describe("readCodexSnapshot", () => {
 
 	it("returns null when no rollouts exist", () => {
 		expect(readCodexSnapshot(tmp)).toBeNull();
+	});
+});
+
+describe("readClaudeSessionDumps", () => {
+	const payload = (percent: number) => ({ model: { display_name: "Opus" }, context_window: { used_percentage: percent } });
+
+	it("reads recent per-task dumps newest first, keyed by file name", () => {
+		const now = Date.now();
+		writeFileSync(join(tmp, "task-a.json"), JSON.stringify({ capturedAt: now - 60_000, payload: payload(10) }));
+		writeFileSync(join(tmp, "task-b.json"), JSON.stringify({ capturedAt: now - 1_000, payload: payload(20) }));
+		const sessions = readClaudeSessionDumps(tmp, now);
+		expect(sessions.map((s) => [s.taskId, s.contextPercent])).toEqual([
+			["task-b", 20],
+			["task-a", 10],
+		]);
+	});
+
+	it("skips stale, corrupt and non-session dumps", () => {
+		const now = Date.now();
+		writeFileSync(join(tmp, "old.json"), JSON.stringify({ capturedAt: now - 7 * 3_600_000, payload: payload(1) }));
+		writeFileSync(join(tmp, "torn.json"), "{not json");
+		writeFileSync(join(tmp, "empty.json"), JSON.stringify({ capturedAt: now, payload: { rate_limits: {} } }));
+		expect(readClaudeSessionDumps(tmp, now)).toEqual([]);
+	});
+
+	it("returns nothing when the directory does not exist", () => {
+		expect(readClaudeSessionDumps(join(tmp, "missing"))).toEqual([]);
 	});
 });
