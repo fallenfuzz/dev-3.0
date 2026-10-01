@@ -28,7 +28,7 @@ interface UsageRow {
 	/** Set on a project-pinned `CLAUDE_CONFIG_DIR` login; such rows are informational. */
 	configDir: string | null;
 	account: AccountLine | null;
-	/** Extra chip next to the identity ("System login", "Unmanaged login", "Project login"). */
+	/** Extra chip next to the identity ("Default login", "Unmanaged login", "Project login"). */
 	chip: string | null;
 	snap: AgentRateLimitSnapshot | null;
 	isDefault: boolean;
@@ -85,16 +85,21 @@ function rowsForKind(
 	// settings section and the launch-picker switcher follow.
 	if (kind === "claude") {
 		const identity = resolveAccount("claude", accounts, null);
-		rows.push({
+		const snap = findRateLimitSnapshot(report, "claude", null);
+		// With no managed account there is nothing to switch between, so a default
+		// login with no account and no usage is noise - common when every project
+		// pins its own dir. Beside managed accounts it stays: it is a real choice.
+		const isChoice = (kindState?.accounts.length ?? 0) > 0;
+		if (identity || snap || isChoice) rows.push({
 			key: "claude:system",
 			kind,
 			accountId: null,
 			configDir: null,
 			account: identity ?? named(labels.systemLogin),
-			// With no identity to show, the row's own name already says "system
-			// login" — a chip repeating it would print the label twice.
+			// With no identity to show, the row's own name already says "default
+			// login" - a chip repeating it would print the label twice.
 			chip: identity ? labels.systemLogin : null,
-			snap: findRateLimitSnapshot(report, "claude", null),
+			snap,
 			isDefault: activeId === null,
 			selectable: true,
 		});
@@ -315,7 +320,7 @@ export default function AgentUsagePanel({
 	}, [t]);
 
 	const labels = {
-		systemLogin: t("settings.accountsSystemLogin"),
+		systemLogin: t("settings.accountsDefaultLogin", { dir: accounts?.claude.systemConfigDir ?? "~/.claude" }),
 		unmanaged: t("settings.accountsUnmanaged"),
 		projectLogin: (dir: string) => t("settings.accountsProjectLogin", { dir }),
 	};

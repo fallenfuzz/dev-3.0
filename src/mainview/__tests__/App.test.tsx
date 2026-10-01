@@ -41,7 +41,7 @@ vi.mock("../rpc", () => ({
 			getAgentRateLimits: vi.fn().mockResolvedValue({ generatedAt: 0, snapshots: [] }),
 			getProjectClaudeLogin: vi.fn().mockResolvedValue({ configDir: null, identity: null }),
 			listAgentAccounts: vi.fn().mockResolvedValue({
-				claude: { accounts: [], activeId: null, systemIdentity: null },
+				claude: { accounts: [], activeId: null, systemConfigDir: "/home/me/.claude", systemIdentity: null },
 				codex: { accounts: [], activeId: null, currentIdentity: null },
 			}),
 			getAgents: vi.fn().mockResolvedValue([]),

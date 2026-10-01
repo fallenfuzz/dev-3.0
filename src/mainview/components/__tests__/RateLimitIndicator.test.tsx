@@ -23,7 +23,7 @@ const mockedAccounts = api.request.listAgentAccounts as ReturnType<typeof vi.fn>
 
 function emptyAccounts(): AgentAccountsState {
 	return {
-		claude: { accounts: [], activeId: null, systemIdentity: null },
+		claude: { accounts: [], activeId: null, systemConfigDir: "/home/me/.claude", systemIdentity: null },
 		codex: { accounts: [], activeId: null, currentIdentity: null },
 	};
 }
@@ -199,7 +199,7 @@ describe("RateLimitIndicator", () => {
 					{ id: "work", kind: "claude", label: "Work Claude", identity: null, auth: "oauth", api: null, createdAt: 0 },
 				],
 				activeId: null,
-				systemIdentity: null,
+				systemConfigDir: "/home/me/.claude", systemIdentity: null,
 			},
 			codex: { accounts: [], activeId: null, currentIdentity: null },
 		});
@@ -463,7 +463,7 @@ describe("RateLimitIndicator", () => {
 			claude: {
 				accounts: [],
 				activeId: null,
-				systemIdentity: {
+				systemConfigDir: "/home/me/.claude", systemIdentity: {
 					email: "alice@example.com",
 					organization: null,
 					plan: "default_claude_max_5x",
@@ -502,7 +502,7 @@ describe("RateLimitIndicator", () => {
 					},
 				],
 				activeId: "acc-1",
-				systemIdentity: null,
+				systemConfigDir: "/home/me/.claude", systemIdentity: null,
 			},
 			codex: { accounts: [], activeId: null, currentIdentity: null },
 		});
@@ -536,7 +536,7 @@ describe("RateLimitIndicator", () => {
 					{ id: "claude-2", kind: "claude", label: "Personal Claude", identity: null, auth: "oauth", api: null, createdAt: 0 },
 				],
 				activeId: "claude-1",
-				systemIdentity: null,
+				systemConfigDir: "/home/me/.claude", systemIdentity: null,
 			},
 			codex: {
 				accounts: [{ id: "codex-1", kind: "codex", label: "Enterprise Codex", identity: null, auth: "oauth", api: null, createdAt: 0 }],
@@ -559,7 +559,7 @@ describe("RateLimitIndicator", () => {
 			claude: {
 				accounts: [],
 				activeId: null,
-				systemIdentity: {
+				systemConfigDir: "/home/me/.claude", systemIdentity: {
 					email: "dev@example.com",
 					organization: "Acme Workspace",
 					plan: "default_claude_max_5x",
@@ -591,7 +591,7 @@ describe("RateLimitIndicator", () => {
 			],
 		});
 		mockedAccounts.mockResolvedValue({
-			claude: { accounts: [], activeId: null, systemIdentity: null },
+			claude: { accounts: [], activeId: null, systemConfigDir: "/home/me/.claude", systemIdentity: null },
 			codex: {
 				accounts: [
 					{

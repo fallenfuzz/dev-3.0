@@ -496,6 +496,7 @@ export async function listAgentAccounts(paths: AccountPaths = defaultAccountPath
 		claude: {
 			accounts: registry.claude.accounts.map((e) => toAccount(e, "claude", paths)),
 			activeId: registry.claude.accounts.some((e) => e.id === registry.claude.activeId) ? registry.claude.activeId : null,
+			systemConfigDir: paths.claudeHome,
 			systemIdentity: parseClaudeIdentity(safeReadJson(paths.claudeJson)),
 		},
 		codex: {
