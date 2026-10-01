@@ -11,7 +11,7 @@ import type {
 } from "../../shared/agent-accounts";
 import { shortClaudeConfigDir, shortCodexWorkspaceId } from "../../shared/agent-accounts";
 import type { CodingAgent } from "../../shared/types";
-import type { AgentRateLimitSnapshot, AgentRateLimitsReport } from "../../shared/rate-limits";
+import type { AgentRateLimitSnapshot, AgentRateLimitsReport, ClaudeLoginScope } from "../../shared/rate-limits";
 import {
 	RATE_LIMIT_DANGER_PERCENT,
 	findRateLimitSnapshot,
@@ -101,6 +101,34 @@ function useProjectClaudeLogin(projectId: string | undefined, enabled: boolean):
 		};
 	}, [projectId, enabled]);
 	return login;
+}
+
+/**
+ * Which Claude login the screen's project uses, for scoping usage to it. Undefined
+ * (every login) with no project in scope or until the pin and accounts are known.
+ * A managed account overrides any pin, so the scope is then the switchable set.
+ */
+export function useClaudeLoginScope(
+	projectId: string | null | undefined,
+	accounts: AgentAccountsState | null,
+	refreshKey?: unknown,
+): ClaudeLoginScope | undefined {
+	const [pin, setPin] = useState<{ projectId: string; configDir: string | null } | null>(null);
+	useEffect(() => {
+		if (!projectId) return;
+		let cancelled = false;
+		Promise.resolve()
+			.then(() => api.request.getProjectClaudeLogin({ projectId }))
+			.then((res) => {
+				if (!cancelled) setPin({ projectId, configDir: res?.configDir ?? null });
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectId, refreshKey]);
+	if (!projectId || !accounts || pin?.projectId !== projectId) return undefined;
+	return { configDir: accounts.claude.accounts.length > 0 ? null : pin.configDir };
 }
 
 /** Every login a project pins via `CLAUDE_CONFIG_DIR`, for global surfaces that

@@ -14,12 +14,13 @@ import {
 	formatResetDelta,
 	isUnlimitedRateLimitSnapshot,
 	latestRateLimitSnapshot,
+	scopeRateLimitSnapshots,
 	windowLabel,
 	rateLimitLoginKey,
 	worstSnapshotWindow,
 } from "../../shared/rate-limits";
 import type { AgentAccountsState } from "../../shared/agent-accounts";
-import { AGENT_ACCOUNTS_CHANGED_EVENT, usePinnedClaudeLogins } from "./AgentAccountIndicator";
+import { AGENT_ACCOUNTS_CHANGED_EVENT, useClaudeLoginScope, usePinnedClaudeLogins } from "./AgentAccountIndicator";
 import { SOURCE_NAMES, severityFill } from "./rate-limit-ui";
 import AgentUsagePanel from "./AgentUsagePanel";
 
@@ -41,8 +42,10 @@ const PANEL_WIDTH = 26 * 16;
  * must not be one stray click away from a panel the pointer passed through.
  * Codex monthly credits come from a cached app-server account read; all other
  * data comes from local files — see rate-limit-monitor.ts.
+ * Inside a project only that project's Claude login counts; with none in scope
+ * (dashboard, settings) every login does.
  */
-function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
+function RateLimitIndicator({ compact = false, projectId = null }: { compact?: boolean; projectId?: string | null }) {
 	const t = useT();
 	const [report, setReport] = useState<AgentRateLimitsReport | null>(null);
 	const [accounts, setAccounts] = useState<AgentAccountsState | null>(null);
@@ -80,10 +83,15 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 		return () => window.removeEventListener(AGENT_ACCOUNTS_CHANGED_EVENT, reload);
 	}, []);
 
-	const latestSnapshot = report ? latestRateLimitSnapshot(report) : null;
+	// Re-resolved on every open, like the pinned logins: the pin lives in config files.
+	const scope = useClaudeLoginScope(projectId, accounts, flyout.open);
+	const scoped: AgentRateLimitsReport | null = report
+		? { ...report, snapshots: scopeRateLimitSnapshots(report.snapshots, scope) }
+		: null;
+	const latestSnapshot = scoped ? latestRateLimitSnapshot(scoped) : null;
 	const latestWindow = latestSnapshot ? worstSnapshotWindow(latestSnapshot) : null;
 	const unlimited = latestSnapshot ? isUnlimitedRateLimitSnapshot(latestSnapshot) : false;
-	if (!report || !latestSnapshot || (!latestWindow && !unlimited)) return null;
+	if (!scoped || !latestSnapshot || (!latestWindow && !unlimited)) return null;
 
 	const now = Date.now();
 	const percent = latestWindow && !unlimited ? Math.round(latestWindow.usedPercent) : 0;
@@ -101,7 +109,7 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 		: `${t("rateLimits.panelTitle")}: ${SOURCE_NAMES[latestSnapshot.source] ?? latestSnapshot.source}${latestLabel ? ` ${latestLabel}` : ""} ${t("rateLimits.percentUsed", { percent })}${latestReset ? `, ${t("rateLimits.resetsIn", { time: latestReset })}` : ""}`;
 	const interactiveAriaLabel = `${ariaLabel}. ${t("rateLimits.openAccounts")}`;
 
-	const pillSnapshots = report.snapshots.slice(0, MAX_PILL_BARS);
+	const pillSnapshots = scoped.snapshots.slice(0, MAX_PILL_BARS);
 
 	const colorClasses = danger
 		? "text-danger bg-danger/15 border-danger/30"
@@ -115,9 +123,10 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 
 	const panel = (
 		<AgentUsagePanel
-			report={report}
+			report={scoped}
 			accounts={accounts}
-			pinnedLogins={pinnedLogins}
+			pinnedLogins={scope ? pinnedLogins.filter((login) => login.configDir === scope.configDir) : pinnedLogins}
+			projectPinned={!!scope?.configDir}
 			// A sheet is opened deliberately and has no hover state to pass through;
 			// the desktop flyout has to be pinned first.
 			interactive={isNarrow || flyout.pinned}

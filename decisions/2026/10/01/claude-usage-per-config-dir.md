@@ -1,5 +1,7 @@
 # Claude usage is recorded per pinned CLAUDE_CONFIG_DIR
 
+> Partly superseded on 2026-10-01 by `decisions/2026/10/01/usage-pill-scoped-to-project.md`: inside a project the header pill now shows only that project's login; the global listing below still applies with no project in scope.
+
 ## Context
 
 A project can pin a Claude login by setting `CLAUDE_CONFIG_DIR` in its env (`.dev3/config*.json`). `dev3 statusline` wrote every session without a managed account id to the one shared `rate-limits/claude.json`. So the "System login (~/.claude)" usage row showed whichever pinned or real `~/.claude` session refreshed last, under the wrong account name. The global surfaces (header usage panel, Settings -> Accounts) have no project in scope, so they cannot pick "the" project's login.
