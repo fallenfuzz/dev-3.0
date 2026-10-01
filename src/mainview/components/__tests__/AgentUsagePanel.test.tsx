@@ -310,6 +310,63 @@ describe("AgentUsagePanel", () => {
 		expect(screen.getByText("Project login (…/app/.claude)")).toBeTruthy();
 	});
 
+	it("drops a default login nobody is signed into, even when an old reading is filed under it", () => {
+		const now = Date.now();
+		const state = accounts();
+		state.claude.accounts = [];
+		render(
+			<I18nProvider>
+				<AgentUsagePanel
+					report={{
+						generatedAt: now,
+						snapshots: [
+							{
+								source: "claude",
+								accountId: null,
+								capturedAt: now,
+								windows: [{ id: "five_hour", usedPercent: 83, resetsAt: null, windowMinutes: 300 }],
+								creditsBalance: null,
+								monthlyCredits: null,
+								planType: null,
+							},
+						],
+					}}
+					accounts={state}
+					pinnedLogins={[{ configDir: "/p/app/.claude", identity: null, projectNames: ["app"] }]}
+					interactive
+					onOpenSettings={() => {}}
+				/>
+			</I18nProvider>,
+		);
+		expect(screen.queryByText(/Default login/)).toBeNull();
+		expect(screen.queryByText(/83% used/)).toBeNull();
+	});
+
+	it("puts a pinned dir's label on its own line so the identity keeps its room", () => {
+		const state = accounts();
+		state.claude.accounts = [];
+		render(
+			<I18nProvider>
+				<AgentUsagePanel
+					report={{ generatedAt: Date.now(), snapshots: [] }}
+					accounts={state}
+					pinnedLogins={[
+						{
+							configDir: "/p/app/.claude",
+							identity: { email: "pin@corp.com", organization: null, plan: null, planLabel: null, accountId: null },
+							projectNames: ["app"],
+						},
+					]}
+					interactive
+					onOpenSettings={() => {}}
+				/>
+			</I18nProvider>,
+		);
+		const chip = screen.getByText("Project login (…/app/.claude)");
+		expect(chip.getAttribute("title")).toBe("/p/app/.claude");
+		expect(chip.closest(".flex.items-center")).toBeNull();
+	});
+
 	it("keeps an empty default login beside managed accounts, where it is a real choice", () => {
 		renderPanel();
 		expect(screen.getAllByRole("radio").some((r) => r.textContent?.includes("Default login (/home/me/.claude)"))).toBe(true);
