@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../i18n";
@@ -244,10 +244,22 @@ describe("RateLimitIndicator", () => {
 		renderIndicator();
 		await act(async () => {});
 		await openUsagePanel();
-		expect(await screen.findByText("5h")).toBeTruthy();
-		expect(screen.getByText("5% used")).toBeTruthy();
-		expect(screen.getByText("7d")).toBeTruthy();
-		expect(screen.getByText("42% used")).toBeTruthy();
+		const panel = within(await screen.findByRole("dialog"));
+		expect(panel.getByText("5h")).toBeTruthy();
+		expect(panel.getByText("5% used")).toBeTruthy();
+		expect(panel.getByText("7d")).toBeTruthy();
+		expect(panel.getByText("42% used")).toBeTruthy();
+	});
+
+	it("spells out both the 5h and the weekly window on the pill, coloured by the fuller one", async () => {
+		mockedGet.mockResolvedValue(report(97));
+		renderIndicator();
+		await act(async () => {});
+		const pill = getIndicator();
+		expect(pill.textContent).toContain("5h5%");
+		expect(pill.textContent).toContain("7d97%");
+		expect(pill.textContent!.indexOf("5h")).toBeLessThan(pill.textContent!.indexOf("7d"));
+		expect(pill.className).toContain("text-danger");
 	});
 
 	it("renders a usage bar per window with severity-colored fill and clamped width", async () => {
@@ -255,8 +267,7 @@ describe("RateLimitIndicator", () => {
 		renderIndicator();
 		await act(async () => {});
 		await openUsagePanel();
-		await screen.findByText("5h");
-		const dialog = screen.getByRole("dialog");
+		const dialog = await screen.findByRole("dialog");
 		const fills = dialog.querySelectorAll("[class*='rounded-full'] > span");
 		expect(fills.length).toBe(2);
 		expect((fills[0] as HTMLElement).className).toContain("bg-accent");

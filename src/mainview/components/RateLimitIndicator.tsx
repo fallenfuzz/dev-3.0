@@ -12,12 +12,13 @@ import {
 	RATE_LIMIT_DANGER_PERCENT,
 	RATE_LIMIT_WARN_PERCENT,
 	formatResetDelta,
+	headerPillWindows,
 	isUnlimitedRateLimitSnapshot,
 	latestRateLimitSnapshot,
 	scopeRateLimitSnapshots,
 	windowLabel,
-	rateLimitLoginKey,
 	worstSnapshotWindow,
+	rateLimitLoginKey,
 } from "../../shared/rate-limits";
 import type { AgentAccountsState } from "../../shared/agent-accounts";
 import { AGENT_ACCOUNTS_CHANGED_EVENT, useClaudeLoginScope, usePinnedClaudeLogins } from "./AgentAccountIndicator";
@@ -99,11 +100,12 @@ function RateLimitIndicator({ compact = false, projectId = null }: { compact?: b
 	const warn = !danger && percent >= RATE_LIMIT_WARN_PERCENT;
 
 	const latestReset = formatResetDelta(latestWindow?.resetsAt ?? null, now);
-	const latestLabel = latestWindow
-		? latestWindow.id === "monthly_credits"
-			? t("rateLimits.monthlyLabel")
-			: windowLabel(latestWindow)
-		: null;
+	const labelOf = (w: NonNullable<typeof latestWindow>) =>
+		w.id === "monthly_credits" ? t("rateLimits.monthlyLabel") : windowLabel(w);
+	const latestLabel = latestWindow ? labelOf(latestWindow) : null;
+	// Every window spelled out: the 5h one tracks the session, the 7d one the week.
+	// The colour still follows the fullest, so a red week cannot hide behind the hour.
+	const pillWindows = headerPillWindows(latestSnapshot);
 	const ariaLabel = unlimited
 		? `${t("rateLimits.panelTitle")}: ${SOURCE_NAMES[latestSnapshot.source] ?? latestSnapshot.source} ${t("rateLimits.unlimited")}`
 		: `${t("rateLimits.panelTitle")}: ${SOURCE_NAMES[latestSnapshot.source] ?? latestSnapshot.source}${latestLabel ? ` ${latestLabel}` : ""} ${t("rateLimits.percentUsed", { percent })}${latestReset ? `, ${t("rateLimits.resetsIn", { time: latestReset })}` : ""}`;
@@ -175,7 +177,14 @@ function RateLimitIndicator({ compact = false, projectId = null }: { compact?: b
 							t("rateLimits.unlimited")
 						) : (
 							<>
-								{percent}%<span className="ml-0.5 text-nano font-normal opacity-70">{t("rateLimits.used")}</span>
+								{pillWindows.map((w, i) => (
+									<span key={w.id}>
+										{i > 0 ? <span className="mx-1 font-normal opacity-50">·</span> : null}
+										<span className="mr-0.5 font-normal opacity-70">{labelOf(w)}</span>
+										{Math.round(w.usedPercent)}%
+									</span>
+								))}
+								<span className="ml-0.5 text-nano font-normal opacity-70">{t("rateLimits.used")}</span>
 							</>
 						)}
 					</span>
