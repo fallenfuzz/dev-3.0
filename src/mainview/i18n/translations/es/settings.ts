@@ -566,6 +566,8 @@ const settings = {
 	"settings.agentAccountsDesc": "Guarda varios inicios de sesión por agente y cambia el activo sin volver a iniciar sesión.",
 	"settings.accountsDefaultLogin": "Sesión predeterminada ({dir})",
 	"settings.accountsProjectLogin": "Sesión del proyecto ({dir})",
+	"settings.accountsNotSignedIn": "Sin sesión iniciada",
+	"settings.accountsPinnedHint": "Los proyectos con su propia sesión siempre la usan; la sesión predeterminada solo se aplica a los que no tienen una.",
 	"settings.accountsPinnedBy": "Fijado por {projects}",
 	"settings.accountsPinnedOverridden": "Tus cuentas de Claude gestionadas por dev3 anulan estas fijaciones: cada lanzamiento usa el CLAUDE_CONFIG_DIR de la cuenta elegida.",
 	"settings.accountsActive": "Predeterminada",
