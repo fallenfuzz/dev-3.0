@@ -116,6 +116,24 @@ export function latestRateLimitSnapshot(report: AgentRateLimitsReport): AgentRat
 	return latest;
 }
 
+/**
+ * The Claude login one screen is about: the dir its project pins when that pin is
+ * in force, null for the default login and managed accounts. A screen with no
+ * project in scope passes no scope and sees every login.
+ */
+export interface ClaudeLoginScope {
+	configDir: string | null;
+}
+
+/** Drops Claude readings from logins outside `scope`; other agents are untouched. */
+export function scopeRateLimitSnapshots(
+	snapshots: AgentRateLimitSnapshot[],
+	scope: ClaudeLoginScope | undefined,
+): AgentRateLimitSnapshot[] {
+	if (!scope) return snapshots;
+	return snapshots.filter((s) => s.source !== "claude" || (s.configDir ?? null) === scope.configDir);
+}
+
 /** The most-used window within one account snapshot. */
 export function worstSnapshotWindow(snapshot: AgentRateLimitSnapshot): RateLimitWindow | null {
 	let worst: RateLimitWindow | null = null;
