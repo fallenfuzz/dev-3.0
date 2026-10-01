@@ -77,4 +77,51 @@ describe("caffeinate (systemd-inhibit backend)", () => {
 		expect(spawn).toHaveBeenCalledTimes(5);
 		expect(isCaffeinateAvailable()).toBe(true);
 	});
+
+	it("clears the strikes once an inhibit process has held the lock, even if it was then stopped", async () => {
+		const { updateCaffeinateState, shutdownCaffeinate, isCaffeinateAvailable, spawn } = await load();
+		let clock = 0;
+		const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+		try {
+			const refuse = async () => {
+				spawn.mockImplementationOnce(() => fakeProc(1));
+				updateCaffeinateState(false);
+				await flush();
+			};
+			await refuse();
+			await refuse();
+			let finish: (code: number) => void = () => {};
+			spawn.mockImplementationOnce(() => ({ pid: 1, kill: vi.fn(), exited: new Promise<number>((r) => { finish = r; }) }));
+			updateCaffeinateState(false);
+			clock += 60_000;
+			shutdownCaffeinate();
+			finish(143);
+			await flush();
+			await refuse();
+			await refuse();
+			expect(isCaffeinateAvailable()).toBe(true);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("does not count a non-zero exit after the quick-exit window", async () => {
+		const { updateCaffeinateState, isCaffeinateAvailable, spawn } = await load();
+		let clock = 0;
+		const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+		try {
+			for (let i = 0; i < 5; i++) {
+				let finish: (code: number) => void = () => {};
+				spawn.mockImplementationOnce(() => ({ pid: 1, kill: vi.fn(), exited: new Promise<number>((r) => { finish = r; }) }));
+				updateCaffeinateState(false);
+				clock += 6_000;
+				finish(1);
+				await flush();
+			}
+			expect(spawn).toHaveBeenCalledTimes(5);
+			expect(isCaffeinateAvailable()).toBe(true);
+		} finally {
+			now.mockRestore();
+		}
+	});
 });

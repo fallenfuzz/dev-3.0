@@ -21,9 +21,9 @@ let detectedBackend: "caffeinate" | "systemd-inhibit" | null = null;
 let detectedBackendPath: string | null = null; // absolute path from `which`
 let consecutiveSpawnFailures = 0;
 
-// After this many consecutive spawn failures, stop retrying for the process
-// lifetime. A broken environment (e.g. posix_spawn ENOENT) otherwise produces
-// an error log + failed fork every 10-second poll cycle, forever.
+// After this many consecutive failures (a spawn that throws, or an inhibit
+// process refused at once), stop retrying for the process lifetime. A broken
+// environment otherwise logs an error + forks every 10-second poll, forever.
 const MAX_SPAWN_FAILURES = 3;
 
 // An inhibit process that exits non-zero this soon after spawning was refused
@@ -130,21 +130,20 @@ function startInhibit(): void {
 
 	try {
 		const proc = spawn(cmd);
-		const startedAt = Date.now();
+		const startedAt = performance.now(); // monotonic: a clock step must not hide a refusal
 		sleepInhibitProc = proc;
 		log.info("Sleep inhibit started", { backend: detectedBackend, pid: proc.pid });
 
-		// Clean up reference when the process exits (timeout or kill)
 		proc.exited.then((code) => {
 			log.info("Sleep inhibit exited", { backend: detectedBackend, pid: proc.pid, code });
-			// stopInhibit() clears the reference before killing, so a process that
-			// is no longer current was stopped on purpose - not a failure.
-			if (sleepInhibitProc !== proc) return;
-			sleepInhibitProc = null;
-			if (code !== 0 && Date.now() - startedAt < QUICK_EXIT_MS) {
+			// stopInhibit() drops the reference synchronously and this handler runs
+			// later, so a process that is no longer current was stopped on purpose.
+			const stoppedOnPurpose = sleepInhibitProc !== proc;
+			if (!stoppedOnPurpose) sleepInhibitProc = null;
+			if (performance.now() - startedAt >= QUICK_EXIT_MS) {
+				consecutiveSpawnFailures = 0; // it held the lock, so the backend works
+			} else if (!stoppedOnPurpose && code !== 0) {
 				recordFailure("Sleep inhibit exited immediately", { code });
-			} else {
-				consecutiveSpawnFailures = 0;
 			}
 		}).catch(() => {
 			if (sleepInhibitProc === proc) sleepInhibitProc = null;
