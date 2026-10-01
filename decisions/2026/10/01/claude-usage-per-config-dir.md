@@ -17,7 +17,7 @@ The statusline subprocess inherits the session env, so `CLAUDE_CONFIG_DIR` is vi
 
 ## Risks
 
-- **Old dumps.** Readings written before this change stay in `claude.json` until they age out of the 7-day window.
+- **Old dumps.** Readings written before this change stay in `claude.json` until they age out of the 7-day window. When some project pins a dir and `~/.claude.json` has no `oauthAccount`, the panel drops the default row and its reading (`rowsForKind` in `AgentUsagePanel.tsx`), because that reading can only be a misfiled pinned session. Without pins the row stays, since a login whose `.claude.json` lacks `oauthAccount` is still a real login.
 - **No migration.** The new directory is additive, so an older app simply ignores it.
 - **Two dirs, one account.** Two dirs logged into the same account show as two rows with the same numbers.
 

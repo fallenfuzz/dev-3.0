@@ -478,6 +478,17 @@ describe("AgentAccountsSection", () => {
 		expect(screen.getByText("Pinned by app, app-docs")).toBeTruthy();
 		expect(screen.getByText("Default login (/home/me/.claude)")).toBeTruthy();
 		expect(screen.queryByText(/override these pins/)).toBeNull();
+		expect(screen.getByText(/the default login only applies to projects without one/)).toBeTruthy();
+		// Informational rows carry no radio circle that would read as "not selected".
+		expect(screen.getByTestId("pinned-claude-logins").querySelector(".rounded-full")).toBeNull();
+	});
+
+	it("says when nobody is signed into the default login", async () => {
+		mockedApi.request.listAgentAccounts.mockResolvedValue(
+			makeState({ claude: { ...makeState().claude, accounts: [], systemIdentity: null } }),
+		);
+		renderSection();
+		expect(await screen.findByText("Not signed in")).toBeTruthy();
 	});
 
 	it("warns that managed accounts override the pins", async () => {
