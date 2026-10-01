@@ -30,8 +30,9 @@ import {
 import type { ClaudeSessionStats } from "../shared/session-stats";
 import { MAX_SESSION_STATS, SESSION_STATS_RECENT_MS, parseClaudeSessionStats } from "../shared/session-stats";
 import { fetchCodexRateLimitSnapshot } from "./codex-rate-limits";
-import { loadProjects, loadTasks } from "./data";
-import { getTaskTitle } from "../shared/types";
+import { loadProjects, loadTasks, loadVirtualProjects } from "./data";
+import { TERMINAL_STATUSES, getTaskTitle } from "../shared/types";
+import type { Project, Task } from "../shared/types";
 import { listClaudeAccountDirs, listCodexAccountDirs } from "./agent-accounts";
 import { DEV3_HOME } from "./paths";
 import { createLogger } from "./logger";
@@ -155,30 +156,48 @@ export function readClaudeSessionDumps(dir: string = CLAUDE_SESSION_STATS_DIR, n
 	return sessions.sort((a, b) => b.capturedAt - a.capturedAt);
 }
 
-/** Attach board identity and drop sessions whose task is gone or finished. */
-async function attachTaskIdentity(sessions: ClaudeSessionStats[]): Promise<ClaudeSessionStats[]> {
+/** Attach board identity and drop sessions whose task is gone or finished.
+ *  The cap is per project: the panel lists one project's sessions at a time. */
+export async function attachTaskIdentity(
+	sessions: ClaudeSessionStats[],
+	load: { projects: () => Promise<Project[]>; tasks: (project: Project) => Promise<Task[]> } = {
+		projects: async () => [...(await loadProjects()), ...(await loadVirtualProjects())],
+		tasks: loadTasks,
+	},
+): Promise<ClaudeSessionStats[]> {
 	if (sessions.length === 0) return [];
 	const wanted = new Set(sessions.map((s) => s.taskId));
 	const found = new Map<string, { title: string; seq: number; projectName: string; projectId: string }>();
+	let projects: Project[];
 	try {
-		for (const project of await loadProjects()) {
-			if (found.size === wanted.size) break;
-			for (const task of await loadTasks(project)) {
-				if (!wanted.has(task.id) || task.status === "completed" || task.status === "cancelled") continue;
-				found.set(task.id, { title: getTaskTitle(task), seq: task.seq, projectName: project.name, projectId: project.id });
-			}
-		}
+		projects = await load.projects();
 	} catch (err) {
-		log.warn("Session stats task lookup failed", { error: String(err) });
+		log.warn("Session stats project lookup failed", { error: String(err) });
 		return [];
 	}
-	return sessions
-		.filter((s) => found.has(s.taskId))
-		.slice(0, MAX_SESSION_STATS)
-		.map((s) => {
-			const task = found.get(s.taskId)!;
-			return { ...s, taskTitle: task.title, taskSeq: task.seq, projectName: task.projectName, projectId: task.projectId };
-		});
+	for (const project of projects) {
+		if (found.size === wanted.size) break;
+		try {
+			for (const task of await load.tasks(project)) {
+				if (!wanted.has(task.id) || TERMINAL_STATUSES.includes(task.status)) continue;
+				found.set(task.id, { title: getTaskTitle(task), seq: task.seq, projectName: project.name, projectId: project.id });
+			}
+		} catch (err) {
+			// One unreadable board must not hide every other project's sessions.
+			log.warn("Session stats task lookup failed", { projectId: project.id, error: String(err) });
+		}
+	}
+	const perProject = new Map<string, number>();
+	const out: ClaudeSessionStats[] = [];
+	for (const s of sessions) {
+		const task = found.get(s.taskId);
+		if (!task) continue;
+		const count = perProject.get(task.projectId) ?? 0;
+		if (count >= MAX_SESSION_STATS) continue;
+		perProject.set(task.projectId, count + 1);
+		out.push({ ...s, taskTitle: task.title, taskSeq: task.seq, projectName: task.projectName, projectId: task.projectId });
+	}
+	return out;
 }
 
 function codexHomeRoot(): string {
