@@ -163,6 +163,32 @@ export interface ProjectClaudeLogin {
 	identity: AgentAccountIdentity | null;
 }
 
+/** One login pinned by at least one project's `CLAUDE_CONFIG_DIR`, with the
+ *  names of the projects that pin it. Listed beside `~/.claude` because usage
+ *  and identity come from that directory, not from the system login. */
+export interface PinnedClaudeLogin {
+	configDir: string;
+	identity: AgentAccountIdentity | null;
+	projectNames: string[];
+}
+
+/** A `CLAUDE_CONFIG_DIR` value as one comparable key: `~` expanded, trailing
+ *  slashes dropped. Null when unset, or when it names `<home>/.claude`, which
+ *  is the system login itself. */
+export function normalizeClaudeConfigDir(raw: string | null | undefined, home: string): string | null {
+	const trimmed = raw?.trim();
+	if (!trimmed || trimmed === ENV_UNSET) return null;
+	const expanded = trimmed === "~" || trimmed.startsWith("~/") ? home + trimmed.slice(1) : trimmed;
+	const dir = expanded.length > 1 ? expanded.replace(/\/+$/, "") : expanded;
+	return dir === `${home.replace(/\/+$/, "")}/.claude` ? null : dir;
+}
+
+/** `/home/me/x/.claude` -> `.../x/.claude`; short paths stay whole. */
+export function shortClaudeConfigDir(dir: string): string {
+	const parts = dir.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
+	return parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : dir;
+}
+
 /** Parse a Claude Code `.claude.json` payload into an identity (via `.oauthAccount`). */
 export function parseClaudeIdentity(claudeJson: unknown): AgentAccountIdentity | null {
 	const root = asRecord(claudeJson);

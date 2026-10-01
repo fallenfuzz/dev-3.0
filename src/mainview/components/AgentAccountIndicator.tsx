@@ -6,13 +6,15 @@ import type {
 	AgentAccountKind,
 	AgentAccountsState,
 	AgentApiProfileInfo,
+	PinnedClaudeLogin,
 	ProjectClaudeLogin,
 } from "../../shared/agent-accounts";
-import { shortCodexWorkspaceId } from "../../shared/agent-accounts";
+import { shortClaudeConfigDir, shortCodexWorkspaceId } from "../../shared/agent-accounts";
 import type { CodingAgent } from "../../shared/types";
 import type { AgentRateLimitSnapshot, AgentRateLimitsReport } from "../../shared/rate-limits";
 import {
 	RATE_LIMIT_DANGER_PERCENT,
+	findRateLimitSnapshot,
 	formatResetDelta,
 	isUnlimitedRateLimitSnapshot,
 	windowLabel,
@@ -101,10 +103,25 @@ function useProjectClaudeLogin(projectId: string | undefined, enabled: boolean):
 	return login;
 }
 
-/** `/home/me/x/.claude` → `~/x/.claude`; long paths keep their last two segments. */
-function shortConfigDir(dir: string): string {
-	const parts = dir.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
-	return parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : dir;
+/** Every login a project pins via `CLAUDE_CONFIG_DIR`, for global surfaces that
+ *  list them beside `~/.claude`. Re-read when `enabled` turns on. */
+export function usePinnedClaudeLogins(enabled = true): PinnedClaudeLogin[] {
+	const [logins, setLogins] = useState<PinnedClaudeLogin[]>([]);
+	useEffect(() => {
+		if (!enabled) return;
+		let cancelled = false;
+		// Promise.resolve absorbs a missing RPC method in plain-object api mocks.
+		Promise.resolve()
+			.then(() => api.request.listPinnedClaudeLogins())
+			.then((res) => {
+				if (!cancelled && Array.isArray(res)) setLogins(res);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [enabled]);
+	return logins;
 }
 
 /** Rate-limit report, fetched lazily (popover open) + refreshed by push. */
@@ -542,10 +559,13 @@ export default function AgentAccountIndicator({
 	const effectiveSelectedId = isLocal && value !== undefined && !carriedOver ? value : kindState.activeId;
 
 	const selectedAccount: AgentAccount | null = kindState.accounts.find((a) => a.id === effectiveSelectedId) ?? null;
+	// Any managed Claude account makes every launch set (or unset) CLAUDE_CONFIG_DIR
+	// itself, which overrides the project's pin - so the pin only holds without one.
+	const pinnedDir = state.claude.accounts.length === 0 ? (projectLogin?.configDir ?? null) : null;
 	const fallbackIdentity =
-		kind === "claude" ? (projectLogin ? projectLogin.identity : state.claude.systemIdentity) : state.codex.currentIdentity;
-	const systemLoginLabel = projectLogin?.configDir
-		? t("settings.accountsProjectLogin", { dir: shortConfigDir(projectLogin.configDir) })
+		kind === "claude" ? (pinnedDir ? (projectLogin?.identity ?? null) : state.claude.systemIdentity) : state.codex.currentIdentity;
+	const systemLoginLabel = pinnedDir
+		? t("settings.accountsProjectLogin", { dir: shortClaudeConfigDir(pinnedDir) })
 		: t("settings.accountsSystemLogin");
 	const fallbackLabel = kind === "claude" ? systemLoginLabel : t("settings.accountsUnmanaged");
 	const activeLabel = selectedAccount ? selectedAccount.label : (fallbackIdentity?.email ?? fallbackLabel);
@@ -557,9 +577,9 @@ export default function AgentAccountIndicator({
 
 	// Join the rate-limit report to a row's account: null accountId = the
 	// provider's system login. API profiles have no OAuth limit windows.
-	const usageFor = (accountId: string | null, isApi = false): RowUsage | null => {
+	const usageFor = (accountId: string | null, isApi = false, configDir: string | null = null): RowUsage | null => {
 		if (!report || isApi) return null;
-		const snap = report.snapshots.find((s) => s.source === kind && (s.accountId ?? null) === accountId) ?? null;
+		const snap = findRateLimitSnapshot(report, kind, accountId, configDir);
 		if (!snap) return { snap: null, state: "none" };
 		if (isUnlimitedRateLimitSnapshot(snap)) return { snap, state: "unlimited" };
 		return { snap, state: snap.windows.length > 0 || snap.monthlyCredits ? "used" : "none" };
@@ -578,7 +598,7 @@ export default function AgentAccountIndicator({
 			workspaceLabel: workspaceLabel(fallbackIdentity),
 			isApi: false,
 			isActive: effectiveSelectedId === null,
-			usage: usageFor(null),
+			usage: usageFor(null, false, kind === "claude" ? pinnedDir : null),
 			onSelect: isLocal
 				? () => handleSelectLocal(null)
 				: () => handleSelectGlobal("claude", null),

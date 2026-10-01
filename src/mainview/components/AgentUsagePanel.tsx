@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentAccountKind, AgentAccountsState } from "../../shared/agent-accounts";
-import type { AgentRateLimitSnapshot, AgentRateLimitsReport, RateLimitSource } from "../../shared/rate-limits";
-import { isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
+import type { AgentAccountIdentity, AgentAccountKind, AgentAccountsState, PinnedClaudeLogin } from "../../shared/agent-accounts";
+import { shortClaudeConfigDir } from "../../shared/agent-accounts";
+import type { AgentRateLimitSnapshot, AgentRateLimitsReport } from "../../shared/rate-limits";
+import { findRateLimitSnapshot, isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
 import { api } from "../rpc";
 import { toast } from "../toast";
 import { useT, type TFunction } from "../i18n";
@@ -24,8 +25,10 @@ interface UsageRow {
 	key: string;
 	kind: AgentAccountKind;
 	accountId: string | null;
+	/** Set on a project-pinned `CLAUDE_CONFIG_DIR` login; such rows are informational. */
+	configDir: string | null;
 	account: AccountLine | null;
-	/** Extra chip next to the identity ("System login", "Unmanaged login"). */
+	/** Extra chip next to the identity ("System login", "Unmanaged login", "Project login"). */
 	chip: string | null;
 	snap: AgentRateLimitSnapshot | null;
 	isDefault: boolean;
@@ -34,13 +37,18 @@ interface UsageRow {
 	selectable: boolean;
 }
 
-function snapshotFor(
-	report: AgentRateLimitsReport,
-	source: RateLimitSource,
-	accountId: string | null,
-): AgentRateLimitSnapshot | null {
-	return report.snapshots.find((s) => s.source === source && (s.accountId ?? null) === accountId) ?? null;
+function identityLine(identity: AgentAccountIdentity | null): AccountLine | null {
+	if (!identity?.email) return null;
+	return {
+		name: identity.email,
+		email: identity.email,
+		organization: identity.organization ?? null,
+		planLabel: identity.planLabel ?? null,
+		isApi: false,
+	};
 }
+
+const rowIdentity = (accountId: string | null, configDir: string | null) => `${accountId ?? "system"}|${configDir ?? ""}`;
 
 /** Everything that distinguishes one row from another, spoken. Several accounts
  *  legitimately share an email, so the name alone names three rows at once. */
@@ -51,13 +59,15 @@ function spokenName(row: UsageRow, fallback: string): string {
 	return [account.name, ...extras].join(" · ");
 }
 
-/** Rows for one provider: its accounts first (the switchable set), then any
- *  reading left over from an account that no longer exists. */
+/** Rows for one provider: its accounts first (the switchable set), then the
+ *  logins projects pin via `CLAUDE_CONFIG_DIR`, then any reading left over from
+ *  an account or pin that no longer exists. */
 function rowsForKind(
 	kind: AgentAccountKind,
 	accounts: AgentAccountsState | null,
 	report: AgentRateLimitsReport,
-	labels: { systemLogin: string; unmanaged: string },
+	pinnedLogins: PinnedClaudeLogin[],
+	labels: { systemLogin: string; unmanaged: string; projectLogin: (dir: string) => string },
 ): UsageRow[] {
 	const rows: UsageRow[] = [];
 	const kindState = accounts?.[kind] ?? null;
@@ -79,11 +89,12 @@ function rowsForKind(
 			key: "claude:system",
 			kind,
 			accountId: null,
+			configDir: null,
 			account: identity ?? named(labels.systemLogin),
 			// With no identity to show, the row's own name already says "system
 			// login" — a chip repeating it would print the label twice.
 			chip: identity ? labels.systemLogin : null,
-			snap: snapshotFor(report, "claude", null),
+			snap: findRateLimitSnapshot(report, "claude", null),
 			isDefault: activeId === null,
 			selectable: true,
 		});
@@ -93,9 +104,10 @@ function rowsForKind(
 			key: "codex:unmanaged",
 			kind,
 			accountId: null,
+			configDir: null,
 			account: identity ?? named(labels.unmanaged),
 			chip: identity ? labels.unmanaged : null,
-			snap: snapshotFor(report, "codex", null),
+			snap: findRateLimitSnapshot(report, "codex", null),
 			isDefault: true,
 			selectable: false,
 		});
@@ -106,27 +118,51 @@ function rowsForKind(
 			key: `${kind}:${account.id}`,
 			kind,
 			accountId: account.id,
+			configDir: null,
 			account: resolveAccount(kind, accounts, account.id) ?? named(account.label),
 			chip: null,
-			snap: snapshotFor(report, kind, account.id),
+			snap: findRateLimitSnapshot(report, kind, account.id),
 			isDefault: account.id === activeId,
 			selectable: true,
 		});
 	}
 
-	const known = new Set(rows.map((row) => row.accountId));
+	// A pinned login is never "the default": the project's config picks it, not
+	// this switcher, so its row only reports usage.
+	if (kind === "claude") {
+		for (const login of pinnedLogins) {
+			const chip = labels.projectLogin(shortClaudeConfigDir(login.configDir));
+			const identity = identityLine(login.identity);
+			rows.push({
+				key: `claude:dir:${login.configDir}`,
+				kind,
+				accountId: null,
+				configDir: login.configDir,
+				account: identity ?? named(chip),
+				chip: identity ? chip : null,
+				snap: findRateLimitSnapshot(report, "claude", null, login.configDir),
+				isDefault: false,
+				selectable: false,
+			});
+		}
+	}
+
+	const known = new Set(rows.map((row) => rowIdentity(row.accountId, row.configDir)));
 	for (const snap of report.snapshots) {
 		if (snap.source !== kind) continue;
 		const id = snap.accountId ?? null;
-		if (known.has(id)) continue;
+		const configDir = snap.configDir ?? null;
+		if (known.has(rowIdentity(id, configDir))) continue;
+		const dirChip = configDir ? labels.projectLogin(shortClaudeConfigDir(configDir)) : null;
 		rows.push({
-			key: `${kind}:orphan:${id ?? "system"}`,
+			key: `${kind}:orphan:${rowIdentity(id, configDir)}`,
 			kind,
 			accountId: id,
-			account: resolveAccount(kind, accounts, id),
+			configDir,
+			account: configDir ? named(dirChip!) : resolveAccount(kind, accounts, id),
 			// A reading from the provider's own login while a managed account is the
 			// default: name it, so "why can't I pick this one?" answers itself.
-			chip: id === null ? (kind === "codex" ? labels.unmanaged : labels.systemLogin) : null,
+			chip: configDir ? null : id === null ? (kind === "codex" ? labels.unmanaged : labels.systemLogin) : null,
 			snap,
 			isDefault: false,
 			selectable: false,
@@ -240,11 +276,14 @@ const ARM_DELAY_MS = 300;
 export default function AgentUsagePanel({
 	report,
 	accounts,
+	pinnedLogins = [],
 	interactive,
 	onOpenSettings,
 }: {
 	report: AgentRateLimitsReport;
 	accounts: AgentAccountsState | null;
+	/** Logins projects pin via `CLAUDE_CONFIG_DIR`; each gets an informational row. */
+	pinnedLogins?: PinnedClaudeLogin[];
 	interactive: boolean;
 	onOpenSettings: () => void;
 }) {
@@ -275,8 +314,12 @@ export default function AgentUsagePanel({
 		}
 	}, [t]);
 
-	const labels = { systemLogin: t("settings.accountsSystemLogin"), unmanaged: t("settings.accountsUnmanaged") };
-	const blocks = KINDS.map((kind) => ({ kind, rows: rowsForKind(kind, accounts, report, labels) })).filter(
+	const labels = {
+		systemLogin: t("settings.accountsSystemLogin"),
+		unmanaged: t("settings.accountsUnmanaged"),
+		projectLogin: (dir: string) => t("settings.accountsProjectLogin", { dir }),
+	};
+	const blocks = KINDS.map((kind) => ({ kind, rows: rowsForKind(kind, accounts, report, pinnedLogins, labels) })).filter(
 		(block) => block.rows.length > 0,
 	);
 

@@ -9,12 +9,12 @@ import type {
 	ClaudeSlotModel,
 	ClaudeSlotModels,
 } from "../../../shared/agent-accounts";
-import { CLAUDE_MODEL_SLOTS, shortCodexWorkspaceId } from "../../../shared/agent-accounts";
+import { CLAUDE_MODEL_SLOTS, shortClaudeConfigDir, shortCodexWorkspaceId } from "../../../shared/agent-accounts";
 import { api } from "../../rpc";
 import { confirm } from "../../confirm";
 import { toast } from "../../toast";
 import type { TFunction } from "../../i18n";
-import { AGENT_ACCOUNTS_CHANGED_EVENT, notifyAgentAccountsChanged } from "../AgentAccountIndicator";
+import { AGENT_ACCOUNTS_CHANGED_EVENT, notifyAgentAccountsChanged, usePinnedClaudeLogins } from "../AgentAccountIndicator";
 import Tooltip from "../Tooltip";
 import SettingsEntry from "./SettingsEntry";
 import SettingsSection from "./SettingsSection";
@@ -579,6 +579,7 @@ function ApiProfileFormCard({
 
 export default function AgentAccountsSection({ t }: { t: TFunction }) {
 	const [state, setState] = useState<AgentAccountsState | null>(null);
+	const pinnedLogins = usePinnedClaudeLogins();
 	const [addFlow, setAddFlow] = useState<AddFlow | null>(null);
 	const [apiForm, setApiForm] = useState<ApiFormDraft | null>(null);
 	// null → the form creates a new profile; set → it edits this existing one.
@@ -840,6 +841,35 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 		);
 	}
 
+	// Logins projects pin via CLAUDE_CONFIG_DIR: not switchable here (the project's
+	// config picks them), so they render as informational rows under the radios.
+	const pinnedRows = pinnedLogins.length > 0 ? (
+		<div className="space-y-1.5" data-testid="pinned-claude-logins">
+			{pinnedLogins.map((login) => (
+				<div
+					key={login.configDir}
+					className="flex flex-wrap items-center gap-2.5 px-3 py-2 bg-elevated/50 border border-edge border-dashed rounded-lg"
+				>
+					<span aria-hidden className="w-3.5 h-3.5 rounded-full border-2 border-fg-muted/40 shrink-0" />
+					<div className="basis-40 min-w-0 flex-1 flex flex-wrap items-center gap-2">
+						<span className="text-fg-2 text-sm whitespace-nowrap streamer-private" title={login.configDir}>
+							{t("settings.accountsProjectLogin", { dir: shortClaudeConfigDir(login.configDir) })}
+						</span>
+						<IdentityBadges identity={login.identity} kind="claude" t={t} />
+					</div>
+					<span className="ml-auto text-fg-muted text-xs streamer-private">
+						{t("settings.accountsPinnedBy", { projects: login.projectNames.join(", ") })}
+					</span>
+				</div>
+			))}
+			{/* A managed account makes every launch set CLAUDE_CONFIG_DIR itself,
+			    which overrides these pins - say so rather than list dead rows silently. */}
+			{state.claude.accounts.length > 0 ? (
+				<p className="text-warning-strong text-xs">{t("settings.accountsPinnedOverridden")}</p>
+			) : null}
+		</div>
+	) : null;
+
 	const codexUnmanaged =
 		state.codex.currentIdentity && state.codex.activeId === null ? state.codex.currentIdentity : null;
 
@@ -867,7 +897,7 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 					}
 					t={t}
 				/>,
-				null,
+				pinnedRows,
 			)}
 			{renderAgentBlock(
 				"codex",
