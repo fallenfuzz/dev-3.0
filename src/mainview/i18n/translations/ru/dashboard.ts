@@ -186,6 +186,9 @@ const dashboard = {
 	"rateLimits.sessionDuration": "{time} (API {api})",
 	"rateLimits.sessionLines": "+{added}/-{removed}",
 	"rateLimits.sessionEffort": "усилие {level}",
+	"rateLimits.sessionCacheWarmTtlUntil": "кэш тёплый ({ttl}) до {time}",
+	"rateLimits.sessionTurn": "ход: {input} вход / {output} выход",
+	"rateLimits.sessionThinking": "мышление вкл",
 	"rateLimits.noRecentData": "нет свежих данных",
 	"rateLimits.quotaExhausted": "Лимит исчерпан — запуск будет падать до сброса.",
 
