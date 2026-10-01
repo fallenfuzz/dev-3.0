@@ -15,6 +15,7 @@ import {
 	RATE_LIMIT_ACTIVITY_WINDOW_MS,
 	rateLimitActivityAt,
 	scopeRateLimitSnapshots,
+	headerPillWindows,
 	windowLabel,
 	worstSnapshotWindow,
 	worstWindow,
@@ -305,5 +306,27 @@ describe("scopeRateLimitSnapshots", () => {
 
 	it("keeps only unpinned Claude readings when the project has no pin", () => {
 		expect(scopeRateLimitSnapshots(all, { configDir: null })).toEqual([all[2], all[3]]);
+	});
+});
+
+describe("headerPillWindows", () => {
+	const w = (id: string, usedPercent: number, windowMinutes: number | null) => ({ id, usedPercent, resetsAt: null, windowMinutes });
+	const snap = (windows: ReturnType<typeof w>[]) => ({
+		source: "claude" as const,
+		capturedAt: 1,
+		windows,
+		creditsBalance: null,
+		monthlyCredits: null,
+		planType: null,
+	});
+
+	it("lists the 5h window before the weekly one, whatever the input order", () => {
+		const out = headerPillWindows(snap([w("seven_day", 55, 10080), w("five_hour", 7, 300)]));
+		expect(out.map((x) => x.id)).toEqual(["five_hour", "seven_day"]);
+	});
+
+	it("leaves monthly credits out beside timed windows, and keeps them when they are all there is", () => {
+		expect(headerPillWindows(snap([w("monthly_credits", 40, null), w("primary", 10, 300)])).map((x) => x.id)).toEqual(["primary"]);
+		expect(headerPillWindows(snap([w("monthly_credits", 40, null)])).map((x) => x.id)).toEqual(["monthly_credits"]);
 	});
 });
