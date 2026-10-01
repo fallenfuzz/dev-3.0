@@ -7,6 +7,7 @@ import { api } from "../rpc";
 import { toast } from "../toast";
 import { useT, type TFunction } from "../i18n";
 import { notifyAgentAccountsChanged } from "./AgentAccountIndicator";
+import UsageSessionsBlock from "./UsageSessionsBlock";
 import {
 	ACCOUNT_CARD_CLASS,
 	AccountCardHeader,
@@ -437,6 +438,7 @@ export default function AgentUsagePanel({
 					</div>
 				);
 			})}
+			{report.sessions?.length ? <UsageSessionsBlock sessions={report.sessions} now={now} /> : null}
 		</div>
 	);
 }
