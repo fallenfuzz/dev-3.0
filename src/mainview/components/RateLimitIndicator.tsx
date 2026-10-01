@@ -40,8 +40,10 @@ const PANEL_WIDTH = 26 * 16;
  * must not be one stray click away from a panel the pointer passed through.
  * Codex monthly credits come from a cached app-server account read; all other
  * data comes from local files — see rate-limit-monitor.ts.
+ * Inside a project only that project's Claude login counts; with none in scope
+ * (dashboard, settings) every login does.
  */
-function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
+function RateLimitIndicator({ compact = false, projectId = null }: { compact?: boolean; projectId?: string | null }) {
 	const t = useT();
 	const [report, setReport] = useState<AgentRateLimitsReport | null>(null);
 	const [accounts, setAccounts] = useState<AgentAccountsState | null>(null);
@@ -113,6 +115,7 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 		<AgentUsagePanel
 			report={report}
 			accounts={accounts}
+			projectId={projectId}
 			// A sheet is opened deliberately and has no hover state to pass through;
 			// the desktop flyout has to be pinned first.
 			interactive={isNarrow || flyout.pinned}
