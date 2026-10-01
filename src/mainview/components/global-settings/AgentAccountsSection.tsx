@@ -887,7 +887,7 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 				state.claude.activeId,
 				<AccountRow
 					kind="claude"
-					label={t("settings.accountsSystemLogin")}
+					label={t("settings.accountsDefaultLogin", { dir: state.claude.systemConfigDir })}
 					identity={state.claude.systemIdentity}
 					isActive={state.claude.activeId === null}
 					onActivate={

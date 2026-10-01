@@ -30,7 +30,7 @@ function accounts(): AgentAccountsState {
 				{ id: "home", kind: "claude", label: "Home Claude", identity: null, auth: "oauth", api: null, createdAt: 0 },
 			],
 			activeId: "work",
-			systemIdentity: null,
+			systemConfigDir: "/home/me/.claude", systemIdentity: null,
 		},
 		codex: { accounts: [], activeId: null, currentIdentity: null },
 	};
@@ -53,7 +53,7 @@ function sameEmailAccounts(): AgentAccountsState {
 				{ id: "b", kind: "claude", label: "dev@corp.com", identity: identity("Beta"), auth: "oauth", api: null, createdAt: 0 },
 			],
 			activeId: null,
-			systemIdentity: null,
+			systemConfigDir: "/home/me/.claude", systemIdentity: null,
 		},
 		codex: { accounts: [], activeId: null, currentIdentity: null },
 	};
@@ -198,7 +198,7 @@ describe("AgentUsagePanel", () => {
 	it("switches back to the Claude system login", async () => {
 		renderPanel();
 		await userEvent.click(
-			screen.getByRole("radio", { name: "Make System login (~/.claude) the default account" }),
+			screen.getByRole("radio", { name: "Make Default login (/home/me/.claude) the default account" }),
 		);
 		expect(setActive).toHaveBeenCalledWith({ kind: "claude", accountId: null });
 	});
@@ -256,7 +256,7 @@ describe("AgentUsagePanel", () => {
 		const pinned = screen.getAllByRole("radio").find((r) => r.textContent?.includes("pin@corp.com"));
 		expect(pinned?.textContent).toContain("Project login (…/app/.claude)");
 		expect(pinned?.textContent).toContain("77% used");
-		const system = screen.getAllByRole("radio").find((r) => r.textContent?.includes("System login (~/.claude)"));
+		const system = screen.getAllByRole("radio").find((r) => r.textContent?.includes("Default login (/home/me/.claude)"));
 		expect(system?.textContent).not.toContain("77%");
 		await userEvent.click(pinned as HTMLElement);
 		expect(setActive).not.toHaveBeenCalled();
@@ -290,5 +290,28 @@ describe("AgentUsagePanel", () => {
 		);
 		const orphan = screen.getAllByRole("radio").find((r) => r.textContent?.includes("13% used"));
 		expect(orphan?.textContent).toContain("Project login (…/proj/.claude)");
+	});
+
+	it("drops an empty default login when nothing needs it", () => {
+		const state = accounts();
+		state.claude.accounts = [];
+		render(
+			<I18nProvider>
+				<AgentUsagePanel
+					report={report()}
+					accounts={state}
+					pinnedLogins={[{ configDir: "/p/app/.claude", identity: null, projectNames: ["app"] }]}
+					interactive
+					onOpenSettings={() => {}}
+				/>
+			</I18nProvider>,
+		);
+		expect(screen.queryByText("Default login (/home/me/.claude)")).toBeNull();
+		expect(screen.getByText("Project login (…/app/.claude)")).toBeTruthy();
+	});
+
+	it("keeps an empty default login beside managed accounts, where it is a real choice", () => {
+		renderPanel();
+		expect(screen.getAllByRole("radio").some((r) => r.textContent?.includes("Default login (/home/me/.claude)"))).toBe(true);
 	});
 });
