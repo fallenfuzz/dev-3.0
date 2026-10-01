@@ -18,15 +18,11 @@ import {
 	scopeRateLimitSnapshots,
 	windowLabel,
 	worstSnapshotWindow,
-	rateLimitLoginKey,
 } from "../../shared/rate-limits";
 import type { AgentAccountsState } from "../../shared/agent-accounts";
 import { AGENT_ACCOUNTS_CHANGED_EVENT, useClaudeLoginScope, usePinnedClaudeLogins } from "./AgentAccountIndicator";
 import { SOURCE_NAMES, severityFill } from "./rate-limit-ui";
 import AgentUsagePanel from "./AgentUsagePanel";
-
-/** The pill stacks one mini bar per account, capped to keep the header slim. */
-const MAX_PILL_BARS = 4;
 
 /** Panel width in px — wide enough for a "label · bar · % · reset" line. */
 const PANEL_WIDTH = 26 * 16;
@@ -111,7 +107,6 @@ function RateLimitIndicator({ compact = false, projectId = null }: { compact?: b
 		: `${t("rateLimits.panelTitle")}: ${SOURCE_NAMES[latestSnapshot.source] ?? latestSnapshot.source}${latestLabel ? ` ${latestLabel}` : ""} ${t("rateLimits.percentUsed", { percent })}${latestReset ? `, ${t("rateLimits.resetsIn", { time: latestReset })}` : ""}`;
 	const interactiveAriaLabel = `${ariaLabel}. ${t("rateLimits.openAccounts")}`;
 
-	const pillSnapshots = scoped.snapshots.slice(0, MAX_PILL_BARS);
 
 	const colorClasses = danger
 		? "text-danger bg-danger/15 border-danger/30"
@@ -149,22 +144,21 @@ function RateLimitIndicator({ compact = false, projectId = null }: { compact?: b
 				className={`header-anim flex cursor-pointer select-none items-center gap-1.5 px-1.5 py-1 rounded-lg border transition-colors ${colorClasses}`}
 				{...flyout.triggerProps}
 			>
-				{/* One mini bar per recently active account, top-to-bottom in the
-				    same order as the panel cards. Unlimited accounts render a
-				    full success bar (matching the ∞ chip) instead of a fake 0%.
-				    In compact mode the bars ARE the whole pill. */}
+				{/* One mini bar per window the text spells out (5h on top, then 7d),
+				    each filled to its own usage. An unlimited account renders one full
+				    success bar (matching the ∞ chip) instead of a fake 0%. In compact
+				    mode the bars ARE the whole pill. */}
 				<span aria-hidden="true" className="flex w-7 shrink-0 flex-col gap-[0.0625rem]">
-					{pillSnapshots.map((snap) => {
-						const snapUnlimited = isUnlimitedRateLimitSnapshot(snap);
-						const snapPercent = snapUnlimited ? 100 : Math.round(worstSnapshotWindow(snap)?.usedPercent ?? 0);
-						const clamped = Math.max(0, Math.min(100, snapPercent));
+					{(unlimited ? [null] : pillWindows).map((w) => {
+						const barPercent = w ? Math.round(w.usedPercent) : 100;
+						const clamped = Math.max(0, Math.min(100, barPercent));
 						return (
 							<span
-								key={rateLimitLoginKey(snap)}
-								className={`relative block w-full overflow-hidden rounded-full bg-fg/15 ${pillSnapshots.length > 1 ? "h-[0.125rem]" : "h-[0.1875rem]"}`}
+								key={w?.id ?? "unlimited"}
+								className={`relative block w-full overflow-hidden rounded-full bg-fg/15 ${pillWindows.length > 1 && !unlimited ? "h-[0.125rem]" : "h-[0.1875rem]"}`}
 							>
 								<span
-									className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ${snapUnlimited ? "bg-success" : severityFill(snapPercent)}`}
+									className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ${w ? severityFill(barPercent) : "bg-success"}`}
 									style={{ width: `${clamped}%`, minWidth: clamped > 0 ? "0.125rem" : undefined }}
 								/>
 							</span>
