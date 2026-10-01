@@ -566,7 +566,7 @@ export default function AgentAccountIndicator({
 		kind === "claude" ? (pinnedDir ? (projectLogin?.identity ?? null) : state.claude.systemIdentity) : state.codex.currentIdentity;
 	const systemLoginLabel = pinnedDir
 		? t("settings.accountsProjectLogin", { dir: shortClaudeConfigDir(pinnedDir) })
-		: t("settings.accountsSystemLogin");
+		: t("settings.accountsDefaultLogin", { dir: state.claude.systemConfigDir });
 	const fallbackLabel = kind === "claude" ? systemLoginLabel : t("settings.accountsUnmanaged");
 	const activeLabel = selectedAccount ? selectedAccount.label : (fallbackIdentity?.email ?? fallbackLabel);
 	const workspaceLabel = (identity: AgentAccountIdentity | null): string | null => {

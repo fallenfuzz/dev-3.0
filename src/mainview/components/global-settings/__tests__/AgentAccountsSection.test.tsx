@@ -54,7 +54,7 @@ function makeState(overrides?: Partial<AgentAccountsState>): AgentAccountsState 
 				},
 			],
 			activeId: null,
-			systemIdentity: {
+			systemConfigDir: "/home/me/.claude", systemIdentity: {
 				email: "main@example.com",
 				organization: null,
 				plan: null,
@@ -92,7 +92,7 @@ beforeEach(() => {
 describe("AgentAccountsSection", () => {
 	it("renders the system login row, accounts, and plan badges", async () => {
 		renderSection();
-		expect(await screen.findByText("System login (~/.claude)")).toBeTruthy();
+		expect(await screen.findByText("Default login (/home/me/.claude)")).toBeTruthy();
 		expect(screen.getByText("work@example.com")).toBeTruthy();
 		expect(screen.getByText("main@example.com")).toBeTruthy();
 		expect(screen.getByText("Max 5x")).toBeTruthy();
@@ -141,7 +141,7 @@ describe("AgentAccountsSection", () => {
 		mockedApi.request.importAgentAccount.mockResolvedValue({} as any);
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 		const importButtons = screen.getAllByText("Import current login");
 		await user.click(importButtons[0]);
 		await waitFor(() => {
@@ -157,7 +157,7 @@ describe("AgentAccountsSection", () => {
 		mockedApi.request.completeAgentAccountLogin.mockResolvedValue({} as any);
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 
 		const addButtons = screen.getAllByText("Add account");
 		await user.click(addButtons[0]);
@@ -179,7 +179,7 @@ describe("AgentAccountsSection", () => {
 		});
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 		await user.click(screen.getAllByText("Add account")[0]);
 		await screen.findByText("CLAUDE_CONFIG_DIR='/x' claude /login");
 
@@ -220,7 +220,7 @@ describe("AgentAccountsSection", () => {
 		mockedApi.request.addAgentApiProfile.mockResolvedValue({} as any);
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 
 		await user.click(screen.getByText("Add API profile"));
 		await user.type(screen.getByPlaceholderText("https://openrouter.ai/api"), "https://openrouter.ai/api");
@@ -244,7 +244,7 @@ describe("AgentAccountsSection", () => {
 	it("keeps the Add profile button disabled while the form is empty", async () => {
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 
 		await user.click(screen.getByText("Add API profile"));
 		expect((screen.getByText("Add profile") as HTMLButtonElement).disabled).toBe(true);
@@ -273,7 +273,7 @@ describe("AgentAccountsSection", () => {
 						},
 					],
 					activeId: "api-1",
-					systemIdentity: null,
+					systemConfigDir: "/home/me/.claude", systemIdentity: null,
 				},
 			}),
 		);
@@ -301,7 +301,7 @@ describe("AgentAccountsSection", () => {
 						},
 					],
 					activeId: "api-1",
-					systemIdentity: null,
+					systemConfigDir: "/home/me/.claude", systemIdentity: null,
 				},
 			}),
 		);
@@ -353,7 +353,7 @@ describe("AgentAccountsSection", () => {
 		mockedApi.request.addAgentApiProfile.mockResolvedValue({} as any);
 		const user = userEvent.setup();
 		renderSection();
-		await screen.findByText("System login (~/.claude)");
+		await screen.findByText("Default login (/home/me/.claude)");
 
 		await user.click(screen.getByText("Add API profile"));
 		// The Haiku slot's Model ID placeholder is a deepseek example.
@@ -390,7 +390,7 @@ describe("AgentAccountsSection", () => {
 						},
 					],
 					activeId: "api-1",
-					systemIdentity: null,
+					systemConfigDir: "/home/me/.claude", systemIdentity: null,
 				},
 			}),
 		);
@@ -476,7 +476,7 @@ describe("AgentAccountsSection", () => {
 		expect(await screen.findByText("Project login (…/app/.claude)")).toBeTruthy();
 		expect(screen.getByText("pin@example.com")).toBeTruthy();
 		expect(screen.getByText("Pinned by app, app-docs")).toBeTruthy();
-		expect(screen.getByText("System login (~/.claude)")).toBeTruthy();
+		expect(screen.getByText("Default login (/home/me/.claude)")).toBeTruthy();
 		expect(screen.queryByText(/override these pins/)).toBeNull();
 	});
 
