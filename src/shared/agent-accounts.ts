@@ -155,6 +155,14 @@ export function codexPlanLabel(plan: string | null): string | null {
 	return plan.split("_").map(titleCaseToken).join(" ");
 }
 
+/** The Claude login a project's sessions really use when its env pins
+ *  `CLAUDE_CONFIG_DIR`: the account then comes from that directory, not
+ *  `~/.claude`. `configDir` is null when the project does not pin one. */
+export interface ProjectClaudeLogin {
+	configDir: string | null;
+	identity: AgentAccountIdentity | null;
+}
+
 /** Parse a Claude Code `.claude.json` payload into an identity (via `.oauthAccount`). */
 export function parseClaudeIdentity(claudeJson: unknown): AgentAccountIdentity | null {
 	const root = asRecord(claudeJson);
