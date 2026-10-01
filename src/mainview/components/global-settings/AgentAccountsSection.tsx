@@ -126,6 +126,7 @@ function AccountRow({
 	onRename,
 	onEditApi,
 	onRemove,
+	note,
 	t,
 }: {
 	kind: AgentAccountKind;
@@ -138,6 +139,8 @@ function AccountRow({
 	/** API profiles edit the whole form instead of an inline label rename. */
 	onEditApi?: () => void;
 	onRemove?: () => void;
+	/** Muted text after the identity, e.g. "Not signed in" on an empty default login. */
+	note?: string | null;
 	t: TFunction;
 }) {
 	const [editing, setEditing] = useState(false);
@@ -212,6 +215,7 @@ function AccountRow({
 				) : (
 					<IdentityBadges identity={identity} hideEmail={label} kind={kind} t={t} />
 				)}
+				{note ? <span className="text-fg-muted text-xs">{note}</span> : null}
 			</div>
 			<div className="ml-auto flex items-center justify-end gap-1 shrink-0">
 				{isActive ? (
@@ -850,7 +854,7 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 					key={login.configDir}
 					className="flex flex-wrap items-center gap-2.5 px-3 py-2 bg-elevated/50 border border-edge border-dashed rounded-lg"
 				>
-					<span aria-hidden className="w-3.5 h-3.5 rounded-full border-2 border-fg-muted/40 shrink-0" />
+					<span aria-hidden className="w-3.5 h-3.5 shrink-0" />
 					<div className="basis-40 min-w-0 flex-1 flex flex-wrap items-center gap-2">
 						<span className="text-fg-2 text-sm whitespace-nowrap streamer-private" title={login.configDir}>
 							{t("settings.accountsProjectLogin", { dir: shortClaudeConfigDir(login.configDir) })}
@@ -866,7 +870,9 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 			    which overrides these pins - say so rather than list dead rows silently. */}
 			{state.claude.accounts.length > 0 ? (
 				<p className="text-warning-strong text-xs">{t("settings.accountsPinnedOverridden")}</p>
-			) : null}
+			) : (
+				<p className="text-fg-muted text-xs">{t("settings.accountsPinnedHint")}</p>
+			)}
 		</div>
 	) : null;
 
@@ -889,6 +895,7 @@ export default function AgentAccountsSection({ t }: { t: TFunction }) {
 					kind="claude"
 					label={t("settings.accountsDefaultLogin", { dir: state.claude.systemConfigDir })}
 					identity={state.claude.systemIdentity}
+					note={state.claude.systemIdentity ? null : t("settings.accountsNotSignedIn")}
 					isActive={state.claude.activeId === null}
 					onActivate={
 						state.claude.activeId === null
