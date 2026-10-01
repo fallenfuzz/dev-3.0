@@ -298,15 +298,15 @@ describe("RateLimitIndicator", () => {
 		expect(screen.queryByText(/credits: unlimited/)).toBeNull();
 	});
 
-	it("renders a mini usage bar inside the header pill", async () => {
+	it("renders one mini bar per window inside the header pill, 5h on top", async () => {
 		mockedGet.mockResolvedValue(report(42));
 		renderIndicator();
 		await act(async () => {});
-		const pill = getIndicator();
-		const fill = pill.querySelector('span[aria-hidden="true"] > span > span');
-		expect(fill).toBeTruthy();
-		expect((fill as HTMLElement).style.width).toBe("42%");
-		expect((fill as HTMLElement).className).toContain("bg-accent");
+		const fills = getIndicator().querySelectorAll('span[aria-hidden="true"] > span > span');
+		expect(fills.length).toBe(2);
+		expect((fills[0] as HTMLElement).style.width).toBe("5%");
+		expect((fills[1] as HTMLElement).style.width).toBe("42%");
+		expect((fills[1] as HTMLElement).className).toContain("bg-accent");
 	});
 
 	it("shows a per-account 'captured just now' note for a fresh reading", async () => {
@@ -343,38 +343,47 @@ describe("RateLimitIndicator", () => {
 		expect(note.className).toContain("text-warning");
 	});
 
-	it("stacks one pill bar per account with its own severity color", async () => {
+	it("colours each window's bar by its own usage, for the latest account only", async () => {
 		const now = Date.now();
-		const snapshot = (source: "claude" | "codex", accountId: string, percent: number, activeAt: number) => ({
-			source,
-			accountId,
-			capturedAt: activeAt,
-			activeAt,
-			windows: [{ id: source === "claude" ? "five_hour" : "primary", usedPercent: percent, resetsAt: now + 3_600_000, windowMinutes: 300 }],
-			creditsBalance: null,
-			monthlyCredits: null,
-			planType: null,
-		});
 		mockedGet.mockResolvedValue({
 			generatedAt: now,
-			snapshots: [snapshot("claude", "a", 42, now), snapshot("codex", "b", 85, now - 1_000), snapshot("codex", "c", 97, now - 2_000)],
+			snapshots: [
+				{
+					source: "claude",
+					accountId: "a",
+					capturedAt: now,
+					activeAt: now,
+					windows: [
+						{ id: "seven_day", usedPercent: 97, resetsAt: now + 86_400_000, windowMinutes: 10080 },
+						{ id: "five_hour", usedPercent: 85, resetsAt: now + 3_600_000, windowMinutes: 300 },
+					],
+					creditsBalance: null,
+					monthlyCredits: null,
+					planType: null,
+				},
+				{
+					source: "codex",
+					accountId: "older",
+					capturedAt: now - 1_000,
+					activeAt: now - 1_000,
+					windows: [{ id: "primary", usedPercent: 10, resetsAt: now + 3_600_000, windowMinutes: 300 }],
+					creditsBalance: null,
+					monthlyCredits: null,
+					planType: null,
+				},
+			],
 		});
 		renderIndicator();
 		await act(async () => {});
-		const pill = getIndicator();
-		const fills = pill.querySelectorAll('span[aria-hidden="true"] > span > span');
-		expect(fills.length).toBe(3);
-		expect((fills[0] as HTMLElement).style.width).toBe("42%");
-		expect((fills[0] as HTMLElement).className).toContain("bg-accent");
-		expect((fills[1] as HTMLElement).style.width).toBe("85%");
-		expect((fills[1] as HTMLElement).className).toContain("bg-warning");
-		expect((fills[2] as HTMLElement).style.width).toBe("97%");
-		expect((fills[2] as HTMLElement).className).toContain("bg-danger");
-		// The headline number still tracks the most recently active account.
-		expect(screen.getByText("42%")).toBeTruthy();
+		const fills = getIndicator().querySelectorAll('span[aria-hidden="true"] > span > span');
+		expect(fills.length).toBe(2);
+		expect((fills[0] as HTMLElement).style.width).toBe("85%");
+		expect((fills[0] as HTMLElement).className).toContain("bg-warning");
+		expect((fills[1] as HTMLElement).style.width).toBe("97%");
+		expect((fills[1] as HTMLElement).className).toContain("bg-danger");
 	});
 
-	it("renders an unlimited account's pill bar as a full success line and caps bars at four", async () => {
+	it("renders an unlimited account's pill bar as one full success line", async () => {
 		const now = Date.now();
 		const snapshot = (accountId: string, percent: number) => ({
 			source: "codex" as const,
@@ -409,7 +418,7 @@ describe("RateLimitIndicator", () => {
 		await act(async () => {});
 		const pill = getIndicator();
 		const fills = pill.querySelectorAll('span[aria-hidden="true"] > span > span');
-		expect(fills.length).toBe(4);
+		expect(fills.length).toBe(1);
 		expect((fills[0] as HTMLElement).style.width).toBe("100%");
 		expect((fills[0] as HTMLElement).className).toContain("bg-success");
 	});
