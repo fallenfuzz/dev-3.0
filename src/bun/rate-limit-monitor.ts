@@ -27,7 +27,11 @@ import {
 	parseClaudeStatusLinePayload,
 	rateLimitActivityAt,
 } from "../shared/rate-limits";
+import type { ClaudeSessionStats } from "../shared/session-stats";
+import { MAX_SESSION_STATS, SESSION_STATS_RECENT_MS, parseClaudeSessionStats } from "../shared/session-stats";
 import { fetchCodexRateLimitSnapshot } from "./codex-rate-limits";
+import { loadProjects, loadTasks } from "./data";
+import { getTaskTitle } from "../shared/types";
 import { listClaudeAccountDirs, listCodexAccountDirs } from "./agent-accounts";
 import { DEV3_HOME } from "./paths";
 import { createLogger } from "./logger";
@@ -47,6 +51,8 @@ export const CLAUDE_RATE_LIMIT_DUMP_PATH = join(RATE_LIMITS_DIR, "claude.json");
 /** Per-managed-account Claude dumps. The legacy global dump remains the system
  * login fallback and is also written for compatibility with older builds. */
 export const CLAUDE_ACCOUNT_RATE_LIMITS_DIR = join(RATE_LIMITS_DIR, "claude");
+/** Per-task Claude session dumps, written by `dev3 statusline` inside a dev3 task. */
+export const CLAUDE_SESSION_STATS_DIR = join(RATE_LIMITS_DIR, "sessions");
 /** The dev3-managed settings file injected via `claude --settings <path>`. It
  * always suppresses the one-time bypass-permission confirmation and optionally
  * routes statusLine through `dev3 statusline` (see buildClaudeManagedSettings). */
@@ -122,6 +128,57 @@ export function readClaudeSnapshot(dumpPath: string = CLAUDE_RATE_LIMIT_DUMP_PAT
 	} catch {
 		return null; // torn write or corrupt file — keep whatever we knew before
 	}
+}
+
+/** Parse every per-task session dump captured within SESSION_STATS_RECENT_MS, newest first. */
+export function readClaudeSessionDumps(dir: string = CLAUDE_SESSION_STATS_DIR, now: number = Date.now()): ClaudeSessionStats[] {
+	let files: string[];
+	try {
+		files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+	} catch {
+		return [];
+	}
+	const sessions: ClaudeSessionStats[] = [];
+	for (const file of files) {
+		const path = join(dir, file);
+		try {
+			if (statSync(path).mtimeMs < now - SESSION_STATS_RECENT_MS) continue;
+			const parsed = JSON.parse(readFileSync(path, "utf-8")) as { capturedAt?: unknown; payload?: unknown };
+			const capturedAt = typeof parsed.capturedAt === "number" ? parsed.capturedAt : statSync(path).mtimeMs;
+			if (capturedAt < now - SESSION_STATS_RECENT_MS) continue;
+			const stats = parseClaudeSessionStats(parsed.payload, basename(file, ".json"), capturedAt);
+			if (stats) sessions.push(stats);
+		} catch {
+			// torn write or corrupt dump - skip it this round
+		}
+	}
+	return sessions.sort((a, b) => b.capturedAt - a.capturedAt);
+}
+
+/** Attach board identity and drop sessions whose task is gone or finished. */
+async function attachTaskIdentity(sessions: ClaudeSessionStats[]): Promise<ClaudeSessionStats[]> {
+	if (sessions.length === 0) return [];
+	const wanted = new Set(sessions.map((s) => s.taskId));
+	const found = new Map<string, { title: string; seq: number; projectName: string }>();
+	try {
+		for (const project of await loadProjects()) {
+			if (found.size === wanted.size) break;
+			for (const task of await loadTasks(project)) {
+				if (!wanted.has(task.id) || task.status === "completed" || task.status === "cancelled") continue;
+				found.set(task.id, { title: getTaskTitle(task), seq: task.seq, projectName: project.name });
+			}
+		}
+	} catch (err) {
+		log.warn("Session stats task lookup failed", { error: String(err) });
+		return [];
+	}
+	return sessions
+		.filter((s) => found.has(s.taskId))
+		.slice(0, MAX_SESSION_STATS)
+		.map((s) => {
+			const task = found.get(s.taskId)!;
+			return { ...s, taskTitle: task.title, taskSeq: task.seq, projectName: task.projectName };
+		});
 }
 
 function codexHomeRoot(): string {
@@ -328,7 +385,8 @@ export async function getAgentRateLimitsReport(): Promise<AgentRateLimitsReport>
 	const snapshots = [...byAccount.values()].sort(
 		(a, b) => (a.source === b.source ? 0 : a.source === "claude" ? -1 : 1) || rateLimitActivityAt(b) - rateLimitActivityAt(a),
 	);
-	const report: AgentRateLimitsReport = { snapshots, generatedAt: now };
+	const sessions = await attachTaskIdentity(readClaudeSessionDumps(CLAUDE_SESSION_STATS_DIR, now));
+	const report: AgentRateLimitsReport = { snapshots, sessions, generatedAt: now };
 	cachedReport = report;
 	return report;
 }
@@ -340,7 +398,13 @@ function reportKey(report: AgentRateLimitsReport): string {
 			(s) =>
 				`${s.source}:${s.accountId ?? "system"}:${s.capturedAt}:${s.activeAt ?? ""}:${s.windows.map((w) => `${w.id}=${w.usedPercent}@${w.resetsAt}`).join(",")}:${s.creditsBalance}:${s.monthlyCredits ? `${s.monthlyCredits.used}/${s.monthlyCredits.limit}@${s.monthlyCredits.resetsAt}` : ""}`,
 		)
-		.join("|");
+		.join("|")
+		.concat(
+			"#",
+			(report.sessions ?? [])
+				.map((s) => `${s.taskId}:${s.capturedAt}:${s.taskTitle}:${s.cache?.warm}:${s.cache?.expiresAt}`)
+				.join("|"),
+		);
 }
 
 async function poll() {
