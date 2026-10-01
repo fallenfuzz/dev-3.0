@@ -603,6 +603,8 @@ const settings = {
 	"settings.agentAccountsDesc": "Храните несколько логинов на агента и переключайте активный без повторного входа.",
 	"settings.accountsSystemLogin": "Системный логин (~/.claude)",
 	"settings.accountsProjectLogin": "Вход проекта ({dir})",
+	"settings.accountsPinnedBy": "Закреплён в: {projects}",
+	"settings.accountsPinnedOverridden": "Управляемые dev3 аккаунты Claude перекрывают эти привязки: запуск задаёт CLAUDE_CONFIG_DIR по выбранному аккаунту.",
 	"settings.accountsActive": "По умолчанию",
 	"settings.accountsImportCurrent": "Импорт текущего логина",
 	"settings.accountsAdd": "Добавить аккаунт",

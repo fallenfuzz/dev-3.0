@@ -584,6 +584,8 @@ const settings = {
 	"settings.agentAccountsDesc": "Guarda varios inicios de sesión por agente y cambia el activo sin volver a iniciar sesión.",
 	"settings.accountsSystemLogin": "Sesión del sistema (~/.claude)",
 	"settings.accountsProjectLogin": "Sesión del proyecto ({dir})",
+	"settings.accountsPinnedBy": "Fijado por {projects}",
+	"settings.accountsPinnedOverridden": "Tus cuentas de Claude gestionadas por dev3 anulan estas fijaciones: cada lanzamiento usa el CLAUDE_CONFIG_DIR de la cuenta elegida.",
 	"settings.accountsActive": "Predeterminada",
 	"settings.accountsImportCurrent": "Importar sesión actual",
 	"settings.accountsAdd": "Añadir cuenta",

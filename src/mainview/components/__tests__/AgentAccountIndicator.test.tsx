@@ -541,9 +541,13 @@ describe("project-pinned CLAUDE_CONFIG_DIR", () => {
 		identity: { email: "project@example.com", organization: null, plan: null, planLabel: null, accountId: "uuid-p" },
 	};
 
+	// The pin only holds with no managed Claude account: any registered one makes
+	// every launch set (or unset) CLAUDE_CONFIG_DIR itself.
 	function withNoManagedDefault() {
 		const base = makeState();
-		mockedApi.request.listAgentAccounts.mockResolvedValue(makeState({ claude: { ...base.claude, activeId: null } }));
+		mockedApi.request.listAgentAccounts.mockResolvedValue(
+			makeState({ claude: { ...base.claude, accounts: [], activeId: null } }),
+		);
 	}
 
 	it("shows the project's account, not ~/.claude's, when the project pins a config dir", async () => {
@@ -558,6 +562,40 @@ describe("project-pinned CLAUDE_CONFIG_DIR", () => {
 		await userEvent.click(trigger);
 		expect(await screen.findByText("Project login (…/thumbs/.claude)")).toBeTruthy();
 		expect(screen.queryByText("System login (~/.claude)")).toBeNull();
+	});
+
+	it("shows the pinned dir's usage on that row, not ~/.claude's", async () => {
+		withNoManagedDefault();
+		mockedApi.request.getProjectClaudeLogin.mockResolvedValue(projectLogin);
+		const snap = (usedPercent: number, configDir?: string): AgentRateLimitSnapshot => ({
+			source: "claude",
+			accountId: null,
+			...(configDir ? { configDir } : {}),
+			capturedAt: Date.now(),
+			windows: [{ id: "five_hour", usedPercent, resetsAt: null, windowMinutes: 300 }],
+			creditsBalance: null,
+			monthlyCredits: null,
+			planType: null,
+		});
+		mockedApi.request.getAgentRateLimits.mockResolvedValue(makeReport([snap(11), snap(66, projectLogin.configDir)]));
+		renderIndicator(claudeAgent, { projectId: "p1", onSelect: vi.fn() });
+		const trigger = await screen.findByTestId("agent-account-trigger");
+		await waitFor(() => expect(trigger.textContent).toContain("project@example.com"));
+		await userEvent.click(trigger);
+		expect(await screen.findByText("66% used")).toBeTruthy();
+		expect(screen.queryByText("11% used")).toBeNull();
+	});
+
+	it("does not claim the pin while a managed account overrides it", async () => {
+		const base = makeState();
+		mockedApi.request.listAgentAccounts.mockResolvedValue(makeState({ claude: { ...base.claude, activeId: null } }));
+		mockedApi.request.getProjectClaudeLogin.mockResolvedValue(projectLogin);
+		renderIndicator(claudeAgent, { projectId: "p1", onSelect: vi.fn() });
+		const trigger = await screen.findByTestId("agent-account-trigger");
+		await waitFor(() => expect(mockedApi.request.getProjectClaudeLogin).toHaveBeenCalled());
+		expect(trigger.textContent).not.toContain("project@example.com");
+		await userEvent.click(trigger);
+		expect(await screen.findByText("System login (~/.claude)")).toBeTruthy();
 	});
 
 	it("keeps the system login when the project pins nothing", async () => {
