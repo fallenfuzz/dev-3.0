@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentAccountIdentity, AgentAccountKind, AgentAccountsState, PinnedClaudeLogin } from "../../shared/agent-accounts";
 import { shortClaudeConfigDir } from "../../shared/agent-accounts";
-import type { AgentRateLimitSnapshot, AgentRateLimitsReport } from "../../shared/rate-limits";
+import type { AgentRateLimitSnapshot, AgentRateLimitsReport, RateLimitSource } from "../../shared/rate-limits";
 import { findRateLimitSnapshot, isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
+import { MAX_SESSION_STATS } from "../../shared/session-stats";
 import { api } from "../rpc";
 import { toast } from "../toast";
 import { useT, type TFunction } from "../i18n";
@@ -310,7 +311,7 @@ export default function AgentUsagePanel({
 	onOpenSettings: () => void;
 }) {
 	const t = useT();
-	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId);
+	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId).slice(0, MAX_SESSION_STATS);
 	const [busy, setBusy] = useState(false);
 	const [dwelled, setDwelled] = useState(false);
 	const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
