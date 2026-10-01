@@ -294,6 +294,7 @@ export default function AgentUsagePanel({
 	accounts,
 	pinnedLogins = [],
 	projectPinned = false,
+	projectId = null,
 	interactive,
 	onOpenSettings,
 }: {
@@ -303,10 +304,13 @@ export default function AgentUsagePanel({
 	pinnedLogins?: PinnedClaudeLogin[];
 	/** The screen's project pins its own login, so the default login is left out. */
 	projectPinned?: boolean;
+	/** The screen's project; its tasks are the only sessions listed. Null lists all. */
+	projectId?: string | null;
 	interactive: boolean;
 	onOpenSettings: () => void;
 }) {
 	const t = useT();
+	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId);
 	const [busy, setBusy] = useState(false);
 	const [dwelled, setDwelled] = useState(false);
 	const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -438,7 +442,7 @@ export default function AgentUsagePanel({
 					</div>
 				);
 			})}
-			{report.sessions?.length ? <UsageSessionsBlock sessions={report.sessions} now={now} /> : null}
+			{sessions.length ? <UsageSessionsBlock sessions={sessions} now={now} /> : null}
 		</div>
 	);
 }

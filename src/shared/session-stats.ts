@@ -21,6 +21,7 @@ export interface ClaudeSessionStats {
 	taskTitle: string | null;
 	taskSeq: number | null;
 	projectName: string | null;
+	projectId?: string | null;
 	capturedAt: number;
 	model: string | null;
 	effort: string | null;
