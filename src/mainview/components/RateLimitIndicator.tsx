@@ -124,6 +124,7 @@ function RateLimitIndicator({ compact = false, projectId = null }: { compact?: b
 			accounts={accounts}
 			pinnedLogins={scope ? pinnedLogins.filter((login) => login.configDir === scope.configDir) : pinnedLogins}
 			projectPinned={!!scope?.configDir}
+			projectId={projectId}
 			// A sheet is opened deliberately and has no hover state to pass through;
 			// the desktop flyout has to be pinned first.
 			interactive={isNarrow || flyout.pinned}
