@@ -26,6 +26,11 @@ let consecutiveSpawnFailures = 0;
 // an error log + failed fork every 10-second poll cycle, forever.
 const MAX_SPAWN_FAILURES = 3;
 
+// An inhibit process that exits non-zero this soon after spawning was refused
+// (bad flags, or polkit denying the lock - e.g. WSL, where there is no logind
+// seat). It counts toward MAX_SPAWN_FAILURES like a failed spawn does.
+const QUICK_EXIT_MS = 5000;
+
 // Safety timeout: the inhibit process exits on its own after this period.
 // The 10-second poll cycle restarts it if sessions are still active.
 // This prevents the process from running forever if the app crashes
@@ -108,7 +113,7 @@ function buildInhibitCommand(): string[] | null {
 		detectedBackendPath ?? "systemd-inhibit",
 		"--what=sleep",
 		"--who=dev-3.0",
-		"--reason=Agents running",
+		"--why=Agents running",
 		"sleep", String(INHIBIT_TIMEOUT_SECS),
 	];
 }
@@ -124,25 +129,38 @@ function startInhibit(): void {
 	if (!cmd) return;
 
 	try {
-		sleepInhibitProc = spawn(cmd);
-		consecutiveSpawnFailures = 0;
-		log.info("Sleep inhibit started", { backend: detectedBackend, pid: sleepInhibitProc.pid });
+		const proc = spawn(cmd);
+		const startedAt = Date.now();
+		sleepInhibitProc = proc;
+		log.info("Sleep inhibit started", { backend: detectedBackend, pid: proc.pid });
 
 		// Clean up reference when the process exits (timeout or kill)
-		sleepInhibitProc.exited.then((code) => {
-			log.info("Sleep inhibit exited", { backend: detectedBackend, pid: sleepInhibitProc?.pid, code });
+		proc.exited.then((code) => {
+			log.info("Sleep inhibit exited", { backend: detectedBackend, pid: proc.pid, code });
+			// stopInhibit() clears the reference before killing, so a process that
+			// is no longer current was stopped on purpose - not a failure.
+			if (sleepInhibitProc !== proc) return;
 			sleepInhibitProc = null;
+			if (code !== 0 && Date.now() - startedAt < QUICK_EXIT_MS) {
+				recordFailure("Sleep inhibit exited immediately", { code });
+			} else {
+				consecutiveSpawnFailures = 0;
+			}
 		}).catch(() => {
-			sleepInhibitProc = null;
+			if (sleepInhibitProc === proc) sleepInhibitProc = null;
 		});
 	} catch (err) {
-		consecutiveSpawnFailures++;
-		log.error("Failed to start sleep inhibit", { backend: detectedBackend, error: String(err), attempt: consecutiveSpawnFailures });
 		sleepInhibitProc = null;
-		if (consecutiveSpawnFailures >= MAX_SPAWN_FAILURES) {
-			inhibitAvailable = false;
-			log.error("Sleep inhibit disabled after repeated spawn failures", { backend: detectedBackend });
-		}
+		recordFailure("Failed to start sleep inhibit", { error: String(err) });
+	}
+}
+
+function recordFailure(message: string, detail: Record<string, unknown>): void {
+	consecutiveSpawnFailures++;
+	log.error(message, { backend: detectedBackend, ...detail, attempt: consecutiveSpawnFailures });
+	if (consecutiveSpawnFailures >= MAX_SPAWN_FAILURES) {
+		inhibitAvailable = false;
+		log.error("Sleep inhibit disabled after repeated failures", { backend: detectedBackend });
 	}
 }
 
