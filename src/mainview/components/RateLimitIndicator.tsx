@@ -15,10 +15,11 @@ import {
 	isUnlimitedRateLimitSnapshot,
 	latestRateLimitSnapshot,
 	windowLabel,
+	rateLimitLoginKey,
 	worstSnapshotWindow,
 } from "../../shared/rate-limits";
 import type { AgentAccountsState } from "../../shared/agent-accounts";
-import { AGENT_ACCOUNTS_CHANGED_EVENT } from "./AgentAccountIndicator";
+import { AGENT_ACCOUNTS_CHANGED_EVENT, usePinnedClaudeLogins } from "./AgentAccountIndicator";
 import { SOURCE_NAMES, severityFill } from "./rate-limit-ui";
 import AgentUsagePanel from "./AgentUsagePanel";
 
@@ -49,6 +50,9 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 	// Same open/pin/position machinery as the memory-headroom readout: hover drops
 	// the panel below the pill, a click pins it — and pinned is what unlocks its rows.
 	const flyout = useHeaderFlyout({ variant: "bar", isNarrow, repositionKey: report });
+	// Re-read on every open: a project's pin lives in its config files, which
+	// change without any push.
+	const pinnedLogins = usePinnedClaudeLogins(flyout.open);
 
 	useEffect(() => {
 		api.request.getAgentRateLimits().then(setReport).catch(() => {
@@ -113,6 +117,7 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 		<AgentUsagePanel
 			report={report}
 			accounts={accounts}
+			pinnedLogins={pinnedLogins}
 			// A sheet is opened deliberately and has no hover state to pass through;
 			// the desktop flyout has to be pinned first.
 			interactive={isNarrow || flyout.pinned}
@@ -144,7 +149,7 @@ function RateLimitIndicator({ compact = false }: { compact?: boolean }) {
 						const clamped = Math.max(0, Math.min(100, snapPercent));
 						return (
 							<span
-								key={`${snap.source}:${snap.accountId ?? "system"}`}
+								key={rateLimitLoginKey(snap)}
 								className={`relative block w-full overflow-hidden rounded-full bg-fg/15 ${pillSnapshots.length > 1 ? "h-[0.125rem]" : "h-[0.1875rem]"}`}
 							>
 								<span

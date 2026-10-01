@@ -43,6 +43,9 @@ export interface AgentRateLimitSnapshot {
 	 *  Undefined keeps compatibility with reports produced before account-level
 	 *  attribution was added. */
 	accountId?: string | null;
+	/** Claude only: the `CLAUDE_CONFIG_DIR` a project pinned for the session that
+	 *  produced this reading. Absent for `~/.claude` and for managed accounts. */
+	configDir?: string;
 	/** When this data was captured locally (epoch ms). */
 	capturedAt: number;
 	/** When the provider session was active. Live Codex enrichment may be read
@@ -79,6 +82,27 @@ export function rateLimitActivityAt(snapshot: AgentRateLimitSnapshot): number {
 
 export function isRateLimitSnapshotRecent(snapshot: AgentRateLimitSnapshot, nowMs: number): boolean {
 	return rateLimitActivityAt(snapshot) >= nowMs - RATE_LIMIT_ACTIVITY_WINDOW_MS;
+}
+
+/** Identity of the login behind a snapshot: managed account, pinned dir, or system. */
+export function rateLimitLoginKey(snapshot: AgentRateLimitSnapshot): string {
+	const base = `${snapshot.source}:${snapshot.accountId ?? "system"}`;
+	return snapshot.configDir ? `${base}:dir:${snapshot.configDir}` : base;
+}
+
+/** The reading for one login. `configDir` null means "not a pinned dir", so the
+ *  system row never picks up a pinned project's numbers. */
+export function findRateLimitSnapshot(
+	report: AgentRateLimitsReport,
+	source: RateLimitSource,
+	accountId: string | null,
+	configDir: string | null = null,
+): AgentRateLimitSnapshot | null {
+	return (
+		report.snapshots.find(
+			(s) => s.source === source && (s.accountId ?? null) === accountId && (s.configDir ?? null) === configDir,
+		) ?? null
+	);
 }
 
 /** The account snapshot with the newest provider activity signal. */

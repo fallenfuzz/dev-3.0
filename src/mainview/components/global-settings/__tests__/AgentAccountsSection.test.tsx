@@ -18,6 +18,7 @@ vi.mock("../../../rpc", () => ({
 			setActiveAgentAccount: vi.fn(),
 			removeAgentAccount: vi.fn(),
 			renameAgentAccount: vi.fn(),
+			listPinnedClaudeLogins: vi.fn().mockResolvedValue([]),
 		},
 	},
 }));
@@ -456,5 +457,35 @@ describe("AgentAccountsSection", () => {
 		renderSection();
 		expect(await screen.findByText("Workspace Globex ChatGPT Enterprise")).toBeTruthy();
 		expect(screen.queryByText("Workspace b8e0e9ae")).toBeNull();
+	});
+
+	it("lists each project-pinned Claude login beside ~/.claude, with the projects that pin it", async () => {
+		mockedApi.request.listAgentAccounts.mockResolvedValue(
+			makeState({
+				claude: { ...makeState().claude, accounts: [] },
+			}),
+		);
+		mockedApi.request.listPinnedClaudeLogins.mockResolvedValueOnce([
+			{
+				configDir: "/mnt/e/Projects/app/.claude",
+				identity: { email: "pin@example.com", organization: null, plan: null, planLabel: null, accountId: null },
+				projectNames: ["app", "app-docs"],
+			},
+		]);
+		renderSection();
+		expect(await screen.findByText("Project login (…/app/.claude)")).toBeTruthy();
+		expect(screen.getByText("pin@example.com")).toBeTruthy();
+		expect(screen.getByText("Pinned by app, app-docs")).toBeTruthy();
+		expect(screen.getByText("System login (~/.claude)")).toBeTruthy();
+		expect(screen.queryByText(/override these pins/)).toBeNull();
+	});
+
+	it("warns that managed accounts override the pins", async () => {
+		mockedApi.request.listAgentAccounts.mockResolvedValue(makeState());
+		mockedApi.request.listPinnedClaudeLogins.mockResolvedValueOnce([
+			{ configDir: "/p/app/.claude", identity: null, projectNames: ["app"] },
+		]);
+		renderSection();
+		expect(await screen.findByText(/override these pins/)).toBeTruthy();
 	});
 });
