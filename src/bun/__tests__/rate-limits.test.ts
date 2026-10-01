@@ -14,6 +14,7 @@ import {
 	parseCodexRateLimits,
 	RATE_LIMIT_ACTIVITY_WINDOW_MS,
 	rateLimitActivityAt,
+	scopeRateLimitSnapshots,
 	windowLabel,
 	worstSnapshotWindow,
 	worstWindow,
@@ -278,5 +279,31 @@ describe("findRateLimitSnapshot / rateLimitLoginKey", () => {
 		const keys = new Set([system, pinned, managed].map(rateLimitLoginKey));
 		expect(keys.size).toBe(3);
 		expect(rateLimitLoginKey(system)).toBe("claude:system");
+	});
+});
+
+describe("scopeRateLimitSnapshots", () => {
+	const reading = (source: "claude" | "codex", configDir?: string) => ({
+		source,
+		accountId: null,
+		...(configDir ? { configDir } : {}),
+		capturedAt: 1,
+		windows: [],
+		creditsBalance: null,
+		monthlyCredits: null,
+		planType: null,
+	});
+	const all = [reading("claude", "/a/.claude"), reading("claude", "/b/.claude"), reading("claude"), reading("codex")];
+
+	it("keeps everything with no scope", () => {
+		expect(scopeRateLimitSnapshots(all, undefined)).toHaveLength(4);
+	});
+
+	it("keeps one pinned dir's Claude readings and every other agent's", () => {
+		expect(scopeRateLimitSnapshots(all, { configDir: "/a/.claude" })).toEqual([all[0], all[3]]);
+	});
+
+	it("keeps only unpinned Claude readings when the project has no pin", () => {
+		expect(scopeRateLimitSnapshots(all, { configDir: null })).toEqual([all[2], all[3]]);
 	});
 });
