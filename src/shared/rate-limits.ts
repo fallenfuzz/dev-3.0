@@ -143,6 +143,15 @@ export function worstSnapshotWindow(snapshot: AgentRateLimitSnapshot): RateLimit
 	return worst;
 }
 
+/** The windows the header pill spells out, shortest first ("5h 7% · 7d 55%").
+ *  Monthly credits only appear when the account has no timed window. */
+export function headerPillWindows(snapshot: AgentRateLimitSnapshot): RateLimitWindow[] {
+	const timed = snapshot.windows.filter((w) => w.id !== "monthly_credits");
+	return [...(timed.length ? timed : snapshot.windows)].sort(
+		(a, b) => (a.windowMinutes ?? Number.POSITIVE_INFINITY) - (b.windowMinutes ?? Number.POSITIVE_INFINITY),
+	);
+}
+
 export function isUnlimitedRateLimitSnapshot(snapshot: AgentRateLimitSnapshot): boolean {
 	return snapshot.creditsBalance?.trim().toLowerCase() === "unlimited";
 }
