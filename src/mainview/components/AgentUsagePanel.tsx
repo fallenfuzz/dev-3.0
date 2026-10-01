@@ -3,9 +3,6 @@ import type { AgentAccountIdentity, AgentAccountKind, AgentAccountsState, Pinned
 import { shortClaudeConfigDir } from "../../shared/agent-accounts";
 import type { AgentRateLimitSnapshot, AgentRateLimitsReport } from "../../shared/rate-limits";
 import { findRateLimitSnapshot, isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
-import type { AgentAccountKind, AgentAccountsState } from "../../shared/agent-accounts";
-import type { AgentRateLimitSnapshot, AgentRateLimitsReport, RateLimitSource } from "../../shared/rate-limits";
-import { isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
 import { MAX_SESSION_STATS } from "../../shared/session-stats";
 import { api } from "../rpc";
 import { toast } from "../toast";
