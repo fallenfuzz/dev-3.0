@@ -387,6 +387,7 @@ describe("saveSettings", () => {
 			importShellEnv: false,
 			focusMode: true,
 			agentRateLimitTracking: false,
+			usagePanelSessionFields: ["context", "cost"],
 			watchByDefault: true,
 			suggestCompletingTasksAfterMerge: false,
 			prOriginTaskLink: false,
