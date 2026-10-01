@@ -167,6 +167,9 @@ const dashboard = {
 	"rateLimits.sessionDuration": "{time} (API {api})",
 	"rateLimits.sessionLines": "+{added}/-{removed}",
 	"rateLimits.sessionEffort": "esfuerzo {level}",
+	"rateLimits.sessionCacheWarmTtlUntil": "caché caliente ({ttl}) hasta {time}",
+	"rateLimits.sessionTurn": "turno {input} entrada / {output} salida",
+	"rateLimits.sessionThinking": "pensamiento activo",
 	"rateLimits.noRecentData": "sin datos recientes",
 	"rateLimits.quotaExhausted": "Sin cuota disponible — este lanzamiento fallará hasta que se restablezca.",
 

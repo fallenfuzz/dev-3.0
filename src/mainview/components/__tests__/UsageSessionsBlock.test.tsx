@@ -22,11 +22,15 @@ function session(overrides: Partial<ClaudeSessionStats> = {}): ClaudeSessionStat
 		capturedAt: NOW - 30_000,
 		model: "Opus 5.5",
 		effort: "high",
+		sessionName: "Status view display options",
+		thinking: true,
 		contextPercent: 8,
 		contextWindowSize: 1_000_000,
 		totalTokens: 82_774,
 		cacheReadTokens: 79_694,
 		cacheWriteTokens: 3070,
+		turnInputTokens: 2,
+		turnOutputTokens: 657,
 		cache: { warm: true, ttl: "1h", expiresAt: NOW + 600_000, hitRatio: 0.88, misses: 0 },
 		costUsd: 0.657,
 		durationMs: 62_816,
@@ -58,7 +62,7 @@ describe("UsageSessionsBlock", () => {
 		expect(screen.getByRole("heading", { name: "Sessions" })).toBeTruthy();
 		expect(screen.getByText("Fix auth race")).toBeTruthy();
 		expect(screen.getByText("ctx 8%")).toBeTruthy();
-		expect(screen.getByText(/^cache warm until/)).toBeTruthy();
+		expect(screen.getByText(/^cache warm \(1h\) until/)).toBeTruthy();
 		expect(screen.getByText("read 79.7k · write 3.1k")).toBeTruthy();
 		expect(screen.getByText("$0.657")).toBeTruthy();
 		expect(screen.queryByText("Opus 5.5")).toBeNull();
@@ -73,6 +77,23 @@ describe("UsageSessionsBlock", () => {
 		expect(screen.getByText("+3/-1")).toBeTruthy();
 		expect(screen.queryByText("ctx 8%")).toBeNull();
 		expect(screen.queryByText("$0.657")).toBeNull();
+	});
+
+	it("renders the statusline-parity fields when picked", async () => {
+		getSettings.mockResolvedValue({ usagePanelSessionFields: ["sessionName", "contextBar", "turn", "thinking"] });
+		const { container } = await renderBlock([session()]);
+		expect(screen.getByText("Status view display options")).toBeTruthy();
+		expect(screen.getByText("turn 2 in / 657 out")).toBeTruthy();
+		expect(screen.getByText("thinking on")).toBeTruthy();
+		// The bar alone, without the "ctx N%" text.
+		expect(container.querySelector('[aria-hidden="true"] > span[style*="width: 8%"]')).toBeTruthy();
+		expect(screen.queryByText("ctx 8%")).toBeNull();
+	});
+
+	it("omits the TTL when Claude Code does not report one", async () => {
+		getSettings.mockResolvedValue({});
+		await renderBlock([session({ cache: { warm: true, ttl: null, expiresAt: NOW + 600_000, hitRatio: null, misses: null } })]);
+		expect(screen.getByText(/^cache warm until/)).toBeTruthy();
 	});
 
 	it("reports a warm cache past its expiry as cold", async () => {
