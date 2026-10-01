@@ -440,7 +440,7 @@ function reportKey(report: AgentRateLimitsReport): string {
 		.concat(
 			"#",
 			(report.sessions ?? [])
-				.map((s) => `${s.taskId}:${s.capturedAt}:${s.taskTitle}:${s.cache?.warm}:${s.cache?.expiresAt}`)
+				.map((s) => `${s.taskId}:${s.projectId}:${s.capturedAt}:${s.taskTitle}:${s.cache?.warm}:${s.cache?.expiresAt}`)
 				.join("|"),
 		);
 }
