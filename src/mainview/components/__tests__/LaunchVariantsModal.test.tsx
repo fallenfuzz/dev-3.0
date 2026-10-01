@@ -15,7 +15,7 @@ vi.mock("../../rpc", () => ({
 			toggleTaskWatch: vi.fn(),
 			getProjectClaudeLogin: vi.fn().mockResolvedValue({ configDir: null, identity: null }),
 			listAgentAccounts: vi.fn().mockResolvedValue({
-				claude: { accounts: [], activeId: null, systemIdentity: null },
+				claude: { accounts: [], activeId: null, systemConfigDir: "/home/me/.claude", systemIdentity: null },
 				codex: { accounts: [], activeId: null, currentIdentity: null },
 			}),
 			saveGlobalSettings: vi.fn().mockResolvedValue(undefined),
