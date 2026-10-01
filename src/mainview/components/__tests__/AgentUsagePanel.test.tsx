@@ -8,7 +8,7 @@ import type { AgentAccountsState } from "../../../shared/agent-accounts";
 import type { AgentRateLimitsReport } from "../../../shared/rate-limits";
 
 vi.mock("../../rpc", () => ({
-	api: { request: { setActiveAgentAccount: vi.fn() } },
+	api: { request: { setActiveAgentAccount: vi.fn(), getGlobalSettings: vi.fn().mockResolvedValue({}) } },
 }));
 
 vi.mock("../../toast", () => ({
@@ -217,5 +217,42 @@ describe("AgentUsagePanel", () => {
 		expect(unmanaged).toBeTruthy();
 		await userEvent.click(unmanaged as HTMLElement);
 		expect(setActive).not.toHaveBeenCalled();
+	});
+
+	it("lists only the current project's sessions, and every session outside a project", async () => {
+		const now = Date.now();
+		const session = (taskId: string, taskTitle: string, projectId: string) => ({
+			taskId,
+			taskTitle,
+			taskSeq: 1,
+			projectName: projectId,
+			projectId,
+			capturedAt: now,
+			model: null,
+			effort: null,
+			contextPercent: 10,
+			contextWindowSize: null,
+			totalTokens: null,
+			cacheReadTokens: null,
+			cacheWriteTokens: null,
+			cache: null,
+			costUsd: null,
+		});
+		const withSessions = { ...report(), sessions: [session("t1", "Alpha task", "p1"), session("t2", "Beta task", "p2")] } as AgentRateLimitsReport;
+		const view = render(
+			<I18nProvider>
+				<AgentUsagePanel report={withSessions} accounts={accounts()} projectId="p1" interactive onOpenSettings={() => {}} />
+			</I18nProvider>,
+		);
+		expect(await screen.findByText(/Alpha task/)).toBeTruthy();
+		expect(screen.queryByText(/Beta task/)).toBeNull();
+		view.unmount();
+		render(
+			<I18nProvider>
+				<AgentUsagePanel report={withSessions} accounts={accounts()} interactive onOpenSettings={() => {}} />
+			</I18nProvider>,
+		);
+		expect(await screen.findByText(/Beta task/)).toBeTruthy();
+		expect(screen.getByText(/Alpha task/)).toBeTruthy();
 	});
 });

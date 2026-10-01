@@ -241,15 +241,19 @@ const ARM_DELAY_MS = 300;
 export default function AgentUsagePanel({
 	report,
 	accounts,
+	projectId = null,
 	interactive,
 	onOpenSettings,
 }: {
 	report: AgentRateLimitsReport;
 	accounts: AgentAccountsState | null;
+	/** The screen's project; its tasks are the only sessions listed. Null lists all. */
+	projectId?: string | null;
 	interactive: boolean;
 	onOpenSettings: () => void;
 }) {
 	const t = useT();
+	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId);
 	const [busy, setBusy] = useState(false);
 	const [dwelled, setDwelled] = useState(false);
 	const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -377,7 +381,7 @@ export default function AgentUsagePanel({
 					</div>
 				);
 			})}
-			{report.sessions?.length ? <UsageSessionsBlock sessions={report.sessions} now={now} /> : null}
+			{sessions.length ? <UsageSessionsBlock sessions={sessions} now={now} /> : null}
 		</div>
 	);
 }
