@@ -175,17 +175,6 @@ export interface PinnedClaudeLogin {
 	projectNames: string[];
 }
 
-/** A `CLAUDE_CONFIG_DIR` value as one comparable key: `~` expanded, trailing
- *  slashes dropped. Null when unset, or when it names `<home>/.claude`, which
- *  is the system login itself. */
-export function normalizeClaudeConfigDir(raw: string | null | undefined, home: string): string | null {
-	const trimmed = raw?.trim();
-	if (!trimmed || trimmed === ENV_UNSET) return null;
-	const expanded = trimmed === "~" || trimmed.startsWith("~/") ? home + trimmed.slice(1) : trimmed;
-	const dir = expanded.length > 1 ? expanded.replace(/\/+$/, "") : expanded;
-	return dir === `${home.replace(/\/+$/, "")}/.claude` ? null : dir;
-}
-
 /** `/home/me/x/.claude` -> `.../x/.claude`; short paths stay whole. */
 export function shortClaudeConfigDir(dir: string): string {
 	const parts = dir.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
