@@ -228,3 +228,15 @@ describe("auto-hide hand-off", () => {
 		expect(screen.queryByTestId("file-explorer-overlay")).not.toBeInTheDocument();
 	});
 });
+
+describe("explorer header", () => {
+	it("shows the root folder's full path, streamer-masked, when hovering the label", async () => {
+		setFileExplorerMode("pinned");
+		renderFrame();
+		await screen.findByRole("treeitem", { name: /README\.md/ });
+		await userEvent.hover(screen.getByText("feat/branch"));
+		const tip = await screen.findByRole("tooltip");
+		expect(tip).toHaveTextContent("/wt");
+		expect(screen.getByTestId("file-explorer-root-path")).toHaveClass("streamer-private");
+	});
+});
