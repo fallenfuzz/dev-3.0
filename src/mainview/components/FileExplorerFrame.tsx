@@ -77,14 +77,19 @@ export default function FileExplorerFrame({ projectId, taskId, rootLabel, enable
 			if ((target as Element).closest?.("[role=menu]")) return;
 			setRevealed(null);
 		};
+		// Capture phase: closing the panel must not also reach the app's own
+		// Escape, which steps the route back.
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape" && overlayRef.current?.contains(document.activeElement)) setRevealed(null);
+			if (event.key !== "Escape" || !overlayRef.current?.contains(document.activeElement)) return;
+			event.preventDefault();
+			event.stopPropagation();
+			setRevealed(null);
 		};
 		window.addEventListener("pointerdown", onPointerDown, true);
-		window.addEventListener("keydown", onKey);
+		window.addEventListener("keydown", onKey, true);
 		return () => {
 			window.removeEventListener("pointerdown", onPointerDown, true);
-			window.removeEventListener("keydown", onKey);
+			window.removeEventListener("keydown", onKey, true);
 		};
 	}, [revealed]);
 
@@ -133,7 +138,7 @@ export default function FileExplorerFrame({ projectId, taskId, rootLabel, enable
 			pinned={mode === "pinned"}
 			onTogglePin={() => setFileExplorerMode(mode === "pinned" ? "autohide" : "pinned")}
 			onHide={() => setFileExplorerMode("hidden")}
-			onFileOpened={mode === "autohide" ? () => setRevealed(null) : undefined}
+			onHandOff={mode === "autohide" ? () => setRevealed(null) : undefined}
 			onOpenYazi={onOpenYazi}
 			focusSignal={focusSignal}
 		/>

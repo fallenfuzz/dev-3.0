@@ -189,3 +189,42 @@ describe("FileExplorerFrame", () => {
 		expect(await screen.findByText("This board has no project folder to show.")).toBeInTheDocument();
 	});
 });
+
+describe("Escape inside the explorer", () => {
+	it("closes an auto-hidden panel without reaching the app's Escape", async () => {
+		setFileExplorerMode("autohide");
+		const appEscape = vi.fn();
+		window.addEventListener("keydown", appEscape);
+		renderFrame();
+		await userEvent.click(screen.getByRole("button", { name: "Show files" }));
+		await screen.findByRole("treeitem", { name: /README\.md/ });
+		await userEvent.keyboard("{Escape}");
+		window.removeEventListener("keydown", appEscape);
+		expect(screen.queryByTestId("file-explorer-overlay")).not.toBeInTheDocument();
+		expect(appEscape).not.toHaveBeenCalled();
+	});
+
+	it("leaves a pinned tree without reaching the app's Escape", async () => {
+		setFileExplorerMode("pinned");
+		const appEscape = vi.fn();
+		window.addEventListener("keydown", appEscape);
+		renderFrame();
+		await screen.findByRole("treeitem", { name: /README\.md/ });
+		screen.getByRole("tree").focus();
+		await userEvent.keyboard("{Escape}");
+		window.removeEventListener("keydown", appEscape);
+		expect(appEscape).not.toHaveBeenCalled();
+		expect(screen.getByRole("tree")).not.toHaveFocus();
+	});
+});
+
+describe("auto-hide hand-off", () => {
+	it("slides the panel away after inserting a path into the terminal", async () => {
+		setFileExplorerMode("autohide");
+		renderFrame();
+		await userEvent.click(screen.getByRole("button", { name: "Show files" }));
+		fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /README\.md/ }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Insert path in terminal" }));
+		expect(screen.queryByTestId("file-explorer-overlay")).not.toBeInTheDocument();
+	});
+});
