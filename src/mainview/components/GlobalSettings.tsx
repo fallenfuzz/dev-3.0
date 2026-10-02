@@ -41,7 +41,6 @@ import type { UpdateChannel } from "../../shared/update-channel";
 import AdvancedExperienceSection from "./global-settings/AdvancedExperienceSection";
 import AgentAccountsSection from "./global-settings/AgentAccountsSection";
 import AgentRateLimitSettingsSection from "./global-settings/AgentRateLimitSettingsSection";
-import type { SessionStatField } from "../../shared/session-stats";
 import AgentSettingsSection from "./global-settings/AgentSettingsSection";
 import AppearanceSettingsSection from "./global-settings/AppearanceSettingsSection";
 import BehaviorSettingsSection from "./global-settings/BehaviorSettingsSection";
@@ -667,12 +666,6 @@ function GlobalSettings({
 		[persistSettingChange],
 	);
 
-	const handleSessionFieldsChange = useCallback(
-		(fields: SessionStatField[]) => {
-			persistSettingChange({ usagePanelSessionFields: fields });
-		},
-		[persistSettingChange],
-	);
 	const handleTelemetryToggle = useCallback(
 		(disabled: boolean) => {
 			// Silence the live channels before anything else, so the write that
@@ -1010,7 +1003,6 @@ function GlobalSettings({
 							t={t}
 							globalSettings={globalSettings}
 							onToggle={handleRateLimitTrackingToggle}
-							onSessionFieldsChange={handleSessionFieldsChange}
 						/>
 					</>
 				);

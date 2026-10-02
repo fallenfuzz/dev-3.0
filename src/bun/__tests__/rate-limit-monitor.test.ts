@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Project, Task, TaskStatus } from "../../shared/types";
-import { MAX_SESSION_STATS, parseClaudeSessionStats } from "../../shared/session-stats";
+import { parseClaudeSessionStats } from "../../shared/session-stats";
 import {
 	attachTaskIdentity,
 	buildClaudeManagedSettings,
@@ -180,15 +180,18 @@ describe("attachTaskIdentity", () => {
 	const project = (id: string) => ({ id, name: id }) as Project;
 	const task = (id: string, status: TaskStatus = "in-progress") => ({ id, seq: 1, title: id, status }) as Task;
 
-	it("caps per project, so a busy project cannot push another one's sessions out", async () => {
-		const busy = Array.from({ length: MAX_SESSION_STATS + 2 }, (_, i) => `b${i}`);
-		const sessions = [...busy.map((id, i) => session(id, 1000 - i)), session("a1", 1)];
-		const out = await attachTaskIdentity(sessions, {
-			projects: async () => [project("B"), project("A")],
-			tasks: async (p) => (p.id === "B" ? busy.map((id) => task(id)) : [task("a1")]),
-		});
-		expect(out.filter((s) => s.projectId === "B")).toHaveLength(MAX_SESSION_STATS);
-		expect(out.find((s) => s.taskId === "a1")?.projectId).toBe("A");
+	it("lists every live session uncapped, and marks tasks waiting on the user", async () => {
+		const ids = Array.from({ length: 12 }, (_, i) => `b${i}`);
+		const out = await attachTaskIdentity(
+			ids.map((id, i) => session(id, 1000 - i)),
+			{
+				projects: async () => [project("B")],
+				tasks: async () => ids.map((id, i) => task(id, i === 0 ? "user-questions" : i === 1 ? "review-by-user" : "in-progress")),
+			},
+		);
+		expect(out).toHaveLength(ids.length);
+		expect(out.filter((s) => s.awaitingUser).map((s) => s.taskId)).toEqual(["b0", "b1"]);
+		expect(out[0]).toMatchObject({ projectId: "B", projectName: "B", taskTitle: "b0" });
 	});
 
 	it("keeps other projects' sessions when one board cannot be read, and drops finished tasks", async () => {

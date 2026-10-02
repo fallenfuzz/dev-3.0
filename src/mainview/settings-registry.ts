@@ -376,15 +376,6 @@ export const SETTINGS_ENTRIES = [
 		storage: "global",
 	},
 	{
-		id: "usage-panel-session-fields",
-		category: "agents",
-		titleKey: "settings.usagePanelSessionFields",
-		descriptionKey: "settings.usagePanelSessionFieldsDesc",
-		anchor: "usage-panel-session-fields",
-		globalField: "usagePanelSessionFields",
-		storage: "global",
-	},
-	{
 		id: "agent-accounts",
 		category: "accounts",
 		titleKey: "settings.agentAccounts",
@@ -649,7 +640,6 @@ export const GLOBAL_SETTINGS_FIELDS = [
 	"shellPromptCustom",
 	"focusMode",
 	"agentRateLimitTracking",
-	"usagePanelSessionFields",
 	"watchByDefault",
 	"suggestCompletingTasksAfterMerge",
 	"prOriginTaskLink",

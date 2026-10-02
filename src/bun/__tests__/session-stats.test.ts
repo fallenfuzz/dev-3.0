@@ -4,8 +4,13 @@ import {
 	formatDurationMs,
 	formatTokenCount,
 	isSessionCacheWarm,
-	normalizeSessionStatFields,
+	MAX_ATTENTION_SESSIONS,
+	attentionSessions,
 	parseClaudeSessionStats,
+	sessionAttention,
+	sortSessions,
+	summarizeSessions,
+	type ClaudeSessionStats,
 } from "../../shared/session-stats";
 
 const PAYLOAD = {
@@ -77,14 +82,83 @@ describe("isSessionCacheWarm", () => {
 	});
 });
 
-describe("normalizeSessionStatFields", () => {
-	it("keeps known fields in canonical order and drops unknown ones", () => {
-		expect(normalizeSessionStatFields(["cost", "bogus", "context", "cost"])).toEqual(["context", "cost"]);
+const NOW = 1_790_866_000_000;
+
+function stats(taskId: string, overrides: Partial<ClaudeSessionStats> = {}): ClaudeSessionStats {
+	return {
+		...parseClaudeSessionStats({ model: { display_name: "Opus" } }, taskId, NOW - 60_000)!,
+		taskTitle: taskId,
+		...overrides,
+	};
+}
+
+const warmFor = (ms: number) => ({ warm: true, ttl: "5m", expiresAt: NOW + ms, hitRatio: null, misses: null });
+
+describe("sessionAttention", () => {
+	it("flags an expiring warm cache only while the task waits on the user", () => {
+		expect(sessionAttention(stats("a", { awaitingUser: true, cache: warmFor(120_000) }), NOW)).toBe("cacheExpiring");
+		// A working agent refreshes its own 5m cache, so it is always "about to expire".
+		expect(sessionAttention(stats("a", { awaitingUser: false, cache: warmFor(120_000) }), NOW)).toBeNull();
 	});
 
-	it("keeps an empty list (block hidden) but drops a non-array", () => {
-		expect(normalizeSessionStatFields([])).toEqual([]);
-		expect(normalizeSessionStatFields("cost")).toBeUndefined();
+	it("ignores caches far from expiry or already cold", () => {
+		expect(sessionAttention(stats("a", { awaitingUser: true, cache: warmFor(30 * 60_000) }), NOW)).toBeNull();
+		expect(sessionAttention(stats("a", { awaitingUser: true, cache: warmFor(-1) }), NOW)).toBeNull();
+	});
+
+	it("flags context at 85% and above", () => {
+		expect(sessionAttention(stats("a", { contextPercent: 85 }), NOW)).toBe("context");
+		expect(sessionAttention(stats("a", { contextPercent: 84 }), NOW)).toBeNull();
+	});
+});
+
+describe("attentionSessions", () => {
+	it("puts the soonest expiry first, then the fullest context, and caps the strip", () => {
+		const list = [
+			stats("ctx-90", { contextPercent: 90 }),
+			stats("cache-4m", { awaitingUser: true, cache: warmFor(4 * 60_000) }),
+			stats("ctx-95", { contextPercent: 95 }),
+			stats("cache-1m", { awaitingUser: true, cache: warmFor(60_000) }),
+			stats("calm", { contextPercent: 10 }),
+		];
+		const out = attentionSessions(list, NOW);
+		expect(out).toHaveLength(MAX_ATTENTION_SESSIONS);
+		expect(out.map((s) => s.taskId)).toEqual(["cache-1m", "cache-4m", "ctx-95"]);
+	});
+});
+
+describe("summarizeSessions", () => {
+	it("counts warm caches and sums reported costs", () => {
+		const out = summarizeSessions(
+			[stats("a", { costUsd: 1.5, cache: warmFor(60_000) }), stats("b", { costUsd: 0.25 }), stats("c")],
+			NOW,
+		);
+		expect(out).toEqual({ count: 3, warm: 1, costUsd: 1.75 });
+		expect(summarizeSessions([stats("a")], NOW).costUsd).toBeNull();
+	});
+});
+
+describe("sortSessions", () => {
+	it("sorts by cost either way and keeps missing values last", () => {
+		const list = [stats("cheap", { costUsd: 1 }), stats("none"), stats("dear", { costUsd: 9 })];
+		expect(sortSessions(list, "cost", "desc", NOW).map((s) => s.taskId)).toEqual(["dear", "cheap", "none"]);
+		expect(sortSessions(list, "cost", "asc", NOW).map((s) => s.taskId)).toEqual(["cheap", "dear", "none"]);
+	});
+
+	it("orders cache by expiry, with cold caches last", () => {
+		const list = [stats("cold"), stats("later", { cache: warmFor(50 * 60_000) }), stats("soon", { cache: warmFor(60_000) })];
+		expect(sortSessions(list, "cache", "asc", NOW).map((s) => s.taskId)).toEqual(["soon", "later", "cold"]);
+	});
+
+	it("puts sessions needing attention first under the attention sort", () => {
+		const list = [stats("calm"), stats("full", { contextPercent: 92 }), stats("cache", { awaitingUser: true, cache: warmFor(60_000) })];
+		expect(sortSessions(list, "attention", "asc", NOW).map((s) => s.taskId)).toEqual(["cache", "full", "calm"]);
+	});
+
+	it("does not mutate its input", () => {
+		const list = [stats("b", { costUsd: 1 }), stats("a", { costUsd: 2 })];
+		sortSessions(list, "cost", "desc", NOW);
+		expect(list.map((s) => s.taskId)).toEqual(["b", "a"]);
 	});
 });
 
