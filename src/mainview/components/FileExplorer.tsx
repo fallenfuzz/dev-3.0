@@ -68,6 +68,7 @@ export default function FileExplorer({
 	const [dirs, setDirs] = useState<Map<string, DirState>>(() => new Map());
 	const [expanded, setExpanded] = useState<Set<string>>(() => new Set(expandedByRoot.get(rootKey) ?? []));
 	const [activeRel, setActiveRel] = useState<string | null>(null);
+	const [rootPath, setRootPath] = useState("");
 	const [menu, setMenu] = useState<{ entry: ExplorerEntry; top: number; left: number } | null>(null);
 	const [moreMenu, setMoreMenu] = useState<{ top: number; left: number } | null>(null);
 	const treeRef = useRef<HTMLDivElement>(null);
@@ -85,8 +86,9 @@ export default function FileExplorer({
 			});
 		}
 		let state: DirState;
+		let listing: ExplorerListing | null = null;
 		try {
-			const listing = await api.request.listExplorerDirectory({ projectId, taskId: taskId ?? null, relPath });
+			listing = await api.request.listExplorerDirectory({ projectId, taskId: taskId ?? null, relPath });
 			state = listing.error
 				? { status: "error", message: errorMessage(listing, t) }
 				: { status: "ready", entries: listing.entries, truncated: listing.truncated };
@@ -94,6 +96,7 @@ export default function FileExplorer({
 			state = { status: "error", message: t("fileExplorer.failed", { error: String(err) }) };
 		}
 		if (rootKeyRef.current !== requestedFor) return;
+		if (relPath === "" && listing?.root) setRootPath(listing.root);
 		setDirs((prev) => new Map(prev).set(relPath, state));
 	}, [projectId, taskId, t]);
 
@@ -103,6 +106,7 @@ export default function FileExplorer({
 		setExpanded(remembered);
 		setDirs(new Map());
 		setActiveRel(null);
+		setRootPath("");
 		void loadDir("");
 		for (const rel of remembered) void loadDir(rel);
 	}, [rootKey, loadDir]);
@@ -269,9 +273,17 @@ export default function FileExplorer({
 	return (
 		<div className="h-full w-full flex flex-col bg-raised text-fg-2 min-w-0" data-testid="file-explorer">
 			<div className="flex items-center gap-1 pl-3 pr-1.5 h-9 flex-shrink-0 border-b border-edge">
-				<div className="min-w-0 flex-1 truncate text-xs font-semibold text-fg-2" title={rootLabel}>
-					{rootLabel}
-				</div>
+				{/* The label names the branch or project; hovering shows where it lives on disk. */}
+				<Tooltip
+					content={rootLabel}
+					detail={rootPath ? <span className="font-mono break-all streamer-private" data-testid="file-explorer-root-path">{rootPath}</span> : undefined}
+					wide
+					placement="bottom"
+				>
+					<div className="min-w-0 flex-1 truncate text-xs font-semibold text-fg-2">
+						{rootLabel}
+					</div>
+				</Tooltip>
 				<Tooltip content={t("fileExplorer.refresh")}>
 					<button type="button" className={headerButton} aria-label={t("fileExplorer.refresh")} onClick={() => refreshAll(false)}>
 						<RefreshGlyph />
