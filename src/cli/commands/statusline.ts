@@ -24,8 +24,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { claudeConfigLocation } from "../../shared/claude-config-dir";
-import { DEV3_AGENT_ACCOUNT_ID_ENV, normalizeClaudeConfigDir } from "../../shared/agent-accounts";
+import { claudeConfigLocation, pinnedClaudeConfigDir } from "../../shared/claude-config-dir";
+import { DEV3_AGENT_ACCOUNT_ID_ENV } from "../../shared/agent-accounts";
 import { formatStatusLineSegment, parseClaudeStatusLinePayload } from "../../shared/rate-limits";
 
 export const RATE_LIMITS_DIR = join(homedir(), ".dev3.0", "data", "rate-limits");
@@ -108,7 +108,7 @@ function managedAccountId(): string | null {
 /** The project-pinned `CLAUDE_CONFIG_DIR` this session runs under, or null for
  *  `~/.claude`. A managed account's dir is not a pin; its account id wins. */
 function pinnedConfigDir(): string | null {
-	return normalizeClaudeConfigDir(process.env.CLAUDE_CONFIG_DIR, homedir());
+	return pinnedClaudeConfigDir(process.env.CLAUDE_CONFIG_DIR, homedir(), process.cwd());
 }
 
 /**

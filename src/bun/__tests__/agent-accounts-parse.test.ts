@@ -5,7 +5,6 @@ import {
 	decodeJwtPayload,
 	defaultAccountLabel,
 	defaultApiProfileLabel,
-	normalizeClaudeConfigDir,
 	shortClaudeConfigDir,
 	parseClaudeIdentity,
 	parseCodexIdentity,
@@ -210,20 +209,6 @@ describe("defaultApiProfileLabel", () => {
 	it("falls back to an ordinal for missing or unparsable URLs", () => {
 		expect(defaultApiProfileLabel(null, 2)).toBe("API profile 2");
 		expect(defaultApiProfileLabel("not a url", 3)).toBe("API profile 3");
-	});
-});
-
-describe("normalizeClaudeConfigDir", () => {
-	const home = "/home/me";
-	it("expands ~ and drops trailing slashes", () => {
-		expect(normalizeClaudeConfigDir("~/proj/.claude/", home)).toBe("/home/me/proj/.claude");
-		expect(normalizeClaudeConfigDir(" /work/x/.claude// ", home)).toBe("/work/x/.claude");
-	});
-	it("treats unset, blank and ~/.claude itself as the system login", () => {
-		expect(normalizeClaudeConfigDir(undefined, home)).toBeNull();
-		expect(normalizeClaudeConfigDir("  ", home)).toBeNull();
-		expect(normalizeClaudeConfigDir("~/.claude", home)).toBeNull();
-		expect(normalizeClaudeConfigDir("/home/me/.claude/", home)).toBeNull();
 	});
 });
 

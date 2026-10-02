@@ -12,7 +12,8 @@ import type {
 	ProjectClaudeLogin,
 } from "../../shared/agent-accounts";
 import type { ClaudeApiProfileDraft } from "../agent-accounts";
-import { normalizeClaudeConfigDir, parseEnvLines, shortCodexWorkspaceId } from "../../shared/agent-accounts";
+import { parseEnvLines, shortCodexWorkspaceId } from "../../shared/agent-accounts";
+import { pinnedClaudeConfigDir } from "../../shared/claude-config-dir";
 import * as accounts from "../agent-accounts";
 import * as data from "../data";
 import { resolveProjectEnv } from "../repo-config";
@@ -166,7 +167,7 @@ async function renameAgentAccount(params: { kind: AgentAccountKind; accountId: s
 async function getProjectClaudeLogin(params: { projectId: string }): Promise<ProjectClaudeLogin> {
 	try {
 		const project = await data.getProject(params.projectId);
-		const configDir = normalizeClaudeConfigDir((await resolveProjectEnv(project)).CLAUDE_CONFIG_DIR, homedir());
+		const configDir = pinnedClaudeConfigDir((await resolveProjectEnv(project)).CLAUDE_CONFIG_DIR, homedir(), project.path);
 		if (!configDir) return { configDir: null, identity: null };
 		return { configDir, identity: accounts.readClaudeConfigDirIdentity(configDir) };
 	} catch (err) {
@@ -182,7 +183,7 @@ async function listPinnedClaudeLogins(): Promise<PinnedClaudeLogin[]> {
 	const byDir = new Map<string, PinnedClaudeLogin>();
 	for (const project of await data.loadProjects()) {
 		try {
-			const configDir = normalizeClaudeConfigDir((await resolveProjectEnv(project)).CLAUDE_CONFIG_DIR, homedir());
+			const configDir = pinnedClaudeConfigDir((await resolveProjectEnv(project)).CLAUDE_CONFIG_DIR, homedir(), project.path);
 			if (!configDir) continue;
 			const entry = byDir.get(configDir);
 			if (entry) entry.projectNames.push(project.name);
