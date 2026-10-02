@@ -3440,6 +3440,19 @@ describe("virtual task lifecycle", () => {
 		expect("worktreePath" in updateArgs).toBe(false);
 	});
 
+	it("completion kills no process inside a folder the user chose", async () => {
+		const project = vproject();
+		const task = makeTask({ projectId: "vp1", status: "in-progress", worktreePath: "/Users/me", opsWorkDir: "/Users/me" });
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.getTask).mockResolvedValue(task);
+		vi.mocked(pty.destroySession).mockImplementation(() => {});
+		mockTaskWrites(task);
+
+		await handlers.moveTask({ taskId: "task-1", projectId: "vp1", newStatus: "completed" });
+
+		expect(mockSpawn.mock.calls.some((call) => (call[0] as string[])[0] === "lsof")).toBe(false);
+	});
+
 	it("delete: removes a MANAGED work dir under ops/", async () => {
 		const project = vproject();
 		const task = makeTask({ projectId: "vp1", status: "completed", worktreePath: "/tmp/test-dev3/ops/operations/task-1/work" });

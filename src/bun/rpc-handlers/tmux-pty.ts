@@ -3294,7 +3294,9 @@ async function spawnAgentInTask(params: {
 	// Written BEFORE the split on purpose: a conversation that cannot be retold
 	// must fail with no pane opened, rather than leave a bare agent standing where
 	// the user asked for a takeover.
-	const handoff = params.handoff ? await prepareTaskHandoff(task) : null;
+	const handoff = params.handoff
+		? await prepareTaskHandoff(task, project.kind === "virtual" ? { containerDir: git.taskDir(project, task) } : {})
+		: null;
 	if (params.handoff && !handoff) {
 		throw new Error("Nothing to hand over: no parseable agent transcript has been written for this task yet.");
 	}
