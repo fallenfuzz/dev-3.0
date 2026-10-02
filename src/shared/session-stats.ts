@@ -10,7 +10,8 @@ export interface ClaudeSessionCacheStats {
 	ttl: string | null;
 	/** When a warm cache expires (epoch ms). */
 	expiresAt: number | null;
-	/** Share of requests served from cache, 0-1. */
+	/** Claude Code's `prompt_cache.hit_ratio`, 0-1. A token share, not a request share:
+	 *  a live payload had 22 requests, 0 misses and a 0.96 ratio. */
 	hitRatio: number | null;
 	misses: number | null;
 }
