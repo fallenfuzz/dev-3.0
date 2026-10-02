@@ -32,8 +32,8 @@ export interface FileExplorerProps {
 	pinned: boolean;
 	onTogglePin: () => void;
 	onHide: () => void;
-	/** A file was opened from the tree; an auto-hidden panel slides away. */
-	onFileOpened?: () => void;
+	/** A file was opened or its path sent to the terminal; an auto-hidden panel slides away. */
+	onHandOff?: () => void;
 	/** The legacy yazi pane, offered from the header menu on tmux-backed tasks. */
 	onOpenYazi?: () => void;
 	/** Bumped by the frame when the tree should take keyboard focus. */
@@ -59,7 +59,7 @@ export default function FileExplorer({
 	pinned,
 	onTogglePin,
 	onHide,
-	onFileOpened,
+	onHandOff,
 	onOpenYazi,
 	focusSignal = 0,
 }: FileExplorerProps) {
@@ -161,8 +161,8 @@ export default function FileExplorer({
 
 	const openFile = useCallback((entry: ExplorerEntry) => {
 		openFilePreview(entry.path, undefined, taskId ?? undefined);
-		onFileOpened?.();
-	}, [taskId, onFileOpened]);
+		onHandOff?.();
+	}, [taskId, onHandOff]);
 
 	const activate = useCallback((entry: ExplorerEntry) => {
 		setActiveRel(entry.relPath);
@@ -185,6 +185,13 @@ export default function FileExplorer({
 	}, [t]);
 
 	function onTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+		// Escape leaves the tree; it must not also step the app's route back.
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			treeRef.current?.blur();
+			return;
+		}
 		if (rows.length === 0) return;
 		const index = Math.max(0, rows.findIndex((row) => row.entry.relPath === activeRel));
 		const row = rows[index];
@@ -240,7 +247,13 @@ export default function FileExplorer({
 		items.push({ label: t("fileExplorer.copyRelativePath"), run: () => void copyText(entry.relPath) });
 		items.push({ label: t("fileExplorer.copyPath"), run: () => void copyText(entry.path) });
 		if (taskId) {
-			items.push({ label: t("fileExplorer.insertPath"), run: () => requestTaskTerminalPaste(taskId, `${quoteForShell(entry.relPath)} `) });
+			items.push({
+				label: t("fileExplorer.insertPath"),
+				run: () => {
+					requestTaskTerminalPaste(taskId, `${quoteForShell(entry.relPath)} `);
+					onHandOff?.();
+				},
+			});
 		}
 		// Desktop only: in a browser tab these would open the file on the host machine.
 		if (isElectrobun) {
@@ -250,7 +263,8 @@ export default function FileExplorer({
 		return items;
 	}
 
-	const headerButton = "inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-3 hover:bg-raised-hover hover:text-fg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+	const headerButtonBase = "inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-raised-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+	const headerButton = `${headerButtonBase} text-fg-3 hover:text-fg`;
 
 	return (
 		<div className="h-full w-full flex flex-col bg-raised text-fg-2 min-w-0" data-testid="file-explorer">
@@ -271,7 +285,7 @@ export default function FileExplorer({
 				<Tooltip content={pinned ? t("fileExplorer.autohide") : t("fileExplorer.pin")}>
 					<button
 						type="button"
-						className={`${headerButton} ${pinned ? "text-accent" : ""}`}
+						className={`${headerButtonBase} ${pinned ? "text-accent hover:text-accent-emphasis" : "text-fg-3 hover:text-fg"}`}
 						aria-label={t("fileExplorer.pin")}
 						aria-pressed={pinned}
 						onClick={onTogglePin}
