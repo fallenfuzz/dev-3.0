@@ -325,6 +325,17 @@ async function reopenCodexLaunch(project: Project, task: Task, worktreePath: str
 	}
 }
 
+/**
+ * The folder whose every process may be killed with the task, or null. A folder
+ * the user chose for an Operations task is shared with the user and with other
+ * tasks, so only a worktree or a managed Operations folder qualifies.
+ */
+function taskOwnedFolder(project: Project, folder: string | null): string | null {
+	if (!folder) return null;
+	if (project.kind !== "virtual") return folder;
+	return folder.startsWith(`${OPS_DIR}/`) ? folder : null;
+}
+
 function derivedPreparationPath(project: Project, task: Task): string {
 	if (project.kind === "virtual") {
 		return task.opsWorkDir?.trim() || git.virtualWorkDir(project, task);
@@ -1118,8 +1129,11 @@ export async function executeLifecycleEffect(
 			// Best-effort on purpose (no "abort" policy): a stubborn foreign process
 			// must not block a completion. Survivors are logged by the reaper.
 			await reapWorktreeProcesses(
-				ctx.sourceTask.worktreePath
-					?? (effect.allowDerivedPath ? derivedPreparationPath(ctx.project, ctx.sourceTask) : null),
+				taskOwnedFolder(
+					ctx.project,
+					ctx.sourceTask.worktreePath
+						?? (effect.allowDerivedPath ? derivedPreparationPath(ctx.project, ctx.sourceTask) : null),
+				),
 				ctx.sourceTask.id.slice(0, 8),
 			);
 			return {};
