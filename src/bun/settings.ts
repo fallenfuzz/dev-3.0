@@ -14,7 +14,6 @@ export function hostPublishesCanary(): boolean {
 	return canaryPublishesFor(hostOsName(process.platform), process.arch);
 }
 import { normalizeSimplifiedInterface, SIMPLIFY_VIEW_PRESET_IDS } from "../shared/simplified-interface";
-import { normalizeSessionStatFields } from "../shared/session-stats";
 import { withFileLock } from "./file-lock";
 import { createLogger } from "./logger";
 import { DEV3_HOME } from "./paths";
@@ -182,7 +181,6 @@ function normalizeSettings(data: Record<string, unknown>): GlobalSettings {
 		focusMode: d.focusMode === true ? true : undefined,
 		// Default-on toggle — only an explicit false is a stored opt-out.
 		agentRateLimitTracking: d.agentRateLimitTracking === false ? false : undefined,
-		usagePanelSessionFields: normalizeSessionStatFields(d.usagePanelSessionFields),
 		// Boolean preference — both true (watch) and false (don't watch) are
 		// meaningful stored choices, so preserve either; only undefined drops.
 		watchByDefault: typeof d.watchByDefault === "boolean" ? d.watchByDefault : undefined,

@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentAccountKind, AgentAccountsState } from "../../shared/agent-accounts";
 import type { AgentRateLimitSnapshot, AgentRateLimitsReport, RateLimitSource } from "../../shared/rate-limits";
 import { isUnlimitedRateLimitSnapshot } from "../../shared/rate-limits";
-import { MAX_SESSION_STATS } from "../../shared/session-stats";
 import { api } from "../rpc";
 import { toast } from "../toast";
 import { useT, type TFunction } from "../i18n";
 import { notifyAgentAccountsChanged } from "./AgentAccountIndicator";
-import UsageSessionsBlock from "./UsageSessionsBlock";
+import UsageSessionsStrip from "./UsageSessionsStrip";
 import {
 	ACCOUNT_CARD_CLASS,
 	AccountCardHeader,
@@ -245,16 +244,19 @@ export default function AgentUsagePanel({
 	projectId = null,
 	interactive,
 	onOpenSettings,
+	onOpenSessions,
 }: {
 	report: AgentRateLimitsReport;
 	accounts: AgentAccountsState | null;
-	/** The screen's project; its tasks are the only sessions listed. Null lists all. */
+	/** The screen's project; only its tasks' sessions count. Null counts all. */
 	projectId?: string | null;
 	interactive: boolean;
 	onOpenSettings: () => void;
+	/** Opens the full Sessions screen. A navigation, so the dwell gate does not apply. */
+	onOpenSessions?: () => void;
 }) {
 	const t = useT();
-	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId).slice(0, MAX_SESSION_STATS);
+	const sessions = (report.sessions ?? []).filter((s) => !projectId || s.projectId === projectId);
 	const [busy, setBusy] = useState(false);
 	const [dwelled, setDwelled] = useState(false);
 	const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -382,7 +384,7 @@ export default function AgentUsagePanel({
 					</div>
 				);
 			})}
-			{sessions.length ? <UsageSessionsBlock sessions={sessions} now={now} /> : null}
+			<UsageSessionsStrip sessions={sessions} onOpenAll={onOpenSessions} />
 		</div>
 	);
 }

@@ -5,7 +5,6 @@ import type { ImportConversationsResult, ImportableConversationView } from "./co
 import type { HandoffPreview, SpawnAgentResult } from "./conversation-handoff-model";
 import type { TaskConversationView } from "./task-conversation-model";
 import type { AgentRateLimitsReport } from "./rate-limits";
-import type { SessionStatField } from "./session-stats";
 import type { AgentAccount, AgentAccountKind, AgentAccountsState, ClaudeSlotModels } from "./agent-accounts";
 import type { TerminalBackendIdentity } from "./terminal-backend-identity";
 import type { TaskPaneState, TaskPaneAction, TaskPaneBackendKind } from "./task-panes";
@@ -1543,11 +1542,6 @@ export interface GlobalSettings {
 	 * injection and the indicator.
 	 */
 	agentRateLimitTracking?: boolean;
-	/**
-	 * Which per-session stats the usage panel's Sessions block shows. Undefined
-	 * means DEFAULT_SESSION_STAT_FIELDS; an empty list hides the block.
-	 */
-	usagePanelSessionFields?: SessionStatField[];
 	/**
 	 * Remembered state of the Watch toggle in the launch/create-variant modal.
 	 * When a task is launched, the toggle's on/off choice is persisted here and

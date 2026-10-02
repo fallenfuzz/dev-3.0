@@ -41,7 +41,6 @@ import type { UpdateChannel } from "../../shared/update-channel";
 import AdvancedExperienceSection from "./global-settings/AdvancedExperienceSection";
 import AgentAccountsSection from "./global-settings/AgentAccountsSection";
 import AgentRateLimitSettingsSection from "./global-settings/AgentRateLimitSettingsSection";
-import type { SessionStatField } from "../../shared/session-stats";
 import LowBatterySettingsSection from "./global-settings/LowBatterySettingsSection";
 import AgentSettingsSection from "./global-settings/AgentSettingsSection";
 import AppearanceSettingsSection from "./global-settings/AppearanceSettingsSection";
@@ -647,13 +646,6 @@ function GlobalSettings({
 		[persistSettingChange],
 	);
 
-	const handleSessionFieldsChange = useCallback(
-		(fields: SessionStatField[]) => {
-			persistSettingChange({ usagePanelSessionFields: fields });
-		},
-		[persistSettingChange],
-	);
-
 	const handleLowBatteryToggle = useCallback(
 		(enabled: boolean) => {
 			// Stored as an opt-IN, and the explicit `false` is kept: "I turned it off"
@@ -1001,7 +993,6 @@ function GlobalSettings({
 							t={t}
 							globalSettings={globalSettings}
 							onToggle={handleRateLimitTrackingToggle}
-							onSessionFieldsChange={handleSessionFieldsChange}
 						/>
 					</>
 				);

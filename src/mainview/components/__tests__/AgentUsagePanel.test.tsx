@@ -8,7 +8,7 @@ import type { AgentAccountsState } from "../../../shared/agent-accounts";
 import type { AgentRateLimitsReport } from "../../../shared/rate-limits";
 
 vi.mock("../../rpc", () => ({
-	api: { request: { setActiveAgentAccount: vi.fn(), getGlobalSettings: vi.fn().mockResolvedValue({}) } },
+	api: { request: { setActiveAgentAccount: vi.fn() } },
 }));
 
 vi.mock("../../toast", () => ({
@@ -219,9 +219,9 @@ describe("AgentUsagePanel", () => {
 		expect(setActive).not.toHaveBeenCalled();
 	});
 
-	it("lists only the current project's sessions, and every session outside a project", async () => {
+	it("counts only the current project's sessions, every session outside a project, and opens the full list", async () => {
 		const now = Date.now();
-		const session = (taskId: string, taskTitle: string, projectId: string) => ({
+		const session = (taskId: string, taskTitle: string, projectId: string, contextPercent: number) => ({
 			taskId,
 			taskTitle,
 			taskSeq: 1,
@@ -230,29 +230,52 @@ describe("AgentUsagePanel", () => {
 			capturedAt: now,
 			model: null,
 			effort: null,
-			contextPercent: 10,
+			sessionName: null,
+			thinking: null,
+			contextPercent,
 			contextWindowSize: null,
 			totalTokens: null,
 			cacheReadTokens: null,
 			cacheWriteTokens: null,
+			turnInputTokens: null,
+			turnOutputTokens: null,
 			cache: null,
 			costUsd: null,
+			durationMs: null,
+			apiDurationMs: null,
+			linesAdded: null,
+			linesRemoved: null,
 		});
-		const withSessions = { ...report(), sessions: [session("t1", "Alpha task", "p1"), session("t2", "Beta task", "p2")] } as AgentRateLimitsReport;
+		const withSessions = {
+			...report(),
+			sessions: [session("t1", "Alpha task", "p1", 91), session("t2", "Beta task", "p2", 92)],
+		} as AgentRateLimitsReport;
+		const onOpenSessions = vi.fn();
 		const view = render(
 			<I18nProvider>
-				<AgentUsagePanel report={withSessions} accounts={accounts()} projectId="p1" interactive onOpenSettings={() => {}} />
+				<AgentUsagePanel
+					report={withSessions}
+					accounts={accounts()}
+					projectId="p1"
+					interactive={false}
+					onOpenSettings={() => {}}
+					onOpenSessions={onOpenSessions}
+				/>
 			</I18nProvider>,
 		);
-		expect(await screen.findByText(/Alpha task/)).toBeTruthy();
+		expect(screen.getByText("1 session")).toBeTruthy();
+		expect(screen.getByText(/Alpha task/)).toBeTruthy();
 		expect(screen.queryByText(/Beta task/)).toBeNull();
+		// A navigation, so it works before the dwell arms the account rows.
+		await userEvent.click(screen.getByRole("button", { name: "All sessions" }));
+		expect(onOpenSessions).toHaveBeenCalledTimes(1);
 		view.unmount();
 		render(
 			<I18nProvider>
 				<AgentUsagePanel report={withSessions} accounts={accounts()} interactive onOpenSettings={() => {}} />
 			</I18nProvider>,
 		);
-		expect(await screen.findByText(/Beta task/)).toBeTruthy();
-		expect(screen.getByText(/Alpha task/)).toBeTruthy();
+		expect(screen.getByText("2 sessions")).toBeTruthy();
+		expect(screen.getByText(/Beta task/)).toBeTruthy();
 	});
 });
