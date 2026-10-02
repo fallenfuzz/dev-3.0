@@ -4,6 +4,7 @@ import type { AgentFamily, ColumnAgentConfig, DevServerEntry, DevServerStatus, P
 import { getTaskTitle } from "../../shared/types";
 import * as data from "../data";
 import * as git from "../git";
+import { folderWorkDir } from "../task-folder";
 import * as pty from "../pty-server";
 import * as agents from "../agents";
 import { codexAccountIdForHome } from "../agent-accounts";
@@ -3295,7 +3296,7 @@ async function spawnAgentInTask(params: {
 	// must fail with no pane opened, rather than leave a bare agent standing where
 	// the user asked for a takeover.
 	const handoff = params.handoff
-		? await prepareTaskHandoff(task, project.kind === "virtual" ? { containerDir: git.taskDir(project, task) } : {})
+		? await prepareTaskHandoff(task, folderWorkDir(project, task) ? { containerDir: git.taskDir(project, task) } : {})
 		: null;
 	if (params.handoff && !handoff) {
 		throw new Error("Nothing to hand over: no parseable agent transcript has been written for this task yet.");
