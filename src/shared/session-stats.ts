@@ -1,7 +1,7 @@
 /**
  * Per-task Claude session stats - pure parsing shared by the CLI (`dev3 statusline`
  * writes the raw payload per task), the bun monitor (parses and attaches task
- * identity) and the renderer (the usage panel's Sessions block).
+ * identity) and the renderer (the usage panel's attention strip and the Sessions screen).
  */
 
 export interface ClaudeSessionCacheStats {
@@ -23,6 +23,8 @@ export interface ClaudeSessionStats {
 	taskSeq: number | null;
 	projectName: string | null;
 	projectId?: string | null;
+	/** The task waits on the user (questions or user review), so an expiring cache is theirs to save. */
+	awaitingUser?: boolean;
 	capturedAt: number;
 	model: string | null;
 	effort: string | null;
@@ -47,38 +49,14 @@ export interface ClaudeSessionStats {
 	linesRemoved: number | null;
 }
 
-/** Fields the user can toggle in Settings for the usage panel's Sessions block. */
-export const SESSION_STAT_FIELDS = [
-	"model",
-	"sessionName",
-	"contextBar",
-	"context",
-	"tokens",
-	"turn",
-	"cacheStatus",
-	"cacheTokens",
-	"cacheHitRatio",
-	"cost",
-	"duration",
-	"lines",
-	"effort",
-	"thinking",
-] as const;
-
-export type SessionStatField = (typeof SESSION_STAT_FIELDS)[number];
-
-export const DEFAULT_SESSION_STAT_FIELDS: readonly SessionStatField[] = ["context", "cacheStatus", "cacheTokens", "cost"];
-
-/** Sessions older than this drop out of the panel - a prompt cache lives at most an hour. */
+/** Sessions older than this drop out - a prompt cache lives at most an hour. */
 export const SESSION_STATS_RECENT_MS = 6 * 60 * 60 * 1000;
-/** The panel is a glance, not a list view. */
-export const MAX_SESSION_STATS = 6;
-
-/** Unknown or duplicate ids are dropped, so a hand-edited settings file cannot break the panel. */
-export function normalizeSessionStatFields(value: unknown): SessionStatField[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	return SESSION_STAT_FIELDS.filter((field) => value.includes(field));
-}
+/** The usage panel's attention strip never grows past this, however many tasks run. */
+export const MAX_ATTENTION_SESSIONS = 3;
+/** Context at or above this share needs attention: auto-compact is close. */
+export const CONTEXT_ATTENTION_PERCENT = 85;
+/** A warm cache expiring within this window, while the task waits on the user, needs attention. */
+export const CACHE_EXPIRY_ATTENTION_MS = 5 * 60 * 1000;
 
 function asRecord(v: unknown): Record<string, unknown> | null {
 	return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -170,4 +148,116 @@ export function formatDurationMs(ms: number): string {
 	const h = Math.floor(m / 60);
 	const rm = m % 60;
 	return rm > 0 ? `${h}h${rm}m` : `${h}h`;
+}
+
+export type SessionAttentionReason = "cacheExpiring" | "context";
+
+/**
+ * Why a session needs the user now, or null. A warm 5m cache is always "under 5
+ * minutes from expiry", so expiry counts only while the task waits on the user -
+ * a working agent refreshes its own cache.
+ */
+export function sessionAttention(session: ClaudeSessionStats, nowMs: number): SessionAttentionReason | null {
+	const cache = session.cache;
+	if (
+		session.awaitingUser &&
+		cache?.expiresAt != null &&
+		isSessionCacheWarm(cache, nowMs) &&
+		cache.expiresAt - nowMs <= CACHE_EXPIRY_ATTENTION_MS
+	) {
+		return "cacheExpiring";
+	}
+	if (session.contextPercent != null && session.contextPercent >= CONTEXT_ATTENTION_PERCENT) return "context";
+	return null;
+}
+
+/** The attention strip: soonest cache expiry first, then fullest context, capped. */
+export function attentionSessions(sessions: readonly ClaudeSessionStats[], nowMs: number): ClaudeSessionStats[] {
+	const flagged = sessions.filter((s) => sessionAttention(s, nowMs) != null);
+	return sortSessions(flagged, "attention", "asc", nowMs).slice(0, MAX_ATTENTION_SESSIONS);
+}
+
+export interface SessionsSummary {
+	count: number;
+	warm: number;
+	/** Null when no session reported a cost. */
+	costUsd: number | null;
+}
+
+export function summarizeSessions(sessions: readonly ClaudeSessionStats[], nowMs: number): SessionsSummary {
+	let warm = 0;
+	let costUsd: number | null = null;
+	for (const s of sessions) {
+		if (s.cache && isSessionCacheWarm(s.cache, nowMs)) warm++;
+		if (s.costUsd != null) costUsd = (costUsd ?? 0) + s.costUsd;
+	}
+	return { count: sessions.length, warm, costUsd };
+}
+
+export const SESSION_SORT_KEYS = ["attention", "task", "project", "context", "cache", "cost", "model", "updated"] as const;
+export type SessionSortKey = (typeof SESSION_SORT_KEYS)[number];
+export type SortDirection = "asc" | "desc";
+
+/** The direction a column sorts in on its first click: the "worst" or newest on top. */
+export function defaultSortDirection(key: SessionSortKey): SortDirection {
+	return key === "task" || key === "project" || key === "model" || key === "cache" || key === "attention" ? "asc" : "desc";
+}
+
+/** Attention order as one number: expiring caches by expiry, then high context
+ *  fullest first, then everything else. Epoch ms stays far below the offsets. */
+function attentionValue(session: ClaudeSessionStats, nowMs: number): number {
+	const reason = sessionAttention(session, nowMs);
+	if (reason === "cacheExpiring") return session.cache!.expiresAt!;
+	if (reason === "context") return 1e14 - (session.contextPercent ?? 0);
+	return 2e14;
+}
+
+/** Seconds until a warm cache expires; cold or unknown sorts last. */
+function cacheSortValue(session: ClaudeSessionStats, nowMs: number): number {
+	const cache = session.cache;
+	if (!cache || !isSessionCacheWarm(cache, nowMs)) return Number.POSITIVE_INFINITY;
+	return cache.expiresAt ?? Number.MAX_SAFE_INTEGER;
+}
+
+/** Sort a copy. Missing values sort last in either direction; ties fall back to newest first. */
+export function sortSessions(
+	sessions: readonly ClaudeSessionStats[],
+	key: SessionSortKey,
+	direction: SortDirection,
+	nowMs: number,
+): ClaudeSessionStats[] {
+	const value = (s: ClaudeSessionStats): string | number | null => {
+		switch (key) {
+			case "attention":
+				return attentionValue(s, nowMs);
+			case "task":
+				return s.taskTitle?.toLocaleLowerCase() ?? null;
+			case "project":
+				return s.projectName?.toLocaleLowerCase() ?? null;
+			case "context":
+				return s.contextPercent;
+			case "cache": {
+				const v = cacheSortValue(s, nowMs);
+				return Number.isFinite(v) ? v : null;
+			}
+			case "cost":
+				return s.costUsd;
+			case "model":
+				return s.model?.toLocaleLowerCase() ?? null;
+			case "updated":
+				return s.capturedAt;
+		}
+	};
+	const sign = direction === "asc" ? 1 : -1;
+	return [...sessions].sort((a, b) => {
+		const va = value(a);
+		const vb = value(b);
+		if (va == null || vb == null) {
+			if (va != null) return -1;
+			if (vb != null) return 1;
+		} else if (va !== vb) {
+			return (va < vb ? -1 : 1) * sign;
+		}
+		return b.capturedAt - a.capturedAt;
+	});
 }
