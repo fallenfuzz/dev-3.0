@@ -318,9 +318,9 @@ function isInsideDev3Home(path: string): boolean {
 }
 
 async function addProjectImpl(
-	params: { path: string; name?: string },
+	params: { path: string; name?: string; gitWorkflow?: boolean },
 	opts: { offerGitInit?: boolean } = {},
-): Promise<{ ok: true; project: Project } | { ok: false; error: string; gitInit?: GitInitOffer }> {
+): Promise<{ ok: true; project: Project } | { ok: false; error: string; gitInit?: GitInitOffer; notGitRepo?: true }> {
 	log.info("→ addProject", params);
 	try {
 		// Protect the synthetic virtual-project namespace: a real git repo must
@@ -330,10 +330,15 @@ async function addProjectImpl(
 			return { ok: false, error: "Cannot add a project inside the dev-3.0 data directory" };
 		}
 		const isRepo = await git.isGitRepo(params.path);
-		const gitInit = opts.offerGitInit ? await probeGitInit(params.path) : null;
-		if (!isRepo) {
+		// A plain folder added with the git workflow off needs no repository at all.
+		const gitless = !isRepo && params.gitWorkflow === false;
+		const gitInit = opts.offerGitInit && !gitless ? await probeGitInit(params.path) : null;
+		if (!isRepo && !gitless) {
 			log.warn("Not a git repo", { path: params.path, offerGitInit: !!gitInit });
-			return { ok: false, error: "Selected folder is not a git repository", ...(gitInit ? { gitInit } : {}) };
+			return { ok: false, error: "Selected folder is not a git repository", notGitRepo: true, ...(gitInit ? { gitInit } : {}) };
+		}
+		if (gitless && !existsSync(params.path)) {
+			return { ok: false, error: `Folder does not exist: ${params.path}` };
 		}
 		// A repo without a commit cannot host a worktree; offer to make the first one.
 		if (gitInit) {
@@ -344,12 +349,17 @@ async function addProjectImpl(
 		// may be macOS while the repo lives on a Windows drive.
 		const name = params.name?.trim() || pathBasename(params.path);
 		const project = await data.addProject(params.path, name);
-		try {
-			const defaultBranch = await git.getDefaultBranch(params.path);
-			await data.updateProject(project.id, { defaultBaseBranch: defaultBranch });
-			project.defaultBaseBranch = defaultBranch;
-		} catch (err) {
-			log.warn("Could not detect default branch, keeping 'main'", { error: String(err) });
+		if (!isRepo) {
+			// A plain folder can only ever run without the git workflow.
+			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
+		} else {
+			try {
+				const defaultBranch = await git.getDefaultBranch(params.path);
+				await data.updateProject(project.id, { defaultBaseBranch: defaultBranch });
+				project.defaultBaseBranch = defaultBranch;
+			} catch (err) {
+				log.warn("Could not detect default branch, keeping 'main'", { error: String(err) });
+			}
 		}
 		// The renderer keeps whatever this returns until the next getProjects, and
 		// getProjects is not polled — so a raw record left `defaultCompareRef`
@@ -1102,7 +1112,7 @@ export const appHandlers = {
 	reorderProjects,
 	listDirectory,
 	listAgentSkills,
-	addProject: (params: { path: string; name?: string }) => addProjectImpl(params, { offerGitInit: true }),
+	addProject: (params: { path: string; name?: string; gitWorkflow?: boolean }) => addProjectImpl(params, { offerGitInit: true }),
 	createSandboxProject,
 	addVirtualProject,
 	cloneAndAddProject,
