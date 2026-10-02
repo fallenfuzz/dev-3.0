@@ -50,6 +50,9 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [browsing, setBrowsing] = useState(false);
 	const [initializing, setInitializing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Picked folders that are not git repositories, offered as gitless projects.
+	const [plainFolders, setPlainFolders] = useState<string[]>([]);
+	const [addingPlain, setAddingPlain] = useState(false);
 	const [cloneOutput, setCloneOutput] = useState<string[]>([]);
 	const [pendingSpaces, setPendingSpaces] = useState<DeferredSpaces>({
 		spaceIds: initialSpaceIds ?? [],
@@ -188,15 +191,43 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		</div>
 	);
 
+	async function handleAddPlainFolders() {
+		if (addingPlain) return;
+		setAddingPlain(true);
+		setError(null);
+		const errors: string[] = [];
+		for (const folder of plainFolders) {
+			try {
+				const result = await api.request.addProject({ path: folder, gitWorkflow: false, ...(autoConfigure ? { autoConfigure: true } : {}) });
+				if (result.ok) {
+					dispatch({ type: "addProject", project: result.project });
+					reportAutoConfigured(result.project, result.autoConfigured);
+					void applyPendingSpaces(result.project.id);
+					trackEvent("project_added", { source: "local" });
+					posthog.capture("project_added", { source: "local" });
+				} else {
+					errors.push(`${folder}: ${result.error}`);
+				}
+			} catch (err) {
+				errors.push(`${folder}: ${String(err)}`);
+			}
+		}
+		setAddingPlain(false);
+		if (errors.length === 0) onClose();
+		else setError(errors.join("\n"));
+	}
+
 	async function handleBrowseLocal() {
 		if (browsing) return;
 		setError(null);
+		setPlainFolders([]);
 		setBrowsing(true);
 		try {
 			const folders = await openFolderPickerMulti();
 			if (!folders || folders.length === 0) return;
 
 			const errors: string[] = [];
+			const plain: string[] = [];
 			const added: Project[] = [];
 			let anySucceeded = false;
 			for (const folder of folders) {
@@ -204,8 +235,9 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				const name = folder;
 				try {
 					const first = await api.request.addProject({ path: folder, ...(autoConfigure ? { autoConfigure: true } : {}) });
+					// Declining `git init` on a plain folder still leaves the gitless offer below.
 					const result = !first.ok && first.gitInit
-						? (await initAfterConfirm(first.gitInit, autoConfigure)) ?? { ok: false as const, error: t("addProject.gitInit.declined") }
+						? (await initAfterConfirm(first.gitInit, autoConfigure)) ?? (first.notGitRepo ? first : { ok: false as const, error: t("addProject.gitInit.declined") })
 						: first;
 					if (result.ok) {
 						dispatch({ type: "addProject", project: result.project });
@@ -215,6 +247,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						trackEvent("project_added", { source: "local" });
 						posthog.capture("project_added", { source: "local" });
 						anySucceeded = true;
+					} else if ("notGitRepo" in result && result.notGitRepo) {
+						plain.push(folder);
 					} else {
 						errors.push(`${name}: ${result.error}`);
 					}
@@ -223,7 +257,12 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				}
 			}
 
-			if (errors.length === 0) {
+			if (plain.length > 0) {
+				// Stay open: the plain folders still wait on the user's answer.
+				setPlainFolders(plain);
+				if (added.length > 0) onGitProjectsAdded?.(added);
+				for (const err of errors) toast.error(err, { source: "dashboard" });
+			} else if (errors.length === 0) {
 				onClose();
 				if (added.length > 0) onGitProjectsAdded?.(added);
 			} else if (anySucceeded) {
@@ -472,6 +511,25 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						>
 							{browsing ? t("addProject.adding") : t("addProject.browseBtn")}
 						</button>
+						{plainFolders.length > 0 && (
+							<div className="bg-raised border border-edge rounded-xl px-3 py-2.5 space-y-2" role="status">
+								<p className="text-fg-2 text-sm">{t.plural("addProject.notGitRepo", plainFolders.length)}</p>
+								<ul className="space-y-0.5">
+									{plainFolders.map((folder) => (
+										<li key={folder} className="text-fg text-xs font-mono truncate streamer-private" title={folder}>{folder}</li>
+									))}
+								</ul>
+								<p className="text-fg-3 text-xs">{t("addProject.notGitRepoHint")}</p>
+								<button
+									type="button"
+									onClick={() => void handleAddPlainFolders()}
+									disabled={addingPlain}
+									className="px-3 py-1.5 bg-raised border border-edge rounded-xl text-fg-2 text-sm hover:border-edge-active hover:text-fg transition-colors disabled:opacity-40"
+								>
+									{addingPlain ? t("addProject.adding") : t("addProject.addWithoutGit")}
+								</button>
+							</div>
+						)}
 					</div>
 				) : activeTab === "init" ? (
 					<div className="space-y-3">
