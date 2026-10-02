@@ -31,7 +31,6 @@ import { formatStatusLineSegment, parseClaudeStatusLinePayload } from "../../sha
 export const RATE_LIMITS_DIR = join(homedir(), ".dev3.0", "data", "rate-limits");
 export const CLAUDE_RATE_LIMIT_DUMP_PATH = join(RATE_LIMITS_DIR, "claude.json");
 export const CLAUDE_ACCOUNT_RATE_LIMITS_DIR = join(RATE_LIMITS_DIR, "claude");
-export const CLAUDE_SESSION_STATS_DIR = join(RATE_LIMITS_DIR, "sessions");
 
 const SAFE_ACCOUNT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
