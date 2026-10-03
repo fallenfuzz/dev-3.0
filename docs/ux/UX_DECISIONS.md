@@ -211,9 +211,7 @@ One round floating button over the canvas, only while that pane is scrolled up, 
 
 ## 2026-08-07 — Every toast has one anatomy, and its origin is resolved centrally
 
-- **Rule:** Where a toast came from never changes its shape: source line → message → click target → swipe **and** X **and** timeout. The line falls back task → project → app area (`Settings`/`Update`/`Dashboard`/`Terminal`/`Menu`), first match wins, so no toast is ever bare; an area is a label with no click target. A caller passes ONE token (`taskId`/`projectId`/`source`) and `ToastHost` composes the rest via a resolver injected by `App.tsx`, once at emit, never per render. Bible §5.7, yaml `surfaces.toast`.
-- **Why:** with many parallel tasks a bare sentence cannot say which task it is about — CLI push toasts already carried the source line, in-app ones did not. Rejected: composing `context`/`onClick` at each of ~180 call sites (drifts again on the next toast anyone writes); letting `toast.tsx` import app state (a module-level service would depend on the reducer); and stamping every originless toast with `dev-3.0` (a uniform line that carries nothing is fabrication by another route). Resolving per render passed every unit test yet lost a live toast's line and click target as soon as the user left the project — hence once at emit.
-- **Status:** Decided. Evidence: `src/mainview/toast.tsx`, `src/mainview/App.tsx` (`ToastHost` mount, `openTaskFromNotification`), seq 1437.
+Folded: one toast anatomy, origin resolved once at emit by `ToastHost` — owned by `PRODUCT_UX_BIBLE.md` §5.7 and yaml `surfaces.toast`.
 
 ## 2026-08-06 — Opening a viewed artifact in the real browser is one icon next to download
 
@@ -714,3 +712,7 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 ## 2026-10-02 - Git workflow is a project property, switched on the Board tab
 - **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live; a non-git folder gets an inline offer in AddProject's Local tab; no dashboard badge.
 - **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.
+
+## 2026-10-03 — The dashboard pins every coordinator above the attention rows
+- **Rule:** each active coordinator gets its own navigation-only row in its project's dashboard card, whatever its status — yaml `dashboard-coordinator-rows`.
+- **Why:** a working coordinator vanished into the footer count, yet it is what the user opens to talk to a project. Rejected a global coordinators panel (new chrome; ⇧⌘P `Find coordinator…` already exists). Evidence: `DashboardCoordinatorRows.tsx`.

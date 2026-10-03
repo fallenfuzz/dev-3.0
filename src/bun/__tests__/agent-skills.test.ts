@@ -16,6 +16,7 @@ import {
 	getGenericSkillContent,
 	getProjectConfigSkillContent,
 	getTmuxSkillContent,
+	getArtifactSkillContent,
 	getShareArtifactSkillContent,
 	getTmuxSkillDescription,
 	MANAGED_SKILL_FILES,
@@ -27,7 +28,7 @@ import {
 import { ARTIFACT_TEMPLATE_FILES } from "../../shared/artifact-template";
 import { CLI_EXIT_CODE_DEV_SERVER_NAME_REQUIRED } from "../../shared/cli-exit-codes";
 import { AGENT_MESSAGE_HOLD_IDLE_SECONDS } from "../../shared/agent-message-hold-timing";
-import { OMP_SKILL_BODY, skillPrLinkInstruction } from "../../shared/agent-skill-content";
+import { ARTIFACT_AUTHORING_STEPS, ARTIFACT_FORMAT_RULES, OMP_SKILL_BODY, skillPrLinkInstruction } from "../../shared/agent-skill-content";
 import { COORDINATOR_PROMPT } from "../../shared/types";
 import { parseSkillFrontmatter } from "../skills-catalog";
 import { hookCliDialect } from "../../shared/dev3-cli-path";
@@ -62,13 +63,17 @@ describe("platform feedback skill section (always present)", () => {
 });
 
 describe("dev3 skill content", () => {
-	it("distinguishes template-styled prose from raw text artifacts in every harness", () => {
+	it("defaults every human-facing report to the HTML template in every harness", () => {
 		for (const skill of [CLAUDE_SKILL_BODY, getCodexSkillContent(), OMP_SKILL_BODY, getGenericSkillContent()]) {
-			expect(skill).toContain("including text-only summaries and daily briefs");
-			expect(skill).toContain("**Template styling requested → copy the starter and publish its directory.**");
-			expect(skill).toContain("Markdown/plain-text publishing does not use the template CSS");
-			expect(skill).toContain("ask which requirement takes priority before publishing");
+			expect(skill).toContain("Any report a human reads defaults to the dev3 template, text-only summaries and daily briefs included.");
+			expect(skill).toContain("**Copy the starter and publish its directory.**");
+			expect(skill).toContain("only when the user explicitly asks for Markdown or plain text");
+			// A brief naming `…/REPORT.md` once read as a Markdown request (Seq 2070).
+			expect(skill).toContain("A `.md` report path in a brief says where to save it, not how to show it.");
+			expect(skill).toContain("ask which wins before publishing");
 			expect(skill).toContain('data-dev3-artifact-template="v1"');
+			expect(skill).toContain("`dev3 show-artifact <report-dir | file.html> [--assets");
+			expect(skill).not.toContain("file.html | .md | .txt");
 		}
 	});
 
@@ -749,6 +754,42 @@ describe("PR instruction — dev3 pr create, and the footer it owns", () => {
 	});
 });
 
+describe("dev3-artifact skill content", () => {
+	it("is a user-invocable skill named for the slash command", () => {
+		const skill = getArtifactSkillContent();
+		expect(skill).toContain("name: dev3-artifact");
+		expect(skill).toContain("user-invocable: true");
+	});
+
+	// One source: the protocol section and this skill must never disagree on format or steps.
+	it("carries the protocol's format rules and steps verbatim", () => {
+		const skill = getArtifactSkillContent();
+		expect(skill).toContain(ARTIFACT_FORMAT_RULES);
+		expect(skill).toContain(ARTIFACT_AUTHORING_STEPS);
+		for (const body of [CLAUDE_SKILL_BODY, getCodexSkillContent(), OMP_SKILL_BODY, getGenericSkillContent()]) {
+			expect(body).toContain(ARTIFACT_FORMAT_RULES);
+			expect(body).toContain(ARTIFACT_AUTHORING_STEPS);
+			expect(body).toContain("Full workflow as a skill: `/dev3-artifact`.");
+		}
+	});
+
+	it("keeps the Markdown exception and the report-path ruling", () => {
+		const skill = getArtifactSkillContent();
+		expect(skill).toContain("only when the user explicitly asks for Markdown or plain text");
+		expect(skill).toContain("A `.md` report path in a brief says where to save it, not how to show it.");
+	});
+
+	it("warns that re-running the starter command overwrites an edited copy", () => {
+		expect(getArtifactSkillContent()).toContain("`index.html` and `report.js` included, and your edits are gone");
+	});
+
+	it("separates in-app publishing from sharing a link", () => {
+		const skill = getArtifactSkillContent();
+		expect(skill).toContain("`/dev3-share-artifact`, a separate step that publishes a GitHub gist");
+		expect(skill).toContain("Not for Claude Artifacts, CI/build artifacts or package outputs.");
+	});
+});
+
 describe("dev3-share-artifact skill content", () => {
 	it("is named with the correct spelling and is user-invocable", () => {
 		const skill = getShareArtifactSkillContent();
@@ -806,16 +847,22 @@ describe("dev3-coordinator skill content", () => {
 		expect(skill).toContain("user-invocable: true");
 	});
 
-	it("keeps ONE source of truth: it prints the canonical brief instead of copying it", () => {
+	// The skill must work as the whole instruction on its own, yet never become a
+	// second hand-edited copy: it is generated from the constant on every launch.
+	it("carries the complete built-in brief, generated from COORDINATOR_PROMPT", () => {
 		const skill = getCoordinatorSkillContent();
 
 		expect(skill).toContain("dev3 task update --type coordinator --print-role");
-		// Any verbatim slice of the startup prompt in here is a second copy that
-		// would silently rot the next time COORDINATOR_PROMPT changes.
-		for (const line of COORDINATOR_PROMPT.split("\n")) {
-			if (line.trim().length < 40) continue;
-			expect(skill).not.toContain(line.trim());
-		}
+		expect(skill).toContain(`## The built-in coordinator brief (full text)\n\n${COORDINATOR_PROMPT}\n`);
+	});
+
+	it("lets a project or Settings override win over the embedded copy, without touching it", () => {
+		const skill = getCoordinatorSkillContent();
+
+		expect(skill).toContain("`Brief source:`");
+		expect(skill).toContain("**Only the printed text.**");
+		expect(skill).toContain("never merge rules back in from it");
+		expect(skill).toContain("Never edit, reset or \"update\" a custom brief to match the built-in one");
 	});
 
 	it("cannot promote anything by being installed or discovered", () => {
@@ -833,6 +880,8 @@ describe("dev3-coordinator skill content", () => {
 
 		expect(skill).toContain("## What does NOT change");
 		expect(skill).toContain("becoming a coordinator authorises no push, no pull request, no merge, no publication, no completion");
+		expect(skill).toContain("A full brief is not a wider mandate");
+		expect(skill).toContain("launching a task still goes through its approval dialog");
 		expect(skill).toContain("## Re-running it");
 		expect(skill).toContain("Harmless, by design.");
 	});
@@ -853,6 +902,7 @@ describe("dev3-coordinator skill content", () => {
 
 		expect(skill).toContain("say the role did **not** change");
 		expect(skill).toContain("do not claim the type changed");
+		expect(skill).toContain("it is not an authorisation to act on");
 	});
 });
 
@@ -862,6 +912,7 @@ describe("dev3-coordinator skill content", () => {
 describe("managed skill frontmatter survives the parser that reads it", () => {
 	const skills: Array<[string, string]> = [
 		["dev3-coordinator", getCoordinatorSkillContent()],
+		["dev3-artifact", getArtifactSkillContent()],
 		["dev3-share-artifact", getShareArtifactSkillContent()],
 		["dev3-bug-hunter", getBugHunterSkillContent()],
 		["ask-dev3", getAskDev3SkillContent()],
@@ -886,6 +937,12 @@ describe("managed skill installation surface", () => {
 		}
 	});
 
+	it("installs the artifact skill for every supported agent", () => {
+		for (const dir of [".claude", ".cursor", ".agents", ".codex", ".opencode", ".config/opencode", ".omp/agent"]) {
+			expect(MANAGED_SKILL_FILES).toContain(`${dir}/skills/dev3-artifact/SKILL.md`);
+		}
+	});
+
 	it("installs the share-artifact skill for every supported agent", () => {
 		for (const dir of [".claude", ".cursor", ".agents", ".codex", ".opencode", ".config/opencode"]) {
 			expect(MANAGED_SKILL_FILES).toContain(`${dir}/skills/dev3-share-artifact/SKILL.md`);
@@ -894,7 +951,7 @@ describe("managed skill installation surface", () => {
 
 	it("lists every managed skill exactly once so `dev3 install-skills` cannot drift", () => {
 		expect(new Set(MANAGED_SKILL_FILES).size).toBe(MANAGED_SKILL_FILES.length);
-		for (const name of ["dev3", "dev3-project-config", "dev3-tmux", "dev3-bug-hunter", "ask-dev3", "dev3-share-artifact", "dev3-coordinator"]) {
+		for (const name of ["dev3", "dev3-project-config", "dev3-tmux", "dev3-bug-hunter", "ask-dev3", "dev3-artifact", "dev3-share-artifact", "dev3-coordinator"]) {
 			expect(MANAGED_SKILL_FILES.some((file) => file.includes(`/skills/${name}/`))).toBe(true);
 		}
 	});
@@ -906,6 +963,7 @@ describe("ask-dev3 skill routing", () => {
 
 		expect(skill).toContain("Send a report to someone outside dev3 → ask for a link.");
 		expect(skill).toContain("`/dev3-share-artifact`** — publish an HTML report as a gist");
+		expect(skill).toContain("`/dev3-artifact`** — make, publish and revise an HTML report inside dev3");
 	});
 });
 

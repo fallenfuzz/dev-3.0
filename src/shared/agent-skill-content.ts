@@ -190,16 +190,16 @@ A project can declare **several dev servers by name**: every subcommand takes on
 
 Each server's output also lands as text in \`<taskDir>/logs/dev-server*.log\`, fresh per start: \`dev3 dev-server logs [--lines N]\` tails it, and it greps.
 `;
-const SKILL_ARTIFACTS = `
-## dev3 HTML artifacts
+/** When a report becomes a dev3 HTML artifact. Shared verbatim by the protocol and the `dev3-artifact` skill. */
+export const ARTIFACT_FORMAT_RULES = `Any report a human reads defaults to the dev3 template, text-only summaries and daily briefs included. Other meanings win: Claude Artifacts, CI/build artifacts, package outputs.
 
-Default to the dev3 template for artifacts, including text-only summaries and daily briefs. Other meanings win: Claude Artifacts, CI/build artifacts, package outputs.
+- **Copy the starter and publish its directory.** Prose or lists are fine; charts are optional.
+- Publish \`.md\`/\`.txt\` directly (no template CSS) only when the user explicitly asks for Markdown or plain text. A \`.md\` report path in a brief says where to save it, not how to show it.
+- If "do not generate HTML" conflicts with the template, ask which wins before publishing: the template needs an HTML wrapper.
+`;
 
-- **Template styling requested → copy the starter and publish its directory.** Use prose or lists; charts are optional.
-- Markdown/plain-text publishing does not use the template CSS. Publish \`.md\`/\`.txt\` directly only when that format is requested without template styling.
-- If "do not generate HTML" conflicts with required template styling, ask which requirement takes priority before publishing: the template needs an HTML wrapper. Readable prose alone does not forbid that wrapper.
-
-\`$DEV3_ARTIFACT_TEMPLATE_DIR\` is the pristine starter; never edit it. If unset, \`dev3 artifact-template\` creates \`./dev3-artifact-report\` instead. The layout is fixed; do not spend a turn listing or rediscovering it: \`AUTHORING.md\` is the card, \`REFERENCE.md\` has optional depth, \`index.html\` + \`report.js\` are editable, \`app.css\` + \`app.js\` are the shell, \`dev3-icon.png\` is the brand asset.
+/** How to make and publish one. Shared verbatim by the protocol and the `dev3-artifact` skill. */
+export const ARTIFACT_AUTHORING_STEPS = `\`$DEV3_ARTIFACT_TEMPLATE_DIR\` is the pristine starter; never edit it. If unset, \`dev3 artifact-template\` creates \`./dev3-artifact-report\` instead. The layout is fixed; do not spend a turn listing or rediscovering it: \`AUTHORING.md\` is the card, \`REFERENCE.md\` has optional depth, \`index.html\` + \`report.js\` are editable, \`app.css\` + \`app.js\` are the shell, \`dev3-icon.png\` is the brand asset.
 
 1. \`cp -R "$DEV3_ARTIFACT_TEMPLATE_DIR" ./dev3-artifact-report\`.
 2. Read the copied \`AUTHORING.md\`; edit \`index.html\` and \`report.js\`. Do not read the shell files for ordinary reports. Open \`REFERENCE.md\` sections only as needed. Keep data local; CDN libraries and live fetch are supported.
@@ -208,6 +208,14 @@ Default to the dev3 template for artifacts, including text-only summaries and da
 Publish directly: an ordinary report or revision needs no browser pass or screenshots; \`AUTHORING.md\` § Before you publish lists exceptions.
 
 The same \`--title\` or stable \`--artifact-id <slug>\` adds a VERSION. Never invent \`report-v2.html\`; \`--new\` is for a different report. Outside dev3, \`/dev3-share-artifact\` inlines the files and publishes a gist with a checked preview URL.
+`;
+
+const SKILL_ARTIFACTS = `
+## dev3 HTML artifacts
+
+${ARTIFACT_FORMAT_RULES}
+${ARTIFACT_AUTHORING_STEPS}
+Full workflow as a skill: \`/dev3-artifact\`.
 
 `;
 
@@ -219,7 +227,7 @@ Pull the user back deliberately — enough that they never miss something needin
 - \`dev3 attention "reason"\` — red badge on the card until the user opens the task (reasons accumulate, up to 5). Default for anything that needs them. \`--clear\` lowers it the moment the cause is resolved and they never came; a badge outliving its cause trains them to ignore badges.
 - \`dev3 notify "message" [--level info|success|error] [--duration <seconds>]\` — clickable in-app toast (ephemeral, 2s–30s). \`--desktop\` instead sends a native OS notification that shows even when the app is backgrounded; never combine the two flags.
 - \`dev3 show-image <path> [--caption "..."] [<path> ...]\` — **show actual images** (screenshots, \`agent-browser\` captures, charts; \`show-video\` plays MP4/WebM ≤25 MB there); files are copied into the worktree and **each \`--caption\` annotates the file it follows** (\`before.png --caption "current bug" after.png --caption "after my fix"\`). If relevant pixels exist, show them rather than describing them or leaving a path to open.
-- \`dev3 show-artifact <report-dir | file.html | .md | .txt> [--assets <file...>] [--title "..."]\` — **show an HTML artifact** (see the artifacts section above).
+- \`dev3 show-artifact <report-dir | file.html> [--assets <file...>] [--title "..."]\` — **show an HTML artifact** (see the artifacts section above).
 - \`dev3 ui state\` — focused task/project, app foreground, user idle time (\`userActivity\`). Check BEFORE pinging.
 
 MUST ping, one per logical event and never per step: **blocked** → \`attention "the question"\`; **finished** something important → \`notify --level success\`; something **broke** → \`notify --level error\`; an **image worth seeing** or an interactive report → proactive \`show-image\` / \`show-artifact\`. SHOULD, only on long runs when the user likely stepped away: a major milestone, or a go/no-go before a risky action. Never ping per-step progress, routine tool calls, or anything already on screen.
