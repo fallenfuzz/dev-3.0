@@ -132,9 +132,9 @@ export function headlessRunEnv(root: string, port0: string | undefined): Record<
 }
 
 /**
- * Opt-in, never inferred. The plain `bun run dev` is the main local dev flow and
+ * Opt-in for the desktop run. The plain `bun run dev` is the main local dev flow and
  * must keep showing the real board; only a run that explicitly asks gets a
- * throwaway one.
+ * throwaway one. A headless run passes `seeded` as its `fallback`.
  *
  * `seeded` gets one throwaway project (the QA default); `virgin` gets nothing, so
  * an instance can be brought up in the state a brand-new user is actually in.
