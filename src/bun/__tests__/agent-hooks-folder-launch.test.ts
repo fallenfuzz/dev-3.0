@@ -60,6 +60,9 @@ describe("setupAgentHooks in a folder dev3 does not own", () => {
 		const commands = JSON.stringify(settings.hooks);
 		expect(commands).toContain("task move");
 		expect(commands).not.toContain("DEV3_TASK_ID");
+		// The edit tools claim their file, so two tasks in this folder cannot overwrite each other.
+		const claim = settings.hooks.PreToolUse.find((group: { matcher?: string }) => group.matcher === "Edit|Write|MultiEdit|NotebookEdit");
+		expect(claim.hooks[0].command).toContain("hook claude-claim");
 	});
 
 	it("gives different stop targets different files, so a live session's file never changes", async () => {
@@ -82,7 +85,9 @@ describe("setupAgentHooks in a folder dev3 does not own", () => {
 		mkdirSync(worktree, { recursive: true });
 		const launch = await setupAgentHooks(worktree, "claude", { stopTarget: "review-by-user", claudeSettingsFile: managed });
 		expect(launch).toBeNull();
-		expect(existsSync(join(worktree, ".claude", "settings.local.json"))).toBe(true);
+		const local = readJson(join(worktree, ".claude", "settings.local.json"));
+		// A worktree is one task's alone: nothing to claim.
+		expect(JSON.stringify(local.hooks)).not.toContain("claude-claim");
 	});
 
 	it("leaves no Codex hooks file in the folder but keeps the trust flag", async () => {
