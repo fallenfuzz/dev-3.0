@@ -5,6 +5,7 @@ import { getTaskTitle } from "../../shared/types";
 import * as data from "../data";
 import * as git from "../git";
 import { folderWorkDir } from "../task-folder";
+import { taskSessionIds } from "../task-sessions";
 import * as pty from "../pty-server";
 import * as agents from "../agents";
 import { codexAccountIdForHome } from "../agent-accounts";
@@ -3309,7 +3310,10 @@ async function spawnAgentInTask(params: {
 	// must fail with no pane opened, rather than leave a bare agent standing where
 	// the user asked for a takeover.
 	const handoff = params.handoff
-		? await prepareTaskHandoff(task, folderWorkDir(project, task) ? { containerDir: git.taskDir(project, task) } : {})
+		? await prepareTaskHandoff(task, {
+			...(folderWorkDir(project, task) ? { containerDir: git.taskDir(project, task) } : {}),
+			sessionIds: taskSessionIds(project, task, task.worktreePath),
+		})
 		: null;
 	if (params.handoff && !handoff) {
 		throw new Error("Nothing to hand over: no parseable agent transcript has been written for this task yet.");
@@ -3490,7 +3494,7 @@ async function previewTaskHandoffHandler(params: { taskId: string; projectId: st
 	const project = await data.getProject(params.projectId);
 	const task = await data.getTask(project, params.taskId);
 	try {
-		return await previewTaskHandoff(task);
+		return await previewTaskHandoff(task, { sessionIds: taskSessionIds(project, task, task.worktreePath) });
 	} catch (error) {
 		log.warn("previewTaskHandoff failed; offering no handoff", { taskId: params.taskId.slice(0, 8), error: String(error) });
 		return null;

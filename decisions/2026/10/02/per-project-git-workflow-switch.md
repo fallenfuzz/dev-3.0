@@ -1,6 +1,7 @@
 # Per-project git workflow switch
 
 Superseded in part on 2026-10-04 by `decisions/2026/10/04/gitless-claude-hooks-via-settings-flag.md`: a gitless Claude task now gets its hooks, Bash rules and mode through `--settings`, and nothing is left in the folder.
+Superseded in part on 2026-10-04 by `decisions/2026/10/04/shared-folder-transcripts-scoped-by-session.md`: the handoff, the Conversation tab and the archive keep only the task's own sessions in a shared folder.
 
 ## Context
 
