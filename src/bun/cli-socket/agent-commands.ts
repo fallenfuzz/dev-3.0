@@ -9,6 +9,7 @@ import { capturePaneSession } from "./pane-sessions";
 import { log, type Handler, withSenderVariant } from "./shared";
 import { requirePaneTask, resolveRequesterTask, resolveTaskFromParams, senderRequester } from "./task-resolution";
 import { claudeSessionWatches, type ClaudeIdleEvent } from "../claude-session-watch";
+import { rememberTaskSession } from "../task-sessions";
 
 const codexQuestions = new CodexQuestionState();
 
@@ -154,6 +155,7 @@ export const agentHandlers: Record<string, Handler> = {
 		if (sessionId && (paneId || harness === "codex")) {
 			await capturePaneSession(project, task.id, paneId, sessionId, harness);
 		}
+		rememberTaskSession(project, task, sessionId);
 
 		// The submitted text rides on the same payload, so recording costs the
 		// pane no second dev3 process.
@@ -204,6 +206,7 @@ export const agentHandlers: Record<string, Handler> = {
 			? params.harness
 			: "claude";
 		const sessionId = typeof params.sessionId === "string" ? params.sessionId : null;
+		rememberTaskSession(project, task, sessionId);
 
 		// Claude starts a new conversation on `/clear` and switches on `/resume`;
 		// the pane's resume pointer follows whichever one this prompt went to.
