@@ -78,6 +78,8 @@ Injected per-worktree at task launch.
 
 Injected into `.claude/settings.local.json`, together with dev3's `Bash(dev3:*)` permission and the launch's `permissions.defaultMode`. A committed `.claude/settings.json` is never written. When `.claude/` or `settings.local.json` is a symlink that leads outside the worktree (or nowhere), dev3 writes nothing there and logs a warning: the task then gets no status hooks. Links that stay inside the worktree are fine. The same rule covers `.codex/hooks.json` and the MCP pre-approval. See `decisions/2026/10/01/worktree-agent-config-local-only-no-symlinks.md`.
 
+In a folder dev3 does not own (a project with its git workflow off), nothing is written into the folder: the hooks, Bash rules and mode are merged with dev3's managed settings into one file under `<dev3 home>/data/agent-hooks/` and passed with `--settings`, which Claude also forwards to teammates. Codex gets no `.codex/hooks.json` there either. See `decisions/2026/10/04/gitless-claude-hooks-via-settings-flag.md`.
+
 | Hook event | Status transition | Purpose |
 |------------|------------------|---------|
 | `SessionStart` (`startup\|clear\|compact`) | none | `dev3 hook claude-session-start` answers with the task's 5 newest notes as `hookSpecificOutput.additionalContext` (bounded, see `src/shared/recent-notes-context.ts`). `resume`/`fork` are skipped: that transcript already holds a block. Quiet and exit 0 when offline or there are no notes |
