@@ -8,6 +8,7 @@ import { CodexQuestionState } from "../codex-question-state";
 import { capturePaneSession } from "./pane-sessions";
 import { log, type Handler } from "./shared";
 import { requirePaneTask, resolveTaskAcrossProjects, resolveTaskFromParams } from "./task-resolution";
+import { rememberTaskSession } from "../task-sessions";
 
 const codexQuestions = new CodexQuestionState();
 
@@ -136,6 +137,7 @@ export const agentHandlers: Record<string, Handler> = {
 		if (sessionId && (paneId || harness === "codex")) {
 			await capturePaneSession(project, task.id, paneId, sessionId, harness);
 		}
+		rememberTaskSession(project, task, sessionId);
 
 		// The submitted text rides on the same payload, so recording costs the
 		// pane no second dev3 process.
@@ -186,6 +188,7 @@ export const agentHandlers: Record<string, Handler> = {
 			? params.harness
 			: "claude";
 		const sessionId = typeof params.sessionId === "string" ? params.sessionId : null;
+		rememberTaskSession(project, task, sessionId);
 		const outcome = recordTerminalPromptSubmission({
 			project,
 			task,
