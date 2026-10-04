@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { extractRepoName, hasGitWorkflow } from "../../shared/types";
-import type { Project } from "../../shared/types";
+import type { AutoConfigureResult, Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
 import { useT } from "../i18n";
@@ -35,6 +35,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [activeTab, setActiveTab] = useState<"local" | "clone" | "init">("local");
 	// Off: picked folders become projects whose tasks run in the folder itself.
 	const [gitWorkflow, setGitWorkflow] = useState(true);
+	// Off unless the user turned it on last time - the choice is remembered in global settings.
+	const [autoConfigure, setAutoConfigure] = useState(false);
 	const [gitUrl, setGitUrl] = useState("");
 	const [repoName, setRepoName] = useState("");
 	const [cloneBaseDir, setCloneBaseDir] = useState<string | null>(null);
@@ -79,6 +81,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 			if (settings.cloneBaseDirectory) {
 				setCloneBaseDir(settings.cloneBaseDirectory);
 			}
+			setAutoConfigure(settings.autoConfigureNewProjects === true);
 		}).catch(() => {});
 	}, []);
 
@@ -94,6 +97,33 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const displayName = repoName.trim() || inferredName;
 	const targetPath = cloneBaseDir && displayName ? `${cloneBaseDir}/${displayName}` : "";
 
+	async function toggleAutoConfigure() {
+		const next = !autoConfigure;
+		setAutoConfigure(next);
+		try {
+			const settings = await api.request.getGlobalSettings();
+			await api.request.saveGlobalSettings({ ...settings, autoConfigureNewProjects: next || undefined });
+		} catch {
+			// Remembering the choice is best-effort
+		}
+	}
+
+	// Says what auto-configure wrote, so a new .dev3 file never appears unannounced.
+	function reportAutoConfigured(project: Project, result: AutoConfigureResult | undefined) {
+		if (!result) return;
+		if (result.existingConfig) {
+			toast.info(t("addProject.autoConfigExisting", { name: project.name }), { source: "dashboard" });
+			return;
+		}
+		const keys = result.written;
+		if (keys.length === 0) {
+			toast.info(t("addProject.autoConfigNothing", { name: project.name }), { source: "dashboard" });
+			return;
+		}
+		const fields = keys.map((key) => t(key === "setupScript" ? "addProject.autoConfigSetup" : "addProject.autoConfigDev")).join(", ");
+		toast.success(t("addProject.autoConfigDone", { name: project.name, fields }), { source: "dashboard" });
+	}
+
 	// Adds each folder in turn; the caller decides what the dialog does next.
 	async function addFolders(folders: string[], withGitWorkflow: boolean) {
 		const added: Project[] = [];
@@ -102,9 +132,14 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		for (const folder of folders) {
 			// The backend names the project - see the addProject RPC comment.
 			try {
-				const result = await api.request.addProject(withGitWorkflow ? { path: folder } : { path: folder, gitWorkflow: false });
+				const result = await api.request.addProject({
+					path: folder,
+					...(withGitWorkflow ? {} : { gitWorkflow: false }),
+					...(autoConfigure ? { autoConfigure: true } : {}),
+				});
 				if (result.ok) {
 					dispatch({ type: "addProject", project: result.project });
+					reportAutoConfigured(result.project, result.autoConfigured);
 					added.push(result.project);
 					void applyPendingSpaces(result.project.id);
 					trackEvent("project_added", { source: "local" });
@@ -237,9 +272,11 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				baseDir: cloneBaseDir,
 				repoName: repoName.trim() || undefined,
 				progressId,
+				...(autoConfigure ? { autoConfigure: true } : {}),
 			});
 			if (result.ok) {
 				dispatch({ type: "addProject", project: result.project });
+				reportAutoConfigured(result.project, result.autoConfigured);
 				void applyPendingSpaces(result.project.id);
 				trackEvent("project_added", { source: "clone" });
 				posthog.capture("project_added", { source: "clone" });
@@ -361,6 +398,17 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 					<p>{t(gitWorkflow ? "addProject.safetyBase" : "addProject.safetyFolder")}</p>
 					<p>{t(gitWorkflow ? "addProject.safetyBranch" : "addProject.safetyShared")}</p>
 				</div>
+
+				{/* New repositories from the New tab have nothing to detect yet. */}
+				{activeTab !== "init" && (
+					<div className="flex items-center justify-between gap-4">
+						<div className="space-y-0.5">
+							<span className="block text-fg-2 text-sm font-medium">{t("addProject.autoConfig")}</span>
+							<span className="block text-fg-3 text-xs leading-5">{t("addProject.autoConfigHint")}</span>
+						</div>
+						<ToggleSwitch checked={autoConfigure} ariaLabel={t("addProject.autoConfig")} onToggle={() => void toggleAutoConfigure()} />
+					</div>
+				)}
 
 				{/* Tabs */}
 				{gitWorkflow && (

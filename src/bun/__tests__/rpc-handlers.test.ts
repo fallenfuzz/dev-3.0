@@ -300,6 +300,10 @@ vi.mock("../repo-config", () => {
 	};
 });
 
+vi.mock("../project-autoconfig", () => ({
+	autoConfigureProject: vi.fn(async () => ({ written: ["devScript"] })),
+}));
+
 vi.mock("../agent-hooks", () => ({
 	setupAgentHooks: vi.fn(),
 }));
@@ -1681,6 +1685,36 @@ describe("handlers.addProject", () => {
 		expect(result.ok).toBe(true);
 		expect(data.updateProject).toHaveBeenCalledWith(project.id, { defaultBaseBranch: "trunk" });
 		expect(data.updateProject).toHaveBeenCalledWith(project.id, { gitWorkflow: false });
+	});
+
+	it("auto-configures only when asked, and reports the keys it wrote", async () => {
+		const { autoConfigureProject } = await import("../project-autoconfig");
+		const project = makeProject();
+		vi.mocked(git.isGitRepo).mockResolvedValue(true);
+		vi.mocked(data.addProject).mockResolvedValue(project);
+		vi.mocked(git.getDefaultBranch).mockResolvedValue("main");
+		vi.mocked(data.updateProject).mockResolvedValue(project);
+
+		const plain = await handlers.addProject({ path: "/tmp/test-project", name: "Test" });
+		expect(autoConfigureProject).not.toHaveBeenCalled();
+		expect(plain).not.toHaveProperty("autoConfigured");
+
+		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
+		expect(autoConfigureProject).toHaveBeenCalledWith("/tmp/test-project", { isGitRepo: true, gitWorkflow: true });
+		expect(result).toMatchObject({ ok: true, autoConfigured: { written: ["devScript"] } });
+	});
+
+	it("still adds the project when auto-configure fails", async () => {
+		const { autoConfigureProject } = await import("../project-autoconfig");
+		vi.mocked(autoConfigureProject).mockRejectedValueOnce(new Error("EACCES"));
+		const project = makeProject();
+		vi.mocked(git.isGitRepo).mockResolvedValue(true);
+		vi.mocked(data.addProject).mockResolvedValue(project);
+		vi.mocked(git.getDefaultBranch).mockResolvedValue("main");
+		vi.mocked(data.updateProject).mockResolvedValue(project);
+
+		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
+		expect(result).toMatchObject({ ok: true, autoConfigured: { written: [] } });
 	});
 
 	it("leaves the git workflow alone when the caller does not turn it off", async () => {

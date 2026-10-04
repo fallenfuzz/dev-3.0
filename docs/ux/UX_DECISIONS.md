@@ -724,3 +724,7 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 ## 2026-10-02 - Git workflow is a project property, switched on the Board tab
 - **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live. AddProject's folder pane carries the same switch (off: Local only, shared-folder copy); a non-git folder picked with it on gets an inline offer; no dashboard badge.
 - **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.
+
+## 2026-10-04 - AddProject auto-configure is an opt-in switch
+- **Rule:** the Local and Clone panes carry an `Auto-configure` ToggleSwitch, off by default and remembered in `GlobalSettings.autoConfigureNewProjects`. On: detected install and dev commands go to `.dev3/config.local.json`, and a toast names what was saved. Hidden on New.
+- **Why:** some users want a configured project at once, others want no file they did not write. Rejected: a pre-add checklist step (multi-folder adds made it a wizard), silent writes. Evidence: `AddProjectModal.tsx`, `decisions/2026/10/04/opt-in-project-auto-configure.md`.

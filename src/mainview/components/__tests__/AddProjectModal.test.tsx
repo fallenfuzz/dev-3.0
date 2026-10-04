@@ -561,4 +561,80 @@ describe("AddProjectModal", () => {
 			expect(onClose).toHaveBeenCalled();
 		});
 	});
+
+	describe("auto-configure switch", () => {
+		it("is off by default and adds projects without it", async () => {
+			const user = userEvent.setup();
+			mockedOpenFolderPickerMulti.mockResolvedValue(["/work/app"]);
+			mockedApi.request.addProject.mockResolvedValue({ ok: true as const, project: mockProject });
+			renderModal();
+
+			expect(screen.getByRole("switch", { name: "Auto-configure" })).toHaveAttribute("aria-checked", "false");
+			await user.click(screen.getByText("Browse..."));
+
+			expect(mockedApi.request.addProject).toHaveBeenCalledWith({ path: "/work/app" });
+		});
+
+		it("on: asks for auto-configure, remembers the choice, and announces what was saved", async () => {
+			const user = userEvent.setup();
+			const { toast } = await import("../../toast");
+			const success = vi.spyOn(toast, "success");
+			mockedOpenFolderPickerMulti.mockResolvedValue(["/work/app"]);
+			mockedApi.request.addProject.mockResolvedValue({
+				ok: true as const,
+				project: mockProject,
+				autoConfigured: { written: ["setupScript", "devScript"] },
+			});
+			renderModal();
+
+			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
+			expect(mockedApi.request.saveGlobalSettings).toHaveBeenCalledWith(expect.objectContaining({ autoConfigureNewProjects: true }));
+			await user.click(screen.getByText("Browse..."));
+
+			expect(mockedApi.request.addProject).toHaveBeenCalledWith({ path: "/work/app", autoConfigure: true });
+			expect(success).toHaveBeenCalledWith(
+				"my-repo: saved to .dev3/config.local.json: setup script, dev script. Edit in Project Settings.",
+				expect.anything(),
+			);
+		});
+
+		it("says so when the project already had a .dev3 config", async () => {
+			const user = userEvent.setup();
+			const { toast } = await import("../../toast");
+			const info = vi.spyOn(toast, "info");
+			mockedOpenFolderPickerMulti.mockResolvedValue(["/work/app"]);
+			mockedApi.request.addProject.mockResolvedValue({
+				ok: true as const,
+				project: mockProject,
+				autoConfigured: { written: [], existingConfig: true },
+			});
+			renderModal();
+
+			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
+			await user.click(screen.getByText("Browse..."));
+
+			expect(info).toHaveBeenCalledWith("my-repo already has a .dev3 config, so it was left as is.", expect.anything());
+		});
+
+		it("starts on when the user left it on last time", async () => {
+			mockedApi.request.getGlobalSettings.mockResolvedValueOnce({
+				defaultAgentId: "builtin-claude",
+				defaultConfigId: "claude-default",
+				taskSortOrder: "oldest-first",
+				updateChannel: "stable",
+				autoConfigureNewProjects: true,
+			} as Awaited<ReturnType<typeof api.request.getGlobalSettings>>);
+			renderModal();
+
+			expect(await screen.findByRole("switch", { name: "Auto-configure", checked: true })).toBeInTheDocument();
+		});
+
+		it("is hidden on the New tab, where there is nothing to detect", async () => {
+			const user = userEvent.setup();
+			renderModal();
+			await user.click(screen.getByText("New"));
+
+			expect(screen.queryByRole("switch", { name: "Auto-configure" })).not.toBeInTheDocument();
+		});
+	});
 });
