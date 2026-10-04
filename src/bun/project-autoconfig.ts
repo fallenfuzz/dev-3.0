@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Dev3RepoConfig } from "../shared/types";
+import type { AutoConfigureResult, Dev3RepoConfig } from "../shared/types";
 import { parsePackageScripts, resolveRunnerCommand } from "./package-scripts";
 import * as repoConfig from "./repo-config";
 import { createLogger } from "./logger";
@@ -48,21 +48,21 @@ export function detectProjectConfig(projectPath: string, opts: { withSetup: bool
 /**
  * Write the detected settings into `.dev3/config.local.json` of a freshly added
  * project. Never touches a project that already has a `.dev3` config - that one
- * was written by a person. Returns the keys written, empty when nothing was.
+ * was written by a person, and says so in the result.
  */
 export async function autoConfigureProject(
 	projectPath: string,
 	opts: { isGitRepo: boolean; gitWorkflow: boolean },
-): Promise<string[]> {
+): Promise<AutoConfigureResult> {
 	if (repoConfig.hasRepoConfig(projectPath) || repoConfig.hasLocalConfig(projectPath)) {
 		log.info("Skipping auto-configure, .dev3 config already exists", { path: projectPath });
-		return [];
+		return { written: [], existingConfig: true };
 	}
 	// A task with the git workflow off skips the setup script, so writing one would be noise.
 	const config = detectProjectConfig(projectPath, { withSetup: opts.gitWorkflow });
 	const keys = Object.keys(config);
-	if (keys.length === 0) return [];
+	if (keys.length === 0) return { written: [] };
 	await repoConfig.saveRepoLocalConfig(projectPath, config, { gitignore: opts.isGitRepo });
 	log.info("Auto-configured project", { path: projectPath, fields: keys });
-	return keys;
+	return { written: keys };
 }

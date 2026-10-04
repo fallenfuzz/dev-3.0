@@ -377,6 +377,7 @@ const settings = {
 	"addProject.autoConfigHint": "Save the install and dev commands found in the project to .dev3/config.local.json.",
 	"addProject.autoConfigDone": "{name}: saved to .dev3/config.local.json: {fields}. Edit in Project Settings.",
 	"addProject.autoConfigNothing": "{name}: no install or dev command found, nothing was saved.",
+	"addProject.autoConfigExisting": "{name} already has a .dev3 config, so it was left as is.",
 	"addProject.autoConfigSetup": "setup script",
 	"addProject.autoConfigDev": "dev script",
 	"addProject.browseHintFolder": "Select one or more folders on your machine. They do not need to be git repositories.",

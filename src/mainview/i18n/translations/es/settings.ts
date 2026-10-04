@@ -377,6 +377,7 @@ const settings = {
 	"addProject.autoConfigHint": "Guarda en .dev3/config.local.json los comandos de instalación y de desarrollo que encuentre en el proyecto.",
 	"addProject.autoConfigDone": "{name}: guardado en .dev3/config.local.json: {fields}. Puedes editarlo en los ajustes del proyecto.",
 	"addProject.autoConfigNothing": "{name}: no se encontró ningún comando de instalación ni de desarrollo; no se guardó nada.",
+	"addProject.autoConfigExisting": "{name} ya tiene una configuración .dev3, así que no se tocó.",
 	"addProject.autoConfigSetup": "script de instalación",
 	"addProject.autoConfigDev": "script de desarrollo",
 	"addProject.browseHintFolder": "Selecciona una o más carpetas en tu computadora. No tienen que ser repositorios git.",

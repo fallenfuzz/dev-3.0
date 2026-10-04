@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "nod
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { PATHS, Utils } from "../electrobun-platform";
-import type { AgentSkillInfo, ChangelogEntry, ExternalApp, FolderEntry, FolderListing, Project, SharedArtifact, TipState, UpdatePopoverPreview } from "../../shared/types";
+import type { AgentSkillInfo, AutoConfigureResult, ChangelogEntry, ExternalApp, FolderEntry, FolderListing, Project, SharedArtifact, TipState, UpdatePopoverPreview } from "../../shared/types";
 import { BUILTIN_OPS_BOARD_NAME, DEFAULT_EXTERNAL_APPS, STUCK_PREPARATION_FETCH_THRESHOLD_MS, extractRepoName } from "../../shared/types";
 import { buildUpdateChangelog, changedKeysFromPaths, changelogEntryKey, countMergedPrs, resolvePrevTag, selectReleaseWindow } from "../../shared/update-changelog";
 import * as data from "../data";
@@ -319,7 +319,7 @@ async function listAgentSkills(params?: { projectPath?: string | null }): Promis
 	}
 }
 
-async function addProjectImpl(params: { path: string; name?: string; gitWorkflow?: boolean; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string; notGitRepo?: true }> {
+async function addProjectImpl(params: { path: string; name?: string; gitWorkflow?: boolean; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: AutoConfigureResult } | { ok: false; error: string; notGitRepo?: true }> {
 	log.info("→ addProject", params);
 	try {
 		// Protect the synthetic virtual-project namespace: a real git repo must
@@ -357,7 +357,7 @@ async function addProjectImpl(params: { path: string; name?: string; gitWorkflow
 		const autoConfigured = params.autoConfigure
 			? await autoConfigureProject(params.path, { isGitRepo: isRepo, gitWorkflow: params.gitWorkflow !== false }).catch((err) => {
 				log.warn("Auto-configure failed, project added without it", { id: project.id, error: String(err) });
-				return [];
+				return { written: [] };
 			})
 			: undefined;
 		// The renderer keeps whatever this returns until the next getProjects, and
@@ -391,7 +391,7 @@ async function addVirtualProject(params: { name: string }): Promise<{ ok: true; 
 /** How often clone output updates are pushed to the renderer. */
 const CLONE_PROGRESS_PUSH_INTERVAL_MS = 150;
 
-async function cloneAndAddProject(params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string }> {
+async function cloneAndAddProject(params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: AutoConfigureResult } | { ok: false; error: string }> {
 	log.info("→ cloneAndAddProject", params);
 	try {
 		const name = params.repoName || extractRepoName(params.url);

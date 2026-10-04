@@ -61,9 +61,9 @@ describe("project-autoconfig", () => {
 			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
 			write("bun.lock");
 
-			const keys = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
+			const result = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
 
-			expect(keys).toEqual(["setupScript", "devScript"]);
+			expect(result).toEqual({ written: ["setupScript", "devScript"] });
 			expect(localConfig()).toEqual({ setupScript: "bun install", devScript: "bun run dev" });
 			expect(readFileSync(join(tmp, ".gitignore"), "utf-8")).toContain(".dev3/config.local.json");
 			expect(existsSync(join(tmp, ".dev3/config.json"))).toBe(false);
@@ -72,9 +72,9 @@ describe("project-autoconfig", () => {
 		it("writes no .gitignore and no setup script into a folder without git", async () => {
 			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
 
-			const keys = await autoConfigureProject(tmp, { isGitRepo: false, gitWorkflow: false });
+			const result = await autoConfigureProject(tmp, { isGitRepo: false, gitWorkflow: false });
 
-			expect(keys).toEqual(["devScript"]);
+			expect(result).toEqual({ written: ["devScript"] });
 			expect(localConfig()).toEqual({ devScript: "npm run dev" });
 			expect(existsSync(join(tmp, ".gitignore"))).toBe(false);
 		});
@@ -84,16 +84,16 @@ describe("project-autoconfig", () => {
 			mkdirSync(join(tmp, ".dev3"));
 			write(".dev3/config.json", JSON.stringify({ devScript: "make dev" }));
 
-			const keys = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
+			const result = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
 
-			expect(keys).toEqual([]);
+			expect(result).toEqual({ written: [], existingConfig: true });
 			expect(existsSync(join(tmp, ".dev3/config.local.json"))).toBe(false);
 		});
 
 		it("creates no .dev3 folder when nothing is detected", async () => {
-			const keys = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
+			const result = await autoConfigureProject(tmp, { isGitRepo: true, gitWorkflow: true });
 
-			expect(keys).toEqual([]);
+			expect(result).toEqual({ written: [] });
 			expect(existsSync(join(tmp, ".dev3"))).toBe(false);
 		});
 	});

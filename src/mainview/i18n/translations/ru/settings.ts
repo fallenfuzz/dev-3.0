@@ -385,6 +385,7 @@ const settings = {
 	"addProject.autoConfigHint": "Сохранить найденные в проекте команды установки и запуска в .dev3/config.local.json.",
 	"addProject.autoConfigDone": "{name}: в .dev3/config.local.json сохранено: {fields}. Изменить можно в настройках проекта.",
 	"addProject.autoConfigNothing": "{name}: команды установки и запуска не найдены, ничего не сохранено.",
+	"addProject.autoConfigExisting": "У {name} уже есть конфигурация .dev3, она оставлена без изменений.",
 	"addProject.autoConfigSetup": "скрипт установки",
 	"addProject.autoConfigDev": "скрипт dev-сервера",
 	"addProject.browseHintFolder": "Выберите одну или несколько папок на вашем компьютере. Git-репозиторий не обязателен.",

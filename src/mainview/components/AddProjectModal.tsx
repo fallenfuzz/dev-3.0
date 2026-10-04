@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { extractRepoName, hasGitWorkflow } from "../../shared/types";
-import type { Project } from "../../shared/types";
+import type { AutoConfigureResult, Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
 import { useT } from "../i18n";
@@ -109,8 +109,13 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	}
 
 	// Says what auto-configure wrote, so a new .dev3 file never appears unannounced.
-	function reportAutoConfigured(project: Project, keys: string[] | undefined) {
-		if (!keys) return;
+	function reportAutoConfigured(project: Project, result: AutoConfigureResult | undefined) {
+		if (!result) return;
+		if (result.existingConfig) {
+			toast.info(t("addProject.autoConfigExisting", { name: project.name }), { source: "dashboard" });
+			return;
+		}
+		const keys = result.written;
 		if (keys.length === 0) {
 			toast.info(t("addProject.autoConfigNothing", { name: project.name }), { source: "dashboard" });
 			return;
