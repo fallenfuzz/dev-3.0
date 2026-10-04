@@ -18,13 +18,14 @@ Three teardown steps act on the task's folder by path and would have damaged a s
 - Teardown only reaps processes in a folder the task owns (`taskOwnedFolder` in `src/bun/lifecycle/executor.ts`), `git.removeWorktree` refuses the project folder itself, and MCP pre-approval skips the project folder (`src/bun/agents.ts`).
 - The switch is refused while any task holds a folder or is preparing or tearing down (`gitWorkflowSwitchBlocker`), and switching on needs a git repository. `addProject` accepts a non-git folder only with `gitWorkflow: false`.
 - `dev3 current` prints `Git workflow: off` and `Folder:` so the agent does not plan branch or PR steps.
+- Claude hooks written outside a dev3-owned folder (`isDev3OwnedFolder` in `src/shared/agent-hooks.ts`: anything not under `worktrees/` or `ops/` in the dev3 home) are prefixed with `[ -z "$DEV3_TASK_ID" ] ||`. They stay in the folder after the task ends, and a `claude` session the user starts there would otherwise run `dev3 task move` with no task to resolve and show a usage error on every event. Worktree hooks keep the bare command, so a session started outside dev3 in a worktree still moves its task.
 
 ## Risks
 
 - Tasks share one folder, so two live agents can edit the same file. The create dialog warns when another task is live there; variants are not offered.
 - An older dev3 reading `projects.json` ignores the flag and treats the project as git. For a git folder it would offer worktrees again; for a plain folder its git calls fail and log. Nothing is renamed or migrated, so it degrades without data loss.
 - The handoff preview still picks the newest transcript in the folder, which can belong to a neighbouring task.
-- dev3's status hooks and Bash permissions are merged into the folder's `.claude/settings.local.json`, as for any task folder, and stay there after the task ends.
+- dev3's status hooks, Bash permissions and `defaultMode` are merged into the folder's `.claude/settings.local.json` and stay there after the task ends. The env guard makes the hooks inert outside a dev3 pane; the permissions stay active. Windows hooks run without a POSIX shell, so they stay unguarded there.
 - The CLI's own approval prompts (`dev3 task move --status completed|cancelled`) still describe a worktree being destroyed. The in-app dialogs say the folder is kept.
 
 ## Alternatives considered
