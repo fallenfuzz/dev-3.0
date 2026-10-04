@@ -8,6 +8,7 @@ import type { PermissionMode, TaskStatus } from "./types";
 import { CLI_EXIT_CODE_APP_NOT_RUNNING } from "./cli-exit-codes";
 import { type HookCliDialect, hookCliDialect } from "./dev3-cli-path";
 import { symlinkOnWritePath } from "./symlink-write-guard";
+import { resolveDev3Home } from "./dev3-home";
 
 /** Dialect of the machine generating the hooks (the frozen POSIX string on macOS/Linux). */
 const DEFAULT_DIALECT = hookCliDialect();
@@ -488,7 +489,44 @@ function mergeHookMaps(
 	return { ...settings, hooks: merged };
 }
 
+/**
+ * True when `folder` is a working directory dev3 created and removes with the
+ * task (a worktree or an ops folder). Anywhere else - a gitless project folder,
+ * a chosen ops folder - the hooks outlive the task and must stay inert.
+ */
+export function isDev3OwnedFolder(folder: string, env: Record<string, string | undefined> = process.env): boolean {
+	const normalize = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+	const target = normalize(folder);
+	const home = normalize(resolveDev3Home(env));
+	return [`${home}/worktrees/`, `${home}/ops/`].some((root) => target.startsWith(root));
+}
+
+/**
+ * Skip the hook outside a dev3 pane. A plain `claude` session in a folder that
+ * keeps these hooks has no task to move, and the CLI would print its usage error
+ * on every event. Windows keeps the bare command: no POSIX shell to test the env.
+ */
+function withTaskEnvGuard(command: string, dialect: HookCliDialect): string {
+	if (!dialect.posixShell) return command;
+	return `[ -z "$${CODEX_HOOK_SESSION_ENV}" ] || ${command}`;
+}
+
 export function buildClaudeHooks(
+	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean },
+): HookMap {
+	const hooks = buildUnguardedClaudeHooks(options);
+	if (!options?.requireTaskEnv) return hooks;
+	const dialect = options.dialect ?? DEFAULT_DIALECT;
+	return Object.fromEntries(Object.entries(hooks).map(([event, groups]) => [
+		event,
+		groups.map((group) => ({
+			...group,
+			hooks: group.hooks.map((hook) => ({ ...hook, command: withTaskEnvGuard(hook.command, dialect) })),
+		})),
+	]));
+}
+
+function buildUnguardedClaudeHooks(
 	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect },
 ): HookMap {
 	const stopTarget: TaskStatus = options?.stopTarget ?? "review-by-user";
@@ -677,7 +715,7 @@ export function ensureDefaultMode(
 
 export function mergeClaudeHooks(
 	existing: Record<string, unknown>,
-	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect },
+	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean },
 ): Record<string, unknown> {
 	return mergeHookMaps(existing, buildClaudeHooks(options));
 }
@@ -733,6 +771,7 @@ export interface ClaudeHooksWriteResult {
  * Everything dev3 adds goes to settings.local.json, never a committed
  * settings.json, and nothing is written when the path crosses a symlink: a repo
  * that links its settings into a shared kit would otherwise have the kit edited.
+ * Outside a dev3-owned folder every hook is env-guarded (`isDev3OwnedFolder`).
  *
  * `written` reports whether anything changed on disk. Callers that re-assert the
  * hooks periodically (see `agent-hooks-refresh.ts`) lean on the no-write path:
@@ -751,7 +790,8 @@ export function writeClaudeHooks(
 	mkdirSync(claudeDir, { recursive: true });
 	const previous = readSettingsFile(hooksPath);
 
-	let updated = ensureDevPermission(mergeClaudeHooks(previous, options));
+	const requireTaskEnv = !isDev3OwnedFolder(worktreePath);
+	let updated = ensureDevPermission(mergeClaudeHooks(previous, { ...options, requireTaskEnv }));
 	// "default" is Claude's baseline, so writing it would be a no-op.
 	if (options?.permissionMode && options.permissionMode !== "default") {
 		updated = ensureDefaultMode(updated, options.permissionMode);
