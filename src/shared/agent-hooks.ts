@@ -333,6 +333,13 @@ export const CLAUDE_SESSION_START_HOOK_SUBCOMMAND = "hook claude-session-start";
 /** `resume` is left out: the resumed transcript already holds the block it was given. */
 export const CLAUDE_SESSION_START_MATCHER = "startup|clear|compact";
 /**
+ * Claims the file an edit tool is about to write, in a folder other tasks share
+ * (`src/shared/file-leases.ts`). Its own entry: the deny it may print must not
+ * ride on the status move, whose output Claude ignores.
+ */
+export const CLAUDE_CLAIM_HOOK_SUBCOMMAND = "hook claude-claim";
+export const CLAUDE_CLAIM_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
+/**
  * The lifecycle events dev3 turns into board status moves. Codex emits these
  * names verbatim; Copilot's adapter maps its own camelCase names onto them and
  * the omp status extension translates its events the same way
@@ -513,7 +520,7 @@ function withTaskEnvGuard(command: string, dialect: HookCliDialect): string {
 }
 
 export function buildClaudeHooks(
-	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean },
+	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean; fileLeases?: boolean },
 ): HookMap {
 	const hooks = buildUnguardedClaudeHooks(options);
 	if (!options?.requireTaskEnv) return hooks;
@@ -528,7 +535,7 @@ export function buildClaudeHooks(
 }
 
 function buildUnguardedClaudeHooks(
-	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect },
+	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; fileLeases?: boolean },
 ): HookMap {
 	const stopTarget: TaskStatus = options?.stopTarget ?? "review-by-user";
 	const dialect = options?.dialect ?? DEFAULT_DIALECT;
@@ -566,6 +573,12 @@ function buildUnguardedClaudeHooks(
 		],
 		PreToolUse: [
 			{ hooks: [{ type: "command", command: workingCmd }] },
+			...(options?.fileLeases
+				? [{
+					matcher: CLAUDE_CLAIM_MATCHER,
+					hooks: [{ type: "command", command: `${dialect.cli} ${CLAUDE_CLAIM_HOOK_SUBCOMMAND}`, timeout: 5 }],
+				}]
+				: []),
 		],
 		PostToolUse: [
 			{ hooks: [{ type: "command", command: workingCmd }] },
@@ -716,7 +729,7 @@ export function ensureDefaultMode(
 
 export function mergeClaudeHooks(
 	existing: Record<string, unknown>,
-	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean },
+	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean; fileLeases?: boolean },
 ): Record<string, unknown> {
 	return mergeHookMaps(existing, buildClaudeHooks(options));
 }
@@ -792,7 +805,7 @@ export function writeClaudeHooks(
 	const previous = readSettingsFile(hooksPath);
 
 	const requireTaskEnv = !isDev3OwnedFolder(worktreePath);
-	let updated = ensureDevPermission(mergeClaudeHooks(previous, { ...options, requireTaskEnv }));
+	let updated = ensureDevPermission(mergeClaudeHooks(previous, { ...options, requireTaskEnv, fileLeases: requireTaskEnv }));
 	// "default" is Claude's baseline, so writing it would be a no-op.
 	if (options?.permissionMode && options.permissionMode !== "default") {
 		updated = ensureDefaultMode(updated, options.permissionMode);
@@ -812,7 +825,7 @@ export function buildClaudeFlagSettings(
 ): Record<string, unknown> {
 	const dialect = options?.dialect ?? DEFAULT_DIALECT;
 	let settings = ensureDevPermission(
-		{ ...asRecord(managed), hooks: buildClaudeHooks({ stopTarget: options?.stopTarget, dialect }) },
+		{ ...asRecord(managed), hooks: buildClaudeHooks({ stopTarget: options?.stopTarget, dialect, fileLeases: true }) },
 		dialect,
 	);
 	if (options?.permissionMode && options.permissionMode !== "default") {

@@ -85,6 +85,7 @@ In a folder dev3 does not own (a project with its git workflow off), nothing is 
 | `SessionStart` (`startup\|clear\|compact`) | none | `dev3 hook claude-session-start` answers with the task's 5 newest notes as `hookSpecificOutput.additionalContext` (bounded, see `src/shared/recent-notes-context.ts`). `resume`/`fork` are skipped: that transcript already holds a block. Quiet and exit 0 when offline or there are no notes |
 | `UserPromptSubmit` | → `in-progress` | User sent a message, agent starts working. A **second** entry on the same event, `dev3 hook claude-prompt`, reads the payload's `prompt` and `prompt_id` and reports the submission for Agent traffic; the status-move entry above is untouched, so recording can never cost a task its board position |
 | `PreToolUse` | → `in-progress` | Agent is about to call a tool (also catches post-permission resume) |
+| `PreToolUse` (`Edit\|Write\|MultiEdit\|NotebookEdit`, shared folders only) | none | `dev3 hook claude-claim` claims the file for this task. When another live task in the same folder holds it, the edit is denied with the holder's seq, title and a ready `dev3 message` command. Allows the edit when the app is offline. See `decisions/2026/10/04/advisory-file-leases-in-shared-folders.md`. Claude only: Codex, Copilot and omp do not claim files yet |
 | `PostToolUse` | → `in-progress` | A tool finished, including answers submitted to `AskUserQuestion` |
 | `PermissionRequest` | → `user-questions` | Agent needs user approval for a tool call |
 | `Stop` | → `review-by-user` | Agent finished its turn |
