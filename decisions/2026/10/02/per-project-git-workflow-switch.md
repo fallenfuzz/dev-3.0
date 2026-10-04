@@ -1,5 +1,7 @@
 # Per-project git workflow switch
 
+Superseded in part on 2026-10-04 by `decisions/2026/10/04/gitless-claude-hooks-via-settings-flag.md`: a gitless Claude task now gets its hooks, Bash rules and mode through `--settings`, and nothing is left in the folder.
+
 ## Context
 
 Architecture, discovery and documentation work lives in one folder that several tasks touch over weeks, and most of it never becomes a PR. A worktree per task, a branch, a diff bar and review columns are dead weight there. Operations boards (`decisions/2026/06/24/virtual-operations-board-identity.md`) already ran tasks without git, but only in a synthetic project with managed temp folders: no real project folder, no `.dev3/` config, so no per-project env or agent account.

@@ -36,6 +36,8 @@ import { getUserShell } from "../shell-env";
 import { agentBinaryPathOverride } from "../executable";
 import { spawn } from "../spawn";
 import { setupAgentHooks } from "../agent-hooks";
+import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../rate-limit-monitor";
+import { quoteIfUnsafe } from "../../shared/agent-adapters/shell";
 import { resolveResumableSessionId } from "../agent-transcripts";
 import { ensureArtifactTemplateEnv } from "../artifact-template";
 import {
@@ -852,15 +854,26 @@ async function applyAgentHooksToCommand(
 	},
 ): Promise<string> {
 	try {
-		const hookFlag = await setupAgentHooks(worktreePath, baseCommand, options);
-		if (!hookFlag) return command;
+		const managedArg = `--settings ${quoteIfUnsafe(CLAUDE_STATUSLINE_SETTINGS_PATH)}`;
+		const passesManaged = command.includes(managedArg);
+		const launch = await setupAgentHooks(worktreePath, baseCommand, {
+			...options,
+			...(passesManaged ? { claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH } : {}),
+		});
+		let next = command;
+		if (launch?.claudeSettingsFile) {
+			const swapped = `--settings ${quoteIfUnsafe(launch.claudeSettingsFile)}`;
+			next = next.replace(managedArg, () => swapped);
+		}
+		const hookFlag = launch?.flag;
+		if (!hookFlag) return next;
 		// Codex gets a bare flag by design: its hook definitions live in the user's
 		// config.toml, because the payload that used to travel here as
 		// `-c hooks={...}` never survived the Windows command line. omp gets
 		// `--hook <path>` — one short path to the generated extension.
-		const firstSeparator = command.search(/\s/);
-		if (firstSeparator < 0) return `${command} ${hookFlag}`;
-		return `${command.slice(0, firstSeparator)} ${hookFlag}${command.slice(firstSeparator)}`;
+		const firstSeparator = next.search(/\s/);
+		if (firstSeparator < 0) return `${next} ${hookFlag}`;
+		return `${next.slice(0, firstSeparator)} ${hookFlag}${next.slice(firstSeparator)}`;
 	} catch (err) {
 		log.warn("setupAgentHooks failed (non-fatal)", {
 			worktreePath,

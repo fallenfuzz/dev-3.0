@@ -2,7 +2,8 @@
  * Hook-building logic shared between the backend (bun/) and CLI.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PermissionMode, TaskStatus } from "./types";
 import { CLI_EXIT_CODE_APP_NOT_RUNNING } from "./cli-exit-codes";
@@ -797,6 +798,48 @@ export function writeClaudeHooks(
 		updated = ensureDefaultMode(updated, options.permissionMode);
 	}
 	return { written: writeIfChanged(hooksPath, updated, previous), skippedSymlink: null };
+}
+
+/**
+ * Claude settings for a task in a folder dev3 does not own: dev3's managed
+ * `--settings` content plus its hooks, Bash rules and permission mode. Only a
+ * dev3 launch loads this file (Claude relaunches teammates with the same flag),
+ * so the hooks need no env guard and nothing is left in the user's folder.
+ */
+export function buildClaudeFlagSettings(
+	managed: Record<string, unknown>,
+	options?: { stopTarget?: TaskStatus; permissionMode?: PermissionMode; dialect?: HookCliDialect },
+): Record<string, unknown> {
+	const dialect = options?.dialect ?? DEFAULT_DIALECT;
+	let settings = ensureDevPermission(
+		{ ...asRecord(managed), hooks: buildClaudeHooks({ stopTarget: options?.stopTarget, dialect }) },
+		dialect,
+	);
+	if (options?.permissionMode && options.permissionMode !== "default") {
+		settings = ensureDefaultMode(settings, options.permissionMode);
+	}
+	return settings;
+}
+
+/**
+ * Write `buildClaudeFlagSettings` next to the omp extension and return its path.
+ * The name carries a hash of the content, so concurrent launches with different
+ * stop targets or modes never overwrite a file another Claude is reading.
+ */
+export function writeClaudeFlagSettings(
+	managedSettingsFile: string,
+	options?: { stopTarget?: TaskStatus; permissionMode?: PermissionMode; dev3Home?: string },
+): string {
+	const body = JSON.stringify(buildClaudeFlagSettings(readSettingsFile(managedSettingsFile), options), null, 2) + "\n";
+	const hash = createHash("sha256").update(body).digest("hex").slice(0, 12);
+	const dir = join(options?.dev3Home ?? resolveDev3Home(), "data", "agent-hooks");
+	const path = join(dir, `claude-folder-settings-${hash}.json`);
+	if (existsSync(path)) return path;
+	mkdirSync(dir, { recursive: true });
+	const temp = `${path}.${process.pid}.tmp`;
+	writeFileSync(temp, body, "utf-8");
+	renameSync(temp, path);
+	return path;
 }
 
 /**
