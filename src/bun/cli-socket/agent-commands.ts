@@ -9,6 +9,7 @@ import { capturePaneSession } from "./pane-sessions";
 import { log, type Handler } from "./shared";
 import { requirePaneTask, resolveTaskAcrossProjects, resolveTaskFromParams } from "./task-resolution";
 import { rememberTaskSession } from "../task-sessions";
+import { claimFileForTask } from "../file-leases";
 
 const codexQuestions = new CodexQuestionState();
 
@@ -203,6 +204,14 @@ export const agentHandlers: Record<string, Handler> = {
 			await capturePaneSession(project, task.id, params.paneId, sessionId, harness);
 		}
 		return { outcome };
+	},
+
+	// Claude Code's PreToolUse hook on its edit tools, in a folder other tasks
+	// share. Answers the live task that holds the file, or no conflict.
+	"task.claimFile": async (params) => {
+		const { project, task } = await resolveTaskFromParams(params);
+		if (typeof params.path !== "string" || !params.path) return { conflict: null };
+		return { conflict: await claimFileForTask(project, task, params.path) };
 	},
 
 	// Claude Code's StopFailure hook: an API error ended the turn, so the agent is

@@ -1353,7 +1353,8 @@ describe("writeClaudeHooks with a hostile file on disk", () => {
 		writeClaudeHooks(tmp);
 
 		const content = read();
-		expect(content.hooks.PreToolUse).toHaveLength(1);
+		// The status move, plus the file claim a folder outside the dev3 home gets.
+		expect(content.hooks.PreToolUse).toHaveLength(2);
 		expect(content.enabledMcpjsonServers).toEqual(["playwright"]);
 	});
 
@@ -1533,7 +1534,7 @@ describe("Claude hooks outside a dev3-owned folder", () => {
 		writeFileSync(join(folder, ".claude", "settings.local.json"), JSON.stringify({ hooks: buildClaudeHooks() }));
 		writeClaudeHooks(folder);
 		const settings = JSON.parse(readFileSync(join(folder, ".claude", "settings.local.json"), "utf-8"));
-		expect(settings.hooks).toEqual(buildClaudeHooks({ requireTaskEnv: true }));
+		expect(settings.hooks).toEqual(buildClaudeHooks({ requireTaskEnv: true, fileLeases: true }));
 	});
 
 	it("keeps Windows commands bare", () => {
