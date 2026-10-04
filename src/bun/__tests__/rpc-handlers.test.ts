@@ -392,6 +392,7 @@ import * as agents from "../agents";
 import * as workspaceGuard from "../task-workspace-guard";
 import * as updater from "../updater";
 import { setupAgentHooks } from "../agent-hooks";
+import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../rate-limit-monitor";
 import { loadSettings, loadSettingsSync, saveSettings } from "../settings";
 import * as repoConfig from "../repo-config";
 import * as cowClone from "../cow-clone";
@@ -11421,13 +11422,43 @@ describe("launchTaskPty", () => {
 			agent: { baseCommand: "codex" },
 			config: {},
 		});
-		vi.mocked(setupAgentHooks).mockResolvedValueOnce("--dangerously-bypass-hook-trust");
+		vi.mocked(setupAgentHooks).mockResolvedValueOnce({ flag: "--dangerously-bypass-hook-trust" });
 
 		try {
 			await launchTaskPty(project, task, "/tmp/codex-wt", "builtin-codex", "codex-default");
 
 			const runCall = writeSpy.mock.calls.find(([path]) => String(path).endsWith("-run.sh"));
 			expect(String(runCall?.[1] ?? "")).toContain("codex --dangerously-bypass-hook-trust --model gpt-test -- 'Run the task'");
+		} finally {
+			writeSpy.mockRestore();
+		}
+	});
+
+	it("swaps the managed --settings file for the one setupAgentHooks built", async () => {
+		const project = makeProject();
+		const task = makeTask();
+		const writeSpy = vi.spyOn(Bun, "write").mockResolvedValue(undefined as never);
+		mockSpawnSync.mockReturnValue({
+			exitCode: 0,
+			stdout: new TextEncoder().encode("/usr/local/bin/claude\n"),
+			stderr: new Uint8Array(),
+		});
+		(agents.resolveCommandForAgent as any).mockResolvedValueOnce({
+			command: `claude --settings ${CLAUDE_STATUSLINE_SETTINGS_PATH} -- 'Run the task'`,
+			extraEnv: {},
+			agent: { baseCommand: "claude" },
+			config: {},
+		});
+		vi.mocked(setupAgentHooks).mockResolvedValueOnce({ claudeSettingsFile: "/home/me/.dev3.0/data/agent-hooks/claude-folder-settings-abc.json" });
+
+		try {
+			await launchTaskPty(project, task, "/home/me/notes", "builtin-claude", "claude-default");
+
+			expect(setupAgentHooks).toHaveBeenCalledWith("/home/me/notes", "claude", expect.objectContaining({ claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH }));
+			const runCall = writeSpy.mock.calls.find(([path]) => String(path).endsWith("-run.sh"));
+			const script = String(runCall?.[1] ?? "");
+			expect(script).toContain("claude --settings /home/me/.dev3.0/data/agent-hooks/claude-folder-settings-abc.json -- 'Run the task'");
+			expect(script).not.toContain(CLAUDE_STATUSLINE_SETTINGS_PATH);
 		} finally {
 			writeSpy.mockRestore();
 		}
@@ -11448,7 +11479,7 @@ describe("launchTaskPty", () => {
 			agent: { baseCommand: "codex" },
 			config: {},
 		});
-		vi.mocked(setupAgentHooks).mockResolvedValueOnce("--dangerously-bypass-hook-trust");
+		vi.mocked(setupAgentHooks).mockResolvedValueOnce({ flag: "--dangerously-bypass-hook-trust" });
 
 		try {
 			await launchTaskPty(project, task, "/tmp/codex-wt", "builtin-codex", "codex-default", false, true);
@@ -14040,7 +14071,7 @@ describe("triggerColumnAgentIfNeeded", () => {
 			agentFamily: undefined,
 			launchModel: undefined,
 		});
-		vi.mocked(setupAgentHooks).mockResolvedValueOnce("--dangerously-bypass-hook-trust");
+		vi.mocked(setupAgentHooks).mockResolvedValueOnce({ flag: "--dangerously-bypass-hook-trust" });
 
 		try {
 			await triggerColumnAgentIfNeeded("review-by-ai", project, task);
