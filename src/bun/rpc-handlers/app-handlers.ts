@@ -16,6 +16,7 @@ import { parseDeepLink, type DeepLinkNav } from "../../shared/deep-link";
 import { resolveDeepLink as resolveDeepLinkTarget } from "../deep-link";
 import { BUNDLED_CHANGELOG } from "../changelog-bundled";
 import * as repoConfig from "../repo-config";
+import { autoConfigureProject } from "../project-autoconfig";
 import { DEV3_HOME } from "../paths";
 import { createSandboxProject } from "../sandbox-project";
 import { pathBasename, projectStorageKey } from "../../shared/project-storage-key";
@@ -309,7 +310,7 @@ async function listAgentSkills(params?: { projectPath?: string | null }): Promis
 	}
 }
 
-async function addProjectImpl(params: { path: string; name?: string; gitWorkflow?: boolean }): Promise<{ ok: true; project: Project } | { ok: false; error: string; notGitRepo?: true }> {
+async function addProjectImpl(params: { path: string; name?: string; gitWorkflow?: boolean; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string; notGitRepo?: true }> {
 	log.info("→ addProject", params);
 	try {
 		// Protect the synthetic virtual-project namespace: a real git repo must
@@ -343,6 +344,13 @@ async function addProjectImpl(params: { path: string; name?: string; gitWorkflow
 		if (params.gitWorkflow === false) {
 			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
 		}
+		// Written before resolveProjectConfig so the returned project already carries it.
+		const autoConfigured = params.autoConfigure
+			? await autoConfigureProject(params.path, { isGitRepo: isRepo, gitWorkflow: params.gitWorkflow !== false }).catch((err) => {
+				log.warn("Auto-configure failed, project added without it", { id: project.id, error: String(err) });
+				return [];
+			})
+			: undefined;
 		// The renderer keeps whatever this returns until the next getProjects, and
 		// getProjects is not polled — so a raw record left `defaultCompareRef`
 		// unresolved for the whole session and the UI invented `origin/<base>`.
@@ -350,8 +358,8 @@ async function addProjectImpl(params: { path: string; name?: string; gitWorkflow
 			log.warn("Failed to resolve config for the new project", { id: project.id, error: String(err) });
 			return project;
 		});
-		log.info("← addProject OK", { projectId: resolved.id, name: resolved.name });
-		return { ok: true, project: resolved };
+		log.info("← addProject OK", { projectId: resolved.id, name: resolved.name, autoConfigured });
+		return autoConfigured ? { ok: true, project: resolved, autoConfigured } : { ok: true, project: resolved };
 	} catch (err) {
 		log.error("addProject failed", { error: String(err), params });
 		return { ok: false, error: String(err) };
@@ -374,7 +382,7 @@ async function addVirtualProject(params: { name: string }): Promise<{ ok: true; 
 /** How often clone output updates are pushed to the renderer. */
 const CLONE_PROGRESS_PUSH_INTERVAL_MS = 150;
 
-async function cloneAndAddProject(params: { url: string; baseDir: string; repoName?: string; progressId?: string }): Promise<{ ok: true; project: Project } | { ok: false; error: string }> {
+async function cloneAndAddProject(params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean }): Promise<{ ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string }> {
 	log.info("→ cloneAndAddProject", params);
 	try {
 		const name = params.repoName || extractRepoName(params.url);
@@ -384,7 +392,7 @@ async function cloneAndAddProject(params: { url: string; baseDir: string; repoNa
 			const isRepo = await git.isGitRepo(targetDir);
 			if (isRepo) {
 				log.info("Directory already exists and is a git repo, adding as project", { targetDir });
-				return addProjectImpl({ path: targetDir, name });
+				return addProjectImpl({ path: targetDir, name, autoConfigure: params.autoConfigure });
 			}
 			return { ok: false, error: `Directory already exists: ${targetDir}` };
 		}
@@ -418,7 +426,7 @@ async function cloneAndAddProject(params: { url: string; baseDir: string; repoNa
 			if (progressTimer) clearInterval(progressTimer);
 		}
 
-		return addProjectImpl({ path: targetDir, name });
+		return addProjectImpl({ path: targetDir, name, autoConfigure: params.autoConfigure });
 	} catch (err) {
 		log.error("cloneAndAddProject failed", { error: String(err), params });
 		return { ok: false, error: String(err) };

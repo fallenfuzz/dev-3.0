@@ -596,6 +596,8 @@ export const SETTINGS_GLOBAL_FIELD_EXCLUSIONS = [
 	"lowBatteryAnnounced",
 	// Edited inside the terminal-shell-prompt entry, which is registered by `shellPrompt`.
 	"shellPromptCustom",
+	// The Add Project dialog's auto-configure switch, remembered where it is flipped.
+	"autoConfigureNewProjects",
 ] as const satisfies readonly (keyof GlobalSettings)[];
 
 /** Runtime list used by the registry integrity test; the type check catches schema drift. */
@@ -609,6 +611,7 @@ export const GLOBAL_SETTINGS_FIELDS = [
 	"analyticsDistinctId",
 	"staticAccessCode",
 	"cloneBaseDirectory",
+	"autoConfigureNewProjects",
 	"customBinaryPaths",
 	"agentBinaryPaths",
 	"agentCustomBinaryPaths",
