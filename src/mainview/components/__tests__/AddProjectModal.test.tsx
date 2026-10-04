@@ -583,7 +583,7 @@ describe("AddProjectModal", () => {
 			mockedApi.request.addProject.mockResolvedValue({
 				ok: true as const,
 				project: mockProject,
-				autoConfigured: ["setupScript", "devScript"],
+				autoConfigured: { written: ["setupScript", "devScript"] },
 			});
 			renderModal();
 
@@ -596,6 +596,24 @@ describe("AddProjectModal", () => {
 				"my-repo: saved to .dev3/config.local.json: setup script, dev script. Edit in Project Settings.",
 				expect.anything(),
 			);
+		});
+
+		it("says so when the project already had a .dev3 config", async () => {
+			const user = userEvent.setup();
+			const { toast } = await import("../../toast");
+			const info = vi.spyOn(toast, "info");
+			mockedOpenFolderPickerMulti.mockResolvedValue(["/work/app"]);
+			mockedApi.request.addProject.mockResolvedValue({
+				ok: true as const,
+				project: mockProject,
+				autoConfigured: { written: [], existingConfig: true },
+			});
+			renderModal();
+
+			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
+			await user.click(screen.getByText("Browse..."));
+
+			expect(info).toHaveBeenCalledWith("my-repo already has a .dev3 config, so it was left as is.", expect.anything());
 		});
 
 		it("starts on when the user left it on last time", async () => {

@@ -301,7 +301,7 @@ vi.mock("../repo-config", () => {
 });
 
 vi.mock("../project-autoconfig", () => ({
-	autoConfigureProject: vi.fn(async () => ["devScript"]),
+	autoConfigureProject: vi.fn(async () => ({ written: ["devScript"] })),
 }));
 
 vi.mock("../agent-hooks", () => ({
@@ -1699,7 +1699,7 @@ describe("handlers.addProject", () => {
 
 		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
 		expect(autoConfigureProject).toHaveBeenCalledWith("/tmp/test-project", { isGitRepo: true, gitWorkflow: true });
-		expect(result).toMatchObject({ ok: true, autoConfigured: ["devScript"] });
+		expect(result).toMatchObject({ ok: true, autoConfigured: { written: ["devScript"] } });
 	});
 
 	it("still adds the project when auto-configure fails", async () => {
@@ -1712,7 +1712,7 @@ describe("handlers.addProject", () => {
 		vi.mocked(data.updateProject).mockResolvedValue(project);
 
 		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
-		expect(result).toMatchObject({ ok: true, autoConfigured: [] });
+		expect(result).toMatchObject({ ok: true, autoConfigured: { written: [] } });
 	});
 
 	it("leaves the git workflow alone when the caller does not turn it off", async () => {
