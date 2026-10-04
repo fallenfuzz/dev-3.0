@@ -5058,7 +5058,7 @@ export type AppRPCSchema = {
 			addProject: {
 				/** `name` is optional: the backend derives it from the path, which is the
 				 *  only side that knows how to spell a path on its own platform. */
-				/** `gitWorkflow: false` admits a folder that is not a git repository. */
+				/** `gitWorkflow: false` adds the folder with the git workflow off, git repository or not. */
 				params: { path: string; name?: string; gitWorkflow?: boolean };
 				/** `notGitRepo` marks the refusal that `gitWorkflow: false` would lift. */
 				response: { ok: true; project: Project } | { ok: false; error: string; notGitRepo?: true };
