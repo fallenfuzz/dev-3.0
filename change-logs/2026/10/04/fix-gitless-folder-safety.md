@@ -1,3 +1,0 @@
-Short: Safer gitless project folders
-
-Tasks in a project with its git workflow off no longer leave dev3's Claude hooks, Bash permissions or permission mode in the folder's `.claude/settings.local.json`: they are passed to Claude with `--settings`, so a `claude` session you start there yourself sees none of them, on every platform. The `dev3 task move` approval prompts for such a task now say the folder keeps every file instead of warning that a worktree will be destroyed. When several tasks share one folder, each task's handoff, Conversation tab and completion archive now show only its own agent sessions, not its neighbours' or your own.
