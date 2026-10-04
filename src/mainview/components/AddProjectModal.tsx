@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import { extractRepoName } from "../../shared/types";
+import { extractRepoName, hasGitWorkflow } from "../../shared/types";
 import type { Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
@@ -12,6 +12,7 @@ import { openFolderPicker, openFolderPickerMulti } from "../folder-picker";
 import { toast } from "../toast";
 import { useFocusTrap } from "../utils/useFocusTrap";
 import ProjectSpacesField, { applyDeferredSpaces, type DeferredSpaces } from "./ProjectSpacesField";
+import ToggleSwitch from "./ToggleSwitch";
 
 interface AddProjectModalProps {
 	dispatch: Dispatch<AppAction>;
@@ -32,6 +33,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [opsName, setOpsName] = useState("");
 	const [creatingOps, setCreatingOps] = useState(false);
 	const [activeTab, setActiveTab] = useState<"local" | "clone" | "init">("local");
+	// Off: picked folders become projects whose tasks run in the folder itself.
+	const [gitWorkflow, setGitWorkflow] = useState(true);
 	const [gitUrl, setGitUrl] = useState("");
 	const [repoName, setRepoName] = useState("");
 	const [cloneBaseDir, setCloneBaseDir] = useState<string | null>(null);
@@ -91,19 +94,23 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const displayName = repoName.trim() || inferredName;
 	const targetPath = cloneBaseDir && displayName ? `${cloneBaseDir}/${displayName}` : "";
 
-	async function handleAddPlainFolders() {
-		if (addingPlain) return;
-		setAddingPlain(true);
-		setError(null);
+	// Adds each folder in turn; the caller decides what the dialog does next.
+	async function addFolders(folders: string[], withGitWorkflow: boolean) {
+		const added: Project[] = [];
+		const plain: string[] = [];
 		const errors: string[] = [];
-		for (const folder of plainFolders) {
+		for (const folder of folders) {
+			// The backend names the project - see the addProject RPC comment.
 			try {
-				const result = await api.request.addProject({ path: folder, gitWorkflow: false });
+				const result = await api.request.addProject(withGitWorkflow ? { path: folder } : { path: folder, gitWorkflow: false });
 				if (result.ok) {
 					dispatch({ type: "addProject", project: result.project });
+					added.push(result.project);
 					void applyPendingSpaces(result.project.id);
 					trackEvent("project_added", { source: "local" });
 					posthog.capture("project_added", { source: "local" });
+				} else if (result.notGitRepo) {
+					plain.push(folder);
 				} else {
 					errors.push(`${folder}: ${result.error}`);
 				}
@@ -111,6 +118,14 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				errors.push(`${folder}: ${String(err)}`);
 			}
 		}
+		return { added, plain, errors };
+	}
+
+	async function handleAddPlainFolders() {
+		if (addingPlain) return;
+		setAddingPlain(true);
+		setError(null);
+		const { errors } = await addFolders(plainFolders, false);
 		setAddingPlain(false);
 		if (errors.length === 0) onClose();
 		else setError(errors.join("\n"));
@@ -125,43 +140,24 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 			const folders = await openFolderPickerMulti();
 			if (!folders || folders.length === 0) return;
 
-			const errors: string[] = [];
-			const plain: string[] = [];
-			const added: Project[] = [];
-			let anySucceeded = false;
-			for (const folder of folders) {
-				// The backend names the project — see the addProject RPC comment.
-				const name = folder;
-				try {
-					const result = await api.request.addProject({ path: folder });
-					if (result.ok) {
-						dispatch({ type: "addProject", project: result.project });
-						added.push(result.project);
-						void applyPendingSpaces(result.project.id);
-						trackEvent("project_added", { source: "local" });
-						posthog.capture("project_added", { source: "local" });
-						anySucceeded = true;
-					} else if (result.notGitRepo) {
-						plain.push(folder);
-					} else {
-						errors.push(`${name}: ${result.error}`);
-					}
-				} catch (err) {
-					errors.push(`${name}: ${String(err)}`);
-				}
-			}
+			const { added, plain, errors } = await addFolders(folders, gitWorkflow);
+			// Conversation import needs a worktree, so only git-workflow projects get the offer.
+			const reportAdded = () => {
+				const gitAdded = added.filter(hasGitWorkflow);
+				if (gitAdded.length > 0) onGitProjectsAdded?.(gitAdded);
+			};
 
 			if (plain.length > 0) {
 				// Stay open: the plain folders still wait on the user's answer.
 				setPlainFolders(plain);
-				if (added.length > 0) onGitProjectsAdded?.(added);
+				reportAdded();
 				for (const err of errors) toast.error(err, { source: "dashboard" });
 			} else if (errors.length === 0) {
 				onClose();
-				if (added.length > 0) onGitProjectsAdded?.(added);
-			} else if (anySucceeded) {
+				reportAdded();
+			} else if (added.length > 0) {
 				onClose();
-				if (added.length > 0) onGitProjectsAdded?.(added);
+				reportAdded();
 				for (const err of errors) toast.error(err, { source: "dashboard" });
 			} else {
 				setError(errors.join("\n"));
@@ -347,12 +343,27 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				{/* Blast-radius copy (bible §10): standing, not dismissible — over half the
 				    userbase point this at a work monorepo and ask what it writes first.
 				    Two lines, deliberately. Longer copy is its own way of scaring people off. */}
+				<div className="flex items-center justify-between gap-4">
+					<span className="text-fg-2 text-sm font-medium">{t("addProject.gitWorkflow")}</span>
+					<ToggleSwitch
+						checked={gitWorkflow}
+						ariaLabel={t("addProject.gitWorkflow")}
+						onToggle={() => {
+							setGitWorkflow(!gitWorkflow);
+							// Clone and New make git repositories, so a folder without git is picked locally.
+							setActiveTab("local");
+							setPlainFolders([]);
+							setError(null);
+						}}
+					/>
+				</div>
 				<div className="bg-raised border border-edge rounded-xl px-3 py-2.5 space-y-1.5 text-fg-3 text-xs leading-5">
-					<p>{t("addProject.safetyBase")}</p>
-					<p>{t("addProject.safetyBranch")}</p>
+					<p>{t(gitWorkflow ? "addProject.safetyBase" : "addProject.safetyFolder")}</p>
+					<p>{t(gitWorkflow ? "addProject.safetyBranch" : "addProject.safetyShared")}</p>
 				</div>
 
 				{/* Tabs */}
+				{gitWorkflow && (
 				<div className="flex gap-1 p-1 bg-raised rounded-xl">
 					<button
 						onClick={() => { setActiveTab("local"); setError(null); }}
@@ -385,12 +396,13 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						{t("addProject.tabInit")}
 					</button>
 				</div>
+				)}
 
 				{/* Tab content */}
 				{activeTab === "local" ? (
 					<div className="space-y-3">
 						<p className="text-fg-3 text-sm">
-							{t("addProject.browseHint")}
+							{t(gitWorkflow ? "addProject.browseHint" : "addProject.browseHintFolder")}
 						</p>
 						<button
 							onClick={handleBrowseLocal}
@@ -537,7 +549,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 					>
 						{t("addProject.cancel")}
 					</button>
-					{kind === "git" && activeTab === "clone" && (
+					{kind === "git" && gitWorkflow && activeTab === "clone" && (
 						<button
 							onClick={handleClone}
 							disabled={!canClone}
