@@ -333,8 +333,8 @@ async function addProjectImpl(
 			return { ok: false, error: "Cannot add a project inside the dev-3.0 data directory" };
 		}
 		const isRepo = await git.isGitRepo(params.path);
-		// A plain folder added with the git workflow off needs no repository at all.
-		const gitless = !isRepo && params.gitWorkflow === false;
+		// With the git workflow off, the folder needs neither a repository nor a commit.
+		const gitless = params.gitWorkflow === false;
 		const gitInit = opts.offerGitInit && !gitless ? await probeGitInit(params.path) : null;
 		if (!isRepo && !gitless) {
 			log.warn("Not a git repo", { path: params.path, offerGitInit: !!gitInit });
@@ -352,10 +352,8 @@ async function addProjectImpl(
 		// may be macOS while the repo lives on a Windows drive.
 		const name = params.name?.trim() || pathBasename(params.path);
 		const project = await data.addProject(params.path, name);
-		if (!isRepo) {
-			// A plain folder can only ever run without the git workflow.
-			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
-		} else {
+		if (isRepo) {
+			// Detected even with the git workflow off, so switching it on later starts from the real base.
 			try {
 				const defaultBranch = await git.getDefaultBranch(params.path);
 				await data.updateProject(project.id, { defaultBaseBranch: defaultBranch });
@@ -363,6 +361,9 @@ async function addProjectImpl(
 			} catch (err) {
 				log.warn("Could not detect default branch, keeping 'main'", { error: String(err) });
 			}
+		}
+		if (params.gitWorkflow === false) {
+			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
 		}
 		// Written before resolveProjectConfig so the returned project already carries it.
 		const autoConfigured = params.autoConfigure
