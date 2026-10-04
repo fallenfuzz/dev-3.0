@@ -1668,13 +1668,27 @@ describe("handlers.addProject", () => {
 		expect(git.getDefaultBranch).not.toHaveBeenCalled();
 	});
 
-	it("never switches the git workflow off for a folder that is a git repository", async () => {
+	it("adds a git repository with the git workflow off when asked to, keeping its base branch", async () => {
+		const project = makeProject();
+		vi.mocked(git.isGitRepo).mockResolvedValue(true);
+		vi.mocked(data.addProject).mockResolvedValue(project);
+		vi.mocked(git.getDefaultBranch).mockResolvedValue("trunk");
+		vi.mocked(data.updateProject).mockResolvedValue({ ...project, gitWorkflow: false });
+
+		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", gitWorkflow: false });
+
+		expect(result.ok).toBe(true);
+		expect(data.updateProject).toHaveBeenCalledWith(project.id, { defaultBaseBranch: "trunk" });
+		expect(data.updateProject).toHaveBeenCalledWith(project.id, { gitWorkflow: false });
+	});
+
+	it("leaves the git workflow alone when the caller does not turn it off", async () => {
 		const project = makeProject();
 		vi.mocked(git.isGitRepo).mockResolvedValue(true);
 		vi.mocked(data.addProject).mockResolvedValue(project);
 		vi.mocked(git.getDefaultBranch).mockResolvedValue("main");
 
-		await handlers.addProject({ path: "/tmp/test-project", name: "Test", gitWorkflow: false });
+		await handlers.addProject({ path: "/tmp/test-project", name: "Test" });
 
 		expect(data.updateProject).not.toHaveBeenCalledWith(project.id, { gitWorkflow: false });
 	});

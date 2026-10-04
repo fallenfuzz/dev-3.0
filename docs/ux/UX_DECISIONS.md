@@ -722,5 +722,5 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 - **Why:** a reveal that reflowed the terminal would refit the PTY on every hover. `decisions/2026/10/02/file-explorer-panel.md`.
 
 ## 2026-10-02 - Git workflow is a project property, switched on the Board tab
-- **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live; a non-git folder gets an inline offer in AddProject's Local tab; no dashboard badge.
+- **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live. AddProject's folder pane carries the same switch (off: Local only, shared-folder copy); a non-git folder picked with it on gets an inline offer; no dashboard badge.
 - **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.

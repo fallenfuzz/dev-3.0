@@ -339,10 +339,8 @@ async function addProjectImpl(params: { path: string; name?: string; gitWorkflow
 		// may be macOS while the repo lives on a Windows drive.
 		const name = params.name?.trim() || pathBasename(params.path);
 		const project = await data.addProject(params.path, name);
-		if (!isRepo) {
-			// A plain folder can only ever run without the git workflow.
-			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
-		} else {
+		if (isRepo) {
+			// Detected even with the git workflow off, so switching it on later starts from the real base.
 			try {
 				const defaultBranch = await git.getDefaultBranch(params.path);
 				await data.updateProject(project.id, { defaultBaseBranch: defaultBranch });
@@ -350,6 +348,9 @@ async function addProjectImpl(params: { path: string; name?: string; gitWorkflow
 			} catch (err) {
 				log.warn("Could not detect default branch, keeping 'main'", { error: String(err) });
 			}
+		}
+		if (params.gitWorkflow === false) {
+			Object.assign(project, await data.updateProject(project.id, { gitWorkflow: false }));
 		}
 		// The renderer keeps whatever this returns until the next getProjects, and
 		// getProjects is not polled — so a raw record left `defaultCompareRef`
