@@ -8,6 +8,7 @@ import {
 	writeConversationDump,
 } from "./conversation-parse";
 import { createLogger } from "./logger";
+import { taskSessionIds } from "./task-sessions";
 
 /**
  * Archiving a task's conversations when the task reaches a terminal status.
@@ -42,7 +43,7 @@ export async function dumpTerminalTaskConversations(
 
 	const written: string[] = [];
 	try {
-		const parsed = parseWorktreeConversations(workingDir);
+		const parsed = parseWorktreeConversations(workingDir, { sessionIds: taskSessionIds(project, task, workingDir) });
 		if (parsed.length === 0) return [];
 		const dir = conversationDumpDir(taskDir(project, task));
 		for (const { conversation } of parsed) {

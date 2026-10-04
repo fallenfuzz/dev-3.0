@@ -63,6 +63,7 @@ import { readTaskTerminalBackendState, switchTaskTerminalBackend } from "./task-
 import { DEV3_HOME } from "./paths";
 import { cliTransportFor, startCliListener } from "./cli-listener";
 import { CodexQuestionState } from "./codex-question-state";
+import { rememberTaskSession } from "./task-sessions";
 
 const log = createLogger("cli-socket");
 const codexQuestions = new CodexQuestionState();
@@ -2021,6 +2022,7 @@ const handlers: Record<string, Handler> = {
 		if (sessionId && (paneId || harness === "codex")) {
 			await capturePaneSession(project, task.id, paneId, sessionId, harness);
 		}
+		rememberTaskSession(project, task, sessionId);
 
 		// The submitted text rides on the same payload, so recording costs the
 		// pane no second dev3 process.
@@ -2070,6 +2072,7 @@ const handlers: Record<string, Handler> = {
 		const harness: PromptSubmitHarness = params.harness === "codex" || params.harness === "copilot"
 			? params.harness
 			: "claude";
+		rememberTaskSession(project, task, typeof params.sessionId === "string" ? params.sessionId : null);
 		const outcome = recordTerminalPromptSubmission({
 			project,
 			task,
