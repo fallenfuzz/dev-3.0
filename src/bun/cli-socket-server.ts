@@ -62,6 +62,8 @@ import { readTaskTerminalBackendState, switchTaskTerminalBackend } from "./task-
 import { DEV3_HOME } from "./paths";
 import { cliTransportFor, startCliListener } from "./cli-listener";
 import { CodexQuestionState } from "./codex-question-state";
+import { rememberTaskSession } from "./task-sessions";
+import { claimFileForTask } from "./file-leases";
 
 const log = createLogger("cli-socket");
 const codexQuestions = new CodexQuestionState();
@@ -1991,6 +1993,7 @@ const handlers: Record<string, Handler> = {
 		if (sessionId && (paneId || harness === "codex")) {
 			await capturePaneSession(project, task.id, paneId, sessionId, harness);
 		}
+		rememberTaskSession(project, task, sessionId);
 
 		// The submitted text rides on the same payload, so recording costs the
 		// pane no second dev3 process.
@@ -2040,6 +2043,7 @@ const handlers: Record<string, Handler> = {
 		const harness: PromptSubmitHarness = params.harness === "codex" || params.harness === "copilot"
 			? params.harness
 			: "claude";
+		rememberTaskSession(project, task, typeof params.sessionId === "string" ? params.sessionId : null);
 		const outcome = recordTerminalPromptSubmission({
 			project,
 			task,
@@ -2049,6 +2053,14 @@ const handlers: Record<string, Handler> = {
 			submissionId: typeof params.submissionId === "string" ? params.submissionId : null,
 		});
 		return { outcome };
+	},
+
+	// Claude Code's PreToolUse hook on its edit tools, in a folder other tasks
+	// share. Answers the live task that holds the file, or no conflict.
+	"task.claimFile": async (params) => {
+		const { project, task } = await resolveTaskFromParams(params);
+		if (typeof params.path !== "string" || !params.path) return { conflict: null };
+		return { conflict: await claimFileForTask(project, task, params.path) };
 	},
 
 	// Claude Code's StopFailure hook: an API error ended the turn, so the agent is
