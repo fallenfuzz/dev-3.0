@@ -10,6 +10,7 @@ import { log, type Handler, withSenderVariant } from "./shared";
 import { requirePaneTask, resolveRequesterTask, resolveTaskFromParams, senderRequester } from "./task-resolution";
 import { claudeSessionWatches, type ClaudeIdleEvent } from "../claude-session-watch";
 import { rememberTaskSession } from "../task-sessions";
+import { claimFileForTask } from "../file-leases";
 
 const codexQuestions = new CodexQuestionState();
 
@@ -235,6 +236,14 @@ export const agentHandlers: Record<string, Handler> = {
 		});
 		return { outcome };
 	}),
+
+	// Claude Code's PreToolUse hook on its edit tools, in a folder other tasks
+	// share. Answers the live task that holds the file, or no conflict.
+	"task.claimFile": async (params) => {
+		const { project, task } = await resolveTaskFromParams(params);
+		if (typeof params.path !== "string" || !params.path) return { conflict: null };
+		return { conflict: await claimFileForTask(project, task, params.path) };
+	},
 
 	// Claude Code's StopFailure hook: an API error ended the turn, so the agent is
 	// parked at its prompt with nothing to show for it. Park the task in front of
