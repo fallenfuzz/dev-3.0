@@ -1397,6 +1397,8 @@ export interface GlobalSettings {
 	 */
 	staticAccessCode?: string;
 	cloneBaseDirectory?: string;
+	/** Last position of the Add Project dialog's auto-configure switch. Absent = off. */
+	autoConfigureNewProjects?: boolean;
 	customBinaryPaths?: Record<string, string>; // requirementId → custom binary path
 	agentBinaryPaths?: Record<string, string>; // agentId → resolved binary path
 	/**
@@ -5059,13 +5061,14 @@ export type AppRPCSchema = {
 				/** `name` is optional: the backend derives it from the path, which is the
 				 *  only side that knows how to spell a path on its own platform. */
 				/** `gitWorkflow: false` adds the folder with the git workflow off, git repository or not. */
-				params: { path: string; name?: string; gitWorkflow?: boolean };
+				/** `autoConfigure` writes detected settings to `.dev3/config.local.json`; `autoConfigured` lists the keys written. */
+				params: { path: string; name?: string; gitWorkflow?: boolean; autoConfigure?: boolean };
 				/** `notGitRepo` marks the refusal that `gitWorkflow: false` would lift. */
-				response: { ok: true; project: Project } | { ok: false; error: string; notGitRepo?: true };
+				response: { ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string; notGitRepo?: true };
 			};
 			cloneAndAddProject: {
-				params: { url: string; baseDir: string; repoName?: string; progressId?: string };
-				response: { ok: true; project: Project } | { ok: false; error: string };
+				params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean };
+				response: { ok: true; project: Project; autoConfigured?: string[] } | { ok: false; error: string };
 			};
 			createDirectory: {
 				params: { parentPath: string; name: string };

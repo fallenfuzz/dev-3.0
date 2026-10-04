@@ -90,13 +90,16 @@ export async function saveRepoConfig(projectPath: string, config: Dev3RepoConfig
 	await ensureGitignore(projectPath);
 }
 
-/** Write config to .dev3/config.local.json. Creates .dev3/ directory if needed. */
-export async function saveRepoLocalConfig(projectPath: string, config: Dev3RepoConfig): Promise<void> {
+/**
+ * Write config to .dev3/config.local.json. Creates .dev3/ directory if needed.
+ * `gitignore: false` skips the .gitignore entry - a folder without git has no use for one.
+ */
+export async function saveRepoLocalConfig(projectPath: string, config: Dev3RepoConfig, opts?: { gitignore?: boolean }): Promise<void> {
 	mkdirSync(`${projectPath}/${CONFIG_DIR}`, { recursive: true });
 	const filePath = `${projectPath}/${LOCAL_CONFIG_FILE}`;
 	writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n");
 	log.info("Saved local repo config", { path: filePath });
-	await ensureGitignore(projectPath);
+	if (opts?.gitignore !== false) await ensureGitignore(projectPath);
 }
 
 /** Ensure .dev3/config.local.json is in the repo's .gitignore. */
