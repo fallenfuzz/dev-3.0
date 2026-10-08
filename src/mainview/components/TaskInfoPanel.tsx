@@ -581,10 +581,13 @@ function TaskInfoPanel({
 		if (!onOpenInlineDiff) {
 			return;
 		}
+		// Pinned: the badge counts committed work, so the viewer's remembered mode
+		// (default "uncommitted") must not swap in a different scope on open.
 		onOpenInlineDiff({
 			mode: "branch",
+			pinMode: true,
 			compareRef: branchMeta?.compareRef,
-			compareLabel: branchMeta?.compareLabel ?? project.defaultCompareRef ?? resolveTaskCompareBaseBranch(task, project),
+			compareLabel: diffCompareLabel,
 			focusFile,
 		});
 	}
@@ -637,6 +640,7 @@ function TaskInfoPanel({
 			? metadataBranchState
 			: null;
 	const metadataBranchStatus = branchMeta?.branchStatus ?? null;
+	const diffCompareLabel = branchMeta?.compareLabel ?? project.defaultCompareRef ?? resolveTaskCompareBaseBranch(task, project);
 	const metadataPrInfo: TaskPRBadgeInfo | null = inspectorPRBadge(task, branchMeta?.prStatus, metadataBranchStatus);
 	const metadataPrState = metadataPrInfo ? prBadgeDisplayState(metadataPrInfo, metadataBranchStatus, task.prStatusCache) : undefined;
 	const metadataPrTone = metadataPrState ? prStateTone(metadataPrState) : null;
@@ -657,9 +661,16 @@ function TaskInfoPanel({
 	const visibleDiffDeletions = showRawDiffTotals
 		? (metadataBranchStatus?.diffDeletions ?? 0)
 		: visibleDiffFileStats.reduce((sum, e) => sum + e.deletions, 0);
-	const diffBadgeTitle = !includeTests && excludedTestCount > 0
-		? t.plural("infoPanel.diffTestsHidden", excludedTestCount)
-		: t("infoPanel.showDiff");
+	const diffBadgeTitle = [
+		t("infoPanel.diffBadgeTooltip", { branch: diffCompareLabel }),
+		!includeTests && excludedTestCount > 0 ? t.plural("infoPanel.diffTestsHidden", excludedTestCount) : null,
+	].filter(Boolean).join(" ");
+	const diffBadgeAriaLabel = t("infoPanel.diffBadgeAria", {
+		files: t.plural("infoPanel.diffFileCount", visibleDiffFiles),
+		insertions: String(visibleDiffInsertions),
+		deletions: String(visibleDiffDeletions),
+		branch: diffCompareLabel,
+	});
 	// The tests filter is a segment of the diff badge, not a chip of its own: it
 	// only ever modifies these very numbers, and as a neighbour it read as a
 	// second, unrelated action. Same segmented idiom as the status control —
@@ -675,6 +686,7 @@ function TaskInfoPanel({
 			onMouseEnter={showDiffFilesPopover}
 			onMouseLeave={hideDiffFilesPopover}
 			title={diffBadgeTitle}
+			aria-label={diffBadgeAriaLabel}
 			data-testid="diff-summary-badge"
 		>
 			<span className="text-fg-muted text-sm-plus leading-none" style={{ fontFamily: "'JetBrainsMono Nerd Font Mono'" }}>{"\uF0CB"}</span>
@@ -747,6 +759,8 @@ function TaskInfoPanel({
 			)}
 		</button>
 	) : null;
+	// Sits at z 9999, above the default tooltip tier — so the row tooltips below
+	// take the "popover" layer, or they open underneath this very list.
 	const diffFilesPopover = diffFilesHover && metadataBranchStatus && visibleDiffFileStats.length > 0 && createPortal(
 		<div
 			className="fixed bg-overlay border border-edge-active rounded-lg shadow-2xl shadow-black/40 py-2 pl-3 pr-1.5 max-w-[25rem] max-h-[20rem] overflow-auto"
@@ -768,7 +782,7 @@ function TaskInfoPanel({
 						</span>
 					)}
 					<div className="flex items-center gap-1.5 flex-shrink-0">
-						<Tooltip content={t("infoPanel.showDiff")} detail={t("ttip.infoPanel.showDiff")}>
+						<Tooltip content={t("infoPanel.showDiff")} detail={t("ttip.infoPanel.showDiff")} layer="popover">
 							<button
 								onClick={(event) => handleFileDiff(event, fileName)}
 								aria-label={t("infoPanel.showDiff")}
@@ -777,7 +791,7 @@ function TaskInfoPanel({
 								<span style={{ fontFamily: "'JetBrainsMono Nerd Font Mono'" }}>{"\uF4D2"}</span>
 							</button>
 						</Tooltip>
-						<Tooltip content={t("openIn.menuTitle")} detail={t("ttip.openIn.menu")}>
+						<Tooltip content={t("openIn.menuTitle")} detail={t("ttip.openIn.menu")} layer="popover">
 							<button
 								onClick={(event) => handleFileOpenIn(event, fileName)}
 								aria-label={t("openIn.menuTitle")}

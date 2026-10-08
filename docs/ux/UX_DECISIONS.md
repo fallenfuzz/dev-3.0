@@ -10,9 +10,11 @@ reasoning (48 of 50 dates), so the record wins and this file stays an index. Wri
 in full only while no record exists — the case for 84 below, whose reasoning lives nowhere
 else, so never compact them by deleting it.
 
-## 2026-10-02 — The agent-message toast names every destination
+## 2026-10-08 — Agent toast card opens the sender; toasts ignore stray clicks
 
-Bible §5.7: both names link to their task, plus Sender/Traffic/Recipient actions; the card still opens traffic. Why: decisions/2026/10/02/agent-message-toast-names-every-destination.md.
+Bible §5.7: card → sender (inert without one), traffic only via its action; any toast ignores pointer navigation for 600 ms after appearing or moving, and a replacing agent toast keeps its slot. Why: decisions/2026/10/08/agent-message-toast-card-opens-the-sender.md.
+
+2026-10-02 — Agent toast names every destination (card → traffic, superseded 2026-10-08). Why: decisions/2026/10/02/agent-message-toast-names-every-destination.md.
 
 ## 2026-09-25 — Clips play inside the image viewer
 
@@ -360,7 +362,7 @@ Folded: one toast anatomy, origin resolved once at emit by `ToastHost` — owned
 
 ## 2026-07-13 — Terminal immersive fullscreen is app-only and ephemeral
 
-- **Rule:** The TaskInfoPanel fullscreen toggle plus F11 / Cmd/Ctrl+Shift+F enters a task-bound renderer view with only a thin `dev3` strip and a wide neutral Exit full screen button; agent-facing notifications and viewer events queue during immersive fullscreen or persistent Focus Mode and flush when the active mode ends, with notification clicks exiting immersive fullscreen before normal task navigation.
+- **Rule:** The TaskInfoPanel fullscreen toggle plus F11 / Cmd/Ctrl+Shift+F enters a task-bound renderer view with only a thin `dev3` strip and a wide neutral Exit full screen button; agent-facing notifications and viewer events queue during immersive fullscreen or persistent Focus Mode and flush when the active mode ends, with in-app toast clicks exiting immersive fullscreen before normal task navigation (OS notification clicks never navigate).
 - **Why:** Keeping the existing Route and tmux session preserves the user's exact layout and makes the feature identical in desktop and browser mode. Rejected native/browser fullscreen and tmux `resize-pane -Z` because they either diverge by transport or overwrite user-controlled pane state.
 - **Status:** Implemented. Evidence: `App.tsx`, `TaskInfoPanel.tsx`, `keymap.ts`, `webNotification.ts`.
 
@@ -704,14 +706,6 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 ## 2026-10-01 — Go to Project moves from ⌘K to ⇧⌘K; Find coordinator joins ⇧⌘P
 - **Rule:** the navigation palette is ⇧⌘K (Ctrl+Shift+K off-macOS); plain ⌘K stays free for the terminal (clear, tracked as its own task). Coordinators are found via the ⇧⌘P `Find coordinator…` picker on `PaletteShell`.
 - **Why:** terminal users expect ⌘K to clear; ⇧⌘K keeps the K mnemonic with the fewest conflicts found (Firefox Win/Linux Web Console caveat). Rejected ⌘P, ⌘E. User-approved. Evidence: `keymap.ts`, `decisions/2026/10/01/go-to-project-moves-to-shift-cmd-k.md`.
-
-## 2026-10-02 - File explorer overlays when auto-hidden
-- **Rule:** yaml `file_explorer`; the Files button is its one visible toggle.
-- **Why:** a reveal that reflowed the terminal would refit the PTY on every hover. `decisions/2026/10/02/file-explorer-panel.md`.
-
-## 2026-10-02 - Git workflow is a project property, switched on the Board tab
-- **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live; a non-git folder gets an inline offer in AddProject's Local tab; no dashboard badge.
-- **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.
 
 ## 2026-10-03 — The dashboard pins every coordinator above the attention rows
 - **Rule:** each active coordinator gets its own navigation-only row in its project's dashboard card, whatever its status — yaml `dashboard-coordinator-rows`.

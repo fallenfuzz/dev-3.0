@@ -17,7 +17,7 @@ import { handleInstallSkills } from "./commands/install-skills";
 import { handleConfig } from "./commands/config";
 import { handleDevServer } from "./commands/dev-server";
 import { handleRemote } from "./commands/remote";
-import { LOCAL_HELP, expandLocalAlias } from "./commands/local";
+import { LOCAL_HELP, expandLocalAlias, localHostError } from "./commands/local";
 import { handleGui } from "./commands/gui";
 import { handleConversations, handleImportCurrentSession, resolveImportTarget } from "./commands/conversations";
 import { handleNotify, handleAttention, handleUi } from "./commands/ui-control";
@@ -62,7 +62,7 @@ Commands:
                                          (--brief: hide the full description if you already have it in your prompt)
   dev3 task show [--task <id>] [--notes] [--history] [--json]  Full task details
                                          (always shows current overview; --notes inlines note bodies, --history shows title/overview change log; --json prints a stable object)
-  dev3 task move [--task <id>] --status <status>  Change task status
+  dev3 task move [--task <id>] --status <status> [--agent <id> [--config <id>]]  Change task status
   dev3 task terminal-backend [--task <id>] [--to tmux|native]  Inspect/switch this task's terminal backend
   dev3 task update [--task <id>] --title "..." [--description "..." | --description -] [--manual-completion on|off] [--type coordinator|pr-review|standard]  Update task fields
   dev3 task create --title "..." [--description "..." | --description -] [--pr <n> | --branch <ref>] [--type coordinator|pr-review|standard]  Create a new task (To Do)
@@ -190,6 +190,10 @@ async function main(): Promise<void> {
 		process.exit(CLI_EXIT_CODE_SUCCESS);
 	}
 	const rawArgs = argvRest[0] === "local" ? expandLocalAlias(argvRest) : argvRest;
+	if (argvRest[0] === "local") {
+		const problem = localHostError(rawArgs);
+		if (problem) exitUsage(problem);
+	}
 
 	// Every short print-and-exit command may have its stdout closed early by a
 	// downstream consumer (`dev3 … | head`, `| grep -m1`, quitting a pager).

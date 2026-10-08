@@ -153,7 +153,7 @@ The inspector header (`TaskInfoPanel.tsx`, both collapsed and expanded states) i
 |---|---|---|---|---|
 | Context | row 1, left | task identity & lifecycle | variant switcher (conditional, leading), watch toggle, status dropdown, diff-summary badge, include-tests toggle, label strip | `TaskInfoPanel.tsx` (row 1 left cluster) |
 | Session/Agent | row 1, right | drive the session & agents | spawn extra agent, bug hunters, tmux controls, send message later (scheduled agent message) | `TaskInfoPanel.tsx` (row 1 right cluster), `TaskTmuxControls.tsx` |
-| Git | row 2, left | branch & PR | branch name/status, show diff, refresh, copy worktree path, open PR | `task-info-panel/TaskGitActions.tsx` |
+| Git | row 2, left | branch & PR | branch chip, changes summary, git actions, PR | `task-info-panel/TaskGitActions.tsx` |
 | Runtime & access | row 2, right | project runtime outputs + access to them | open-in, scripts, dev server, ports, separate conditional Images and Artifacts controls (count>0 only); ports/resources also render as detail in the expanded body | `task-info-panel/TaskOpenIn.tsx`, `TaskSharedImages.tsx`, `TaskArtifacts.tsx` |
 
 Rules:
@@ -201,7 +201,7 @@ See `UX_DECISIONS.md` (2026-06-19, 2026-08-02).
 
 ### 5.3 Diff review viewer — `Observed`
 
-Full-screen surface (`TaskDiffViewer.tsx`) reached from the inspector `show_diff` action / `diff_summary_badge`. It is a **read + review** surface: it renders a task's diff and lets the user attach inline comments, then export them as an XML review prompt for the agent. It performs **no git mutation and no task-lifecycle action** — those stay in the inspector and native menu.
+Full-screen surface (`TaskDiffViewer.tsx`) opened by `diff_summary_badge` (Branch) and `changes_summary` (Uncommitted if dirty), pinned. It is a **read + review** surface: it renders a task's diff and lets the user attach inline comments, then export them as an XML review prompt for the agent. It performs **no git mutation and no task-lifecycle action** — those stay in the inspector and native menu.
 
 Layout = left **Files aside** (collapsible, `22rem`) + right **diff stream**.
 
@@ -369,8 +369,9 @@ Rules:
 - **Origin is resolved centrally, not composed per call site.** A caller passes one token — `taskId`, `projectId`, or `source` — and `ToastHost` composes the line and the default click target through a resolver injected by `App.tsx` (areas need no state and are localized in the host). The toast module stays free of app-state imports; ~180 call sites stay one field long; a future toast is correct by default. Explicitly passed `context`/`onClick` always win.
 - **`contextDetail`** appends one more segment after the resolved origin (`dev-3.0 · Nightly digest`) when the toast is about a named thing inside that scope.
 - **The clickable overlay's accessible name is `context — message`**, not the message alone: a screen reader must hear which task it is being sent to.
+- **Pointer clicks arm 600 ms after a toast appears/moves** (keys exempt); a replacement keeps its slot.
 
-- **One documented exception to "one origin" and "one click target": agent-to-agent traffic.** A `dev3 message` has a sender AND a receiver: the source line is the pair `#7 Coordinator → #42 Receiver`, each an underlined link (`#seq` never truncates; project names only across boards), plus one row: sent `#7` · `Agent traffic` · inbox `#42`. The card click stays agent traffic (receiver without the beta); links and actions sit above it, never nested. Violet `agent` is identity, not severity. Silent for human or failed sends.
+- **Documented exception to one origin / one click target: agent-to-agent traffic.** Source line `#7 Coordinator → #42 Receiver`, each an underlined link (`#seq` never truncates; projects named only across boards), plus one row: sent `#7` · `Agent traffic` · inbox `#42`. Card → **sender** (inert if unknown); traffic only via its action; links/actions never nested. Violet = identity; silent for human/failed sends.
 
 Evidence: `toast.tsx`, `App.tsx` (`ToastHost` mount, `openTaskFromNotification`).
 
