@@ -8,6 +8,7 @@ import { useNarrowViewport } from "../hooks/useNarrowViewport";
 import BottomSheet from "./BottomSheet";
 import HeaderFlyoutPanel from "./HeaderFlyoutPanel";
 import { CAROUSEL_MAX_WIDTH } from "./MobileBoardCarousel";
+import type { AgentRateLimitsReport } from "../../shared/rate-limits";
 import {
 	RATE_LIMIT_DANGER_PERCENT,
 	RATE_LIMIT_WARN_PERCENT,
@@ -19,7 +20,6 @@ import {
 	windowLabel,
 	worstSnapshotWindow,
 } from "../../shared/rate-limits";
-import type { AgentRateLimitsReport } from "../../shared/rate-limits";
 import type { AgentAccountsState } from "../../shared/agent-accounts";
 import { AGENT_ACCOUNTS_CHANGED_EVENT, useClaudeLoginScope, usePinnedClaudeLogins } from "./AgentAccountIndicator";
 import { SOURCE_NAMES, severityFill } from "./rate-limit-ui";
@@ -40,9 +40,8 @@ const PANEL_WIDTH = 26 * 16;
  * must not be one stray click away from a panel the pointer passed through.
  * Codex monthly credits come from a cached app-server account read; all other
  * data comes from local files — see rate-limit-monitor.ts.
- * Inside a project only that project's Claude login counts and the Sessions strip
- * counts only that project's tasks; with none in scope (dashboard, settings)
- * every login and every project's tasks count.
+ * Inside a project only that project's Claude login and its tasks' sessions
+ * count; with none in scope (dashboard, settings) every login and session does.
  */
 function RateLimitIndicator({
 	compact = false,

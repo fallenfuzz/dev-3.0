@@ -983,7 +983,8 @@ describe("TerminalView – hidden textarea keeps focus only when nothing else ta
 			el.appendChild(document.createElement("textarea"));
 		});
 		const result = await renderAndSetup();
-		const textarea = result.container.querySelector("textarea") as HTMLTextAreaElement;
+		const textarea = result.container.querySelector('[data-terminal="true"] textarea') as HTMLTextAreaElement;
+		expect(textarea).toBeTruthy();
 		textarea.focus();
 		return { ...result, textarea };
 	}
@@ -1009,6 +1010,23 @@ describe("TerminalView – hidden textarea keeps focus only when nothing else ta
 		await settle();
 
 		expect(document.activeElement).toBe(textarea);
+	});
+
+	it("leaves focus inside a modal that took it (the terminal link sheet)", async () => {
+		const { textarea } = await renderWithTextarea();
+		const dialog = document.createElement("div");
+		dialog.setAttribute("role", "dialog");
+		dialog.setAttribute("aria-modal", "true");
+		const button = document.createElement("button");
+		dialog.appendChild(button);
+		document.body.appendChild(dialog);
+		// What Chromium reports during the blur of a focus move into a dialog.
+		textarea.blur();
+		button.focus();
+		await settle();
+
+		expect(document.activeElement).toBe(button);
+		dialog.remove();
 	});
 });
 
