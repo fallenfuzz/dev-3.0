@@ -445,6 +445,20 @@ describe("DEFAULT_AGENTS", () => {
 		}
 	});
 
+	it("ships Haiku 5.5 in every Claude mode, without effort tiers", () => {
+		const claude = DEFAULT_AGENTS.find((a) => a.id === "builtin-claude");
+		const haiku = claude!.configurations.filter((config) => config.model === "claude-haiku-5-5");
+		expect(haiku.map((c) => c.id)).toEqual([
+			"claude-auto-haiku55",
+			"claude-bypass-haiku55",
+			"claude-default-haiku55",
+			"claude-plan-haiku55",
+			"claude-approvals-haiku55",
+		]);
+		for (const config of haiku) expect(config.effort).toBeUndefined();
+		expect(claude!.defaultConfigId).toBe("claude-auto-opus55-medium");
+	});
+
 	it("keeps Claude's default on Opus 5.5, not the new Sonnet 5.5", () => {
 		const claude = DEFAULT_AGENTS.find((a) => a.id === "builtin-claude");
 		expect(claude!.defaultConfigId).toBe("claude-auto-opus55-medium");
@@ -465,14 +479,14 @@ describe("DEFAULT_AGENTS", () => {
 		expect(cfg!.additionalArgs).not.toContain('default_permissions="dev3"');
 	});
 
-	it("leads with the GPT-6 tiers, Astra first, ahead of the GPT-5.x tiers", () => {
+	it("leads with the newest generation, GPT-6.1 Sol, then the GPT-6 tiers ahead of GPT-5.x", () => {
 		const codex = DEFAULT_AGENTS.find((a) => a.id === "builtin-codex");
 		expect(codex).toBeDefined();
 
 		const modelOrder = codex!.configurations
 			.map((config) => config.model)
 			.filter((model, index, models) => model != null && models.indexOf(model) === index);
-		expect(modelOrder).toEqual(["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"]);
+		expect(modelOrder).toEqual(["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"]);
 
 		const modesFor = (model: string) => codex!.configurations
 			.filter((config) => config.model === model)
