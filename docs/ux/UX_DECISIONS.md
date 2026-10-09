@@ -707,9 +707,7 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 - **Rule:** A space on the route renders as a plain-link crumb between home and the chip (`dev-3.0 / AI / Nanochat`), icon-only below `md`; the tail always carries the switcher — bible §Breadcrumbs.
 - **Why:** `decisions/2026/09/01/space-rides-into-a-task-by-reducer-inheritance.md`. Status: observed, `GlobalHeader.tsx`.
 
-## 2026-10-01 — Go to Project moves from ⌘K to ⇧⌘K; Find coordinator joins ⇧⌘P
-- **Rule:** the navigation palette is ⇧⌘K (Ctrl+Shift+K off-macOS); plain ⌘K stays free for the terminal (clear, tracked as its own task). Coordinators are found via the ⇧⌘P `Find coordinator…` picker on `PaletteShell`.
-- **Why:** terminal users expect ⌘K to clear; ⇧⌘K keeps the K mnemonic with the fewest conflicts found (Firefox Win/Linux Web Console caveat). Rejected ⌘P, ⌘E. User-approved. Evidence: `keymap.ts`, `decisions/2026/10/01/go-to-project-moves-to-shift-cmd-k.md`.
+2026-10-01 — Go to Project moves to ⇧⌘K; Find coordinator joins ⇧⌘P. Why: `decisions/2026/10/01/go-to-project-moves-to-shift-cmd-k.md`.
 
 ## 2026-10-03 — The dashboard pins every coordinator above the attention rows
 - **Rule:** each active coordinator gets its own navigation-only row in its project's dashboard card, whatever its status — yaml `dashboard-coordinator-rows`.
@@ -723,6 +721,4 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 - **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live. AddProject's folder pane carries the same switch (off: Local only, shared-folder copy); a non-git folder picked with it on gets an inline offer; no dashboard badge.
 - **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.
 
-## 2026-10-04 - AddProject auto-configure is an opt-in switch
-- **Rule:** Local and Clone panes carry an `Auto-configure` ToggleSwitch, off by default, remembered globally. On: detected install and dev commands go to `.dev3/config.local.json`; a toast names them.
-- **Why:** some users want a configured project at once, others want no file they did not write. Rejected: a pre-add checklist (a wizard for multi-folder adds), silent writes. Evidence: `decisions/2026/10/04/opt-in-project-auto-configure.md`.
+2026-10-04 - Add Project auto-configure is an opt-in switch. Why: `decisions/2026/10/04/opt-in-project-auto-configure.md`.
