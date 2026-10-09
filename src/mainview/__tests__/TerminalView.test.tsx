@@ -977,6 +977,41 @@ describe("TerminalView – scrolled-into-history signal (touch scroll-to-latest)
 	});
 });
 
+describe("TerminalView – hidden textarea keeps focus only when nothing else takes it", () => {
+	async function renderWithTextarea() {
+		mockTermInstance.open.mockImplementationOnce((el: HTMLElement) => {
+			el.appendChild(document.createElement("textarea"));
+		});
+		const result = await renderAndSetup();
+		const textarea = result.container.querySelector("textarea") as HTMLTextAreaElement;
+		textarea.focus();
+		return { ...result, textarea };
+	}
+	const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 80)));
+
+	it("leaves focus on the element that took it, so a context menu stays open", async () => {
+		const { textarea } = await renderWithTextarea();
+		const menuItem = document.createElement("button");
+		document.body.appendChild(menuItem);
+
+		menuItem.focus();
+		await settle();
+
+		expect(document.activeElement).toBe(menuItem);
+		expect(document.activeElement).not.toBe(textarea);
+		menuItem.remove();
+	});
+
+	it("takes focus back when it falls to the page body", async () => {
+		const { textarea } = await renderWithTextarea();
+
+		textarea.blur();
+		await settle();
+
+		expect(document.activeElement).toBe(textarea);
+	});
+});
+
 describe("TerminalView – tmux copy-mode focus recovery", () => {
 	afterEach(() => {
 		mockTermInstance.hasMouseTracking.mockReturnValue(false);
