@@ -16,6 +16,7 @@ import type {
 	CodingAgent,
 	ExternalApp,
 	GlobalSettings as GlobalSettingsType,
+	ArtifactTemplateMode,
 	NativeTerminalAvailability,
 	RemoteTunnelSettings,
 	ShellAvailability,
@@ -515,6 +516,26 @@ function GlobalSettings({
 		[persistSettingChange],
 	);
 
+	const handleArtifactTemplateChange = useCallback(
+		(mode: ArtifactTemplateMode) => {
+			persistSettingChange(
+				{ artifactTemplate: mode === "on" ? undefined : mode },
+				{ tracking: { setting: "artifact_template", value: mode } },
+			);
+			// Fill the default folder right away, so "My template" has something to open and edit.
+			if (mode === "custom") {
+				api.request.prepareCustomArtifactTemplate({ path: globalSettings?.artifactTemplatePath, seed: true }).catch(() => {});
+			}
+		},
+		[persistSettingChange, globalSettings?.artifactTemplatePath],
+	);
+
+	// No tracking: the value is a local path, and paths never leave the machine.
+	const handleArtifactTemplatePathChange = useCallback(
+		(path: string) => persistSettingChange({ artifactTemplatePath: path || undefined }),
+		[persistSettingChange],
+	);
+
 	const handleDefaultDiffViewModeChange = useCallback(
 		(mode: "split" | "unified" | "auto") => {
 			persistSettingChange(
@@ -933,6 +954,8 @@ function GlobalSettings({
 						tipsResetDone={tipsResetDone}
 						onDefaultDiffViewModeChange={handleDefaultDiffViewModeChange}
 						onOpenArtifactsInPopupToggle={handleOpenArtifactsInPopupToggle}
+						onArtifactTemplateChange={handleArtifactTemplateChange}
+						onArtifactTemplatePathChange={handleArtifactTemplatePathChange}
 						onSuggestCompletingTasksAfterMergeToggle={handleSuggestCompletingTasksAfterMergeToggle}
 						onPrOriginTaskLinkToggle={handlePrOriginTaskLinkToggle}
 						onAgentLaunchAutoApproveChange={handleAgentLaunchAutoApproveChange}

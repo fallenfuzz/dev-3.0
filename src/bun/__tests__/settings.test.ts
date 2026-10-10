@@ -215,6 +215,21 @@ describe("saveSettings", () => {
 		expect((await loadSettings()).openArtifactsInPopup).toBe(false);
 	});
 
+	// The dev3 template is the default, so only the two other modes are stored.
+	it("keeps only the non-default artifactTemplate modes and a non-blank folder", async () => {
+		expect((await loadSettings()).artifactTemplate).toBeUndefined();
+
+		for (const mode of ["off", "custom"] as const) {
+			writeFileSync(settingsPath, JSON.stringify(makeSettings({ artifactTemplate: mode }), null, 2), "utf-8");
+			expect((await loadSettings()).artifactTemplate).toBe(mode);
+		}
+
+		writeFileSync(settingsPath, JSON.stringify({ ...makeSettings(), artifactTemplate: "on", artifactTemplatePath: "  " }, null, 2), "utf-8");
+		const loaded = await loadSettings();
+		expect(loaded.artifactTemplate).toBeUndefined();
+		expect(loaded.artifactTemplatePath).toBeUndefined();
+	});
+
 	// The default-on era's opt-out key. It is never consulted now (its meaning, off,
 	// is the new default anyway) but it stays on disk for an older co-installed build.
 	it("leaves a legacy lowBatteryDisabled key alone and does not read it as a choice", async () => {
@@ -331,6 +346,8 @@ describe("saveSettings", () => {
 			// on platforms the canary feed publishes for.
 			updateChannel: "canary",
 			openArtifactsInPopup: true,
+			artifactTemplate: "custom",
+			artifactTemplatePath: "/Users/me/my-template",
 			terminalPathOpenMode: "reveal",
 			terminalShell: "sh",
 			dimInactivePanes: false,

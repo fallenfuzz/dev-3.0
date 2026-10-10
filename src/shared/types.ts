@@ -1514,6 +1514,14 @@ export interface GlobalSettings {
 	 */
 	openArtifactsInPopup?: boolean;
 	/**
+	 * Which starter agents build human-facing reports from. Absent = the bundled
+	 * dev3 template. `"off"` = free-form HTML; `"custom"` = the user's own folder
+	 * ({@link artifactTemplatePath}). Reaches agents as `DEV3_ARTIFACT_TEMPLATE`.
+	 */
+	artifactTemplate?: "off" | "custom";
+	/** The user's own starter folder for `"custom"`. Absent = `~/.dev3.0/artifact-template-custom`, seeded from the dev3 template. */
+	artifactTemplatePath?: string;
+	/**
 	 * Let a headless `dev3 remote` box install updates on its own once browser and
 	 * terminal activity are quiet. Default ON — the whole point is that nobody
 	 * ever goes back to a terminal to type `brew upgrade`. Helper restarts preserve
@@ -2026,6 +2034,10 @@ export interface ProjectSettingsUpdate extends Dev3RepoConfig {
 	reviewModePrompt?: string;
 	/** Blank string clears the project override and falls back to global. */
 	coordinatorPrompt?: string;
+	/** `"inherit"` clears the project override and falls back to global. */
+	artifactTemplate?: ArtifactTemplateMode | "inherit";
+	/** Blank string clears the project folder and falls back to the global one. */
+	artifactTemplatePath?: string;
 }
 
 export interface Project {
@@ -2103,6 +2115,10 @@ export interface Project {
 	 * the global setting, then the built-in. See resolvePresetPrompt.
 	 */
 	coordinatorPrompt?: string;
+	/** Project override of {@link GlobalSettings.artifactTemplate}. Absent = follow the global setting. */
+	artifactTemplate?: ArtifactTemplateMode;
+	/** This project's own starter folder when its mode is `"custom"`. Absent = the global folder. */
+	artifactTemplatePath?: string;
 	/**
 	 * When dev3 offered to import this project's outside-dev3 agent conversations
 	 * on its own. Set once, whatever the answer was — the unprompted offer is
@@ -2166,6 +2182,29 @@ export function gitWorkflowSwitchBlocker(
  */
 export function repoConfigEnabled(project: Pick<Project, "useRepoConfig">): boolean {
 	return project.useRepoConfig !== false;
+}
+
+/** `on` = the bundled dev3 template, `off` = free-form HTML, `custom` = the user's own starter folder. */
+export type ArtifactTemplateMode = "on" | "off" | "custom";
+
+export interface ResolvedArtifactTemplate {
+	mode: ArtifactTemplateMode;
+	/** Only for `custom`: the configured folder, or undefined for the default one. */
+	path?: string;
+}
+
+/**
+ * The artifact template in effect for a project: its override, then the global
+ * setting, then on. A custom project without its own folder uses the global one.
+ */
+export function resolveArtifactTemplate(
+	project: Pick<Project, "artifactTemplate" | "artifactTemplatePath">,
+	settings: Pick<GlobalSettings, "artifactTemplate" | "artifactTemplatePath"> | null | undefined,
+): ResolvedArtifactTemplate {
+	const mode = project.artifactTemplate ?? settings?.artifactTemplate ?? "on";
+	if (mode !== "custom") return { mode };
+	const path = (project.artifactTemplate === "custom" ? project.artifactTemplatePath?.trim() : "") || settings?.artifactTemplatePath?.trim();
+	return { mode, path: path || undefined };
 }
 
 /**
@@ -3252,7 +3291,7 @@ export function taskSharedMedia(task: Pick<Task, "sharedImages" | "sharedVideos"
 export const MAX_SHARED_IMAGES_PER_CALL = 20;
 
 /** Maximum accepted HTML source size for `dev3 show-artifact` (bytes). */
-export const MAX_SHARED_ARTIFACT_HTML_BYTES = 5 * 1024 * 1024;
+export const MAX_SHARED_ARTIFACT_HTML_BYTES = 50 * 1024 * 1024;
 
 /**
  * Video extensions a bundled artifact clip may use (lowercase, no dot). MP4 and
@@ -5192,6 +5231,15 @@ export type AppRPCSchema = {
 			getProjectConfigFiles: {
 				params: { projectId: string };
 				response: { hasRepoConfig: boolean; hasLocalConfig: boolean };
+			};
+			/**
+			 * Resolve a "My template" folder (blank = the default one). With `seed`, a
+			 * missing or empty folder is filled with a copy of the dev3 template; a
+			 * folder that already holds files is never touched.
+			 */
+			prepareCustomArtifactTemplate: {
+				params: { path?: string; seed?: boolean };
+				response: { path: string; exists: boolean; seeded: boolean };
 			};
 			/** Update project settings in projects.json (scripts, clone paths, AI Review, etc.). */
 			updateProjectSettings: {

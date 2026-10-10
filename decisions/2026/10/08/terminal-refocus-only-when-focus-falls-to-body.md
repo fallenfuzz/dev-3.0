@@ -10,7 +10,7 @@ An event log from the user's Windows Chrome showed `focusin BUTTON` (the menu's 
 
 ## Decision
 
-The check moves into the timeout: after 50 ms, the textarea re-focuses only if `document.activeElement` is still `body` or null. Covered by the "hidden textarea keeps focus only when nothing else takes it" tests in `TerminalView.test.tsx`.
+The check moves into the timeout: after 50 ms, the textarea re-focuses only if `document.activeElement` is still `body` or null. This subsumes the `role="dialog"` re-check that `decisions/2026/10/09/touch-terminal-links-open-a-sheet.md` added for the terminal link sheet. Covered by the "hidden textarea keeps focus only when nothing else takes it" tests in `TerminalView.test.tsx`.
 
 ## Risks
 
