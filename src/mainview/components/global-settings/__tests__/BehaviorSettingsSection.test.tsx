@@ -6,6 +6,10 @@ import { DEFAULT_PR_REVIEW_PROMPT } from "../../../../shared/types";
 import { I18nProvider, type TFunction } from "../../../i18n";
 import BehaviorSettingsSection from "../BehaviorSettingsSection";
 
+vi.mock("../../../rpc", () => ({
+	api: { request: { prepareCustomArtifactTemplate: vi.fn().mockResolvedValue({ path: "/home/.dev3.0/artifact-template-custom", exists: true, seeded: false }), openFolder: vi.fn() } },
+}));
+
 // Stub translator: keys straight through. The built-in review prompt is no longer
 // a translation — one English constant serves both the create flow and the CLI —
 // so "reset to default" has to restore exactly that constant.
@@ -23,6 +27,7 @@ function renderSection(
 	const onReviewModePromptChange = vi.fn();
 	const onPrOriginTaskLinkToggle = vi.fn();
 	const onOpenArtifactsInPopupToggle = vi.fn();
+	const onArtifactTemplateChange = vi.fn();
 	render(
 		<I18nProvider>
 			<BehaviorSettingsSection
@@ -31,6 +36,8 @@ function renderSection(
 				tipsResetDone={false}
 				onDefaultDiffViewModeChange={vi.fn()}
 				onOpenArtifactsInPopupToggle={onOpenArtifactsInPopupToggle}
+				onArtifactTemplateChange={onArtifactTemplateChange}
+				onArtifactTemplatePathChange={vi.fn()}
 				onSuggestCompletingTasksAfterMergeToggle={vi.fn()}
 				onPrOriginTaskLinkToggle={onPrOriginTaskLinkToggle}
 				onAgentLaunchAutoApproveChange={vi.fn()}
@@ -46,7 +53,7 @@ function renderSection(
 	);
 	const textarea = screen.getByLabelText("settings.reviewModePrompt") as HTMLTextAreaElement;
 	const reset = screen.getByRole("button", { name: "settings.reviewModePromptReset" });
-	return { textarea, reset, onReviewModePromptChange, onPrOriginTaskLinkToggle, onOpenArtifactsInPopupToggle };
+	return { textarea, reset, onReviewModePromptChange, onPrOriginTaskLinkToggle, onOpenArtifactsInPopupToggle, onArtifactTemplateChange };
 }
 
 describe("BehaviorSettingsSection — review prompt", () => {
@@ -153,5 +160,30 @@ describe("BehaviorSettingsSection — artifact popup toggle", () => {
 	it("reads off for a stored explicit false", () => {
 		renderSection({ openArtifactsInPopup: false });
 		expect(popupSwitch()).toHaveAttribute("aria-checked", "false");
+	});
+});
+
+describe("BehaviorSettingsSection — artifact template mode", () => {
+	function mode(label: string) {
+		return screen.getByRole("radio", { name: label });
+	}
+
+	it("selects the dev3 template by default and hides the folder", async () => {
+		const { onArtifactTemplateChange } = renderSection();
+		expect(mode("settings.artifactTemplateOn")).toHaveAttribute("aria-checked", "true");
+		expect(screen.queryByLabelText("Template folder")).not.toBeInTheDocument();
+		await userEvent.click(mode("settings.artifactTemplateCustom"));
+		expect(onArtifactTemplateChange).toHaveBeenCalledWith("custom");
+	});
+
+	it("shows the folder field only for My template", () => {
+		renderSection({ artifactTemplate: "custom", artifactTemplatePath: "/tmp/my-template" });
+		expect(mode("settings.artifactTemplateCustom")).toHaveAttribute("aria-checked", "true");
+		expect(screen.getByLabelText("Template folder")).toHaveValue("/tmp/my-template");
+	});
+
+	it("reads a stored free-form choice", () => {
+		renderSection({ artifactTemplate: "off" });
+		expect(mode("settings.artifactTemplateOff")).toHaveAttribute("aria-checked", "true");
 	});
 });
