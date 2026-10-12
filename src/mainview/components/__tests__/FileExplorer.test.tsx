@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExplorerEntry, ExplorerListing } from "../../../shared/types";
 import { I18nProvider } from "../../i18n";
 
+const shell = vi.hoisted(() => ({ desktop: false }));
+
 vi.mock("../../rpc", () => ({
-	isElectrobun: false,
+	get isElectrobun() {
+		return shell.desktop;
+	},
 	api: {
 		request: {
 			listExplorerDirectory: vi.fn(),
@@ -178,7 +182,8 @@ describe("FileExplorerFrame", () => {
 		renderFrame(null);
 		fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /README\.md/ }));
 		const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
-		expect(labels).toEqual(["Open preview", "Copy relative path", "Copy path", "Insert path in terminal"]);
+		expect(labels).toEqual(["Open preview", "Insert path in terminal", "Copy relative path", "Copy path"]);
+		expect(screen.getByTestId("file-explorer-menu-title")).toHaveTextContent("README.md");
 		await userEvent.click(screen.getByRole("menuitem", { name: "Insert path in terminal" }));
 		window.removeEventListener("dev3:requestTerminalPaste", onPaste);
 		expect((onPaste.mock.calls[0][0] as CustomEvent).detail).toEqual({ target: "project-proj-1", text: "README.md " });
@@ -290,6 +295,34 @@ describe("explorer header", () => {
 		const tip = await screen.findByRole("tooltip");
 		expect(tip).toHaveTextContent("/wt");
 		expect(screen.getByTestId("file-explorer-root-path")).toHaveClass("streamer-private");
+	});
+});
+
+describe("explorer header menu", () => {
+	it("offers the root folder's path and hiding, with yazi only where it is wired", async () => {
+		setFileExplorerMode("pinned");
+		renderFrame();
+		await screen.findByRole("treeitem", { name: /README\.md/ });
+		await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+		const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+		// Browser mode: no host-side "Open in Finder".
+		expect(labels).toEqual(["Copy folder path", "Hide explorer"]);
+	});
+
+	it("in the desktop shell opens the root folder in the file manager", async () => {
+		shell.desktop = true;
+		try {
+			setFileExplorerMode("pinned");
+			renderFrame();
+			await screen.findByRole("treeitem", { name: /README\.md/ });
+			await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+			const first = screen.getAllByRole("menuitem")[0];
+			expect(first.textContent).toMatch(/^Open (in Finder|in Explorer|folder in file manager)$/);
+			await userEvent.click(first);
+			expect(mockedApi.request.openTerminalPath).toHaveBeenCalledWith({ path: "/wt", mode: "system" });
+		} finally {
+			shell.desktop = false;
+		}
 	});
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { EXPLORER_MAX_ENTRIES, type ExplorerEntry, type ExplorerListing } from "../../shared/types";
 import { api, isElectrobun } from "../rpc";
@@ -8,6 +8,7 @@ import { openFilePreview } from "../terminal-path-open";
 import { requestTerminalPaste, terminalPasteTarget } from "../terminal-paste-request";
 import { writeClipboardText } from "../utils/clipboard-write";
 import Tooltip from "./Tooltip";
+import { isMac, isWindows } from "../utils/platform";
 
 /** Folders the user expanded, per root, for the app session: switching tasks and back keeps the tree. */
 const expandedByRoot = new Map<string, Set<string>>();
@@ -17,6 +18,23 @@ type DirState =
 	| { status: "loading"; entries?: ExplorerEntry[] }
 	| { status: "ready"; entries: ExplorerEntry[]; truncated?: boolean }
 	| { status: "error"; message: string };
+
+interface MenuItem {
+	id: string;
+	label: string;
+	icon: ReactNode;
+	run: () => void;
+}
+
+type RevealKey = "fileExplorer.revealFinder" | "fileExplorer.revealExplorer" | "fileExplorer.reveal";
+type OpenRootKey = "fileExplorer.openRootFinder" | "fileExplorer.openRootExplorer" | "fileExplorer.openRoot";
+
+/** The host's file manager by name: these items only exist in the desktop shell, whose OS is the host's. */
+function fileManagerKeys(): { reveal: RevealKey; openRoot: OpenRootKey } {
+	if (isMac()) return { reveal: "fileExplorer.revealFinder", openRoot: "fileExplorer.openRootFinder" };
+	if (isWindows()) return { reveal: "fileExplorer.revealExplorer", openRoot: "fileExplorer.openRootExplorer" };
+	return { reveal: "fileExplorer.reveal", openRoot: "fileExplorer.openRoot" };
+}
 
 interface VisibleRow {
 	entry: ExplorerEntry;
@@ -214,9 +232,9 @@ export default function FileExplorer({
 		else toast.success(t("fileExplorer.copied"));
 	}, [t]);
 
-	const openWithSystem = useCallback(async (entry: ExplorerEntry, mode: "system" | "reveal") => {
+	const openWithSystem = useCallback(async (path: string, mode: "system" | "reveal") => {
 		try {
-			await api.request.openTerminalPath({ path: entry.path, mode });
+			await api.request.openTerminalPath({ path, mode });
 		} catch (err) {
 			toast.error(t("fileExplorer.openFailed", { error: String(err) }));
 		}
@@ -277,27 +295,42 @@ export default function FileExplorer({
 	}
 
 	const rootState = dirs.get("");
-	const menuItems = menu ? contextMenuItems(menu.entry) : [];
+	const fileManager = fileManagerKeys();
 
-	function contextMenuItems(entry: ExplorerEntry): Array<{ label: string; run: () => void }> {
-		const items: Array<{ label: string; run: () => void }> = [];
-		if (entry.kind === "file") items.push({ label: t("fileExplorer.open"), run: () => openFile(entry) });
-		items.push({ label: t("fileExplorer.copyRelativePath"), run: () => void copyText(entry.relPath) });
-		items.push({ label: t("fileExplorer.copyPath"), run: () => void copyText(entry.path) });
-		items.push({
-			label: t("fileExplorer.insertPath"),
-			run: () => {
-				requestTerminalPaste(terminalPasteTarget(projectId, taskId), `${quoteForShell(entry.relPath)} `);
-				onHandOff?.();
+	function contextMenuSections(entry: ExplorerEntry): MenuItem[][] {
+		const sections: MenuItem[][] = [];
+		if (entry.kind === "file") sections.push([{ id: "open", label: t("fileExplorer.open"), icon: <EyeGlyph />, run: () => openFile(entry) }]);
+		sections.push([
+			{
+				id: "insert",
+				label: t("fileExplorer.insertPath"),
+				icon: <InsertGlyph />,
+				run: () => {
+					requestTerminalPaste(terminalPasteTarget(projectId, taskId), `${quoteForShell(entry.relPath)} `);
+					onHandOff?.();
+				},
 			},
-		});
+			{ id: "copy-relative", label: t("fileExplorer.copyRelativePath"), icon: <CopyGlyph />, run: () => void copyText(entry.relPath) },
+			{ id: "copy-path", label: t("fileExplorer.copyPath"), icon: <PathGlyph />, run: () => void copyText(entry.path) },
+		]);
 		// Desktop only: in a browser tab these would open the file on the host machine.
 		if (isElectrobun) {
-			if (entry.kind === "file") items.push({ label: t("fileExplorer.openSystem"), run: () => void openWithSystem(entry, "system") });
-			items.push({ label: t("fileExplorer.reveal"), run: () => void openWithSystem(entry, "reveal") });
+			const host: MenuItem[] = [];
+			if (entry.kind === "file") host.push({ id: "open-system", label: t("fileExplorer.openSystem"), icon: <ExternalGlyph />, run: () => void openWithSystem(entry.path, "system") });
+			host.push({ id: "reveal", label: t(fileManager.reveal), icon: <RevealGlyph />, run: () => void openWithSystem(entry.path, "reveal") });
+			sections.push(host);
 		}
-		return items;
+		return sections;
 	}
+
+	const rootItems: MenuItem[] = [];
+	if (isElectrobun && rootPath) rootItems.push({ id: "open-root", label: t(fileManager.openRoot), icon: <RevealGlyph />, run: () => void openWithSystem(rootPath, "system") });
+	if (rootPath) rootItems.push({ id: "copy-root", label: t("fileExplorer.copyRootPath"), icon: <PathGlyph />, run: () => void copyText(rootPath) });
+	if (onOpenYazi) rootItems.push({ id: "yazi", label: t("fileExplorer.openInYazi"), icon: <TuiGlyph />, run: onOpenYazi });
+	const moreSections: MenuItem[][] = [
+		...(rootItems.length ? [rootItems] : []),
+		[{ id: "hide", label: t("fileExplorer.hide"), icon: <HideGlyph />, run: onHide }],
+	];
 
 	const headerButtonBase = "inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-raised-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 	const headerButton = `${headerButtonBase} text-fg-3 hover:text-fg`;
@@ -345,7 +378,7 @@ export default function FileExplorer({
 						aria-haspopup="menu"
 						onClick={(event) => {
 							const rect = event.currentTarget.getBoundingClientRect();
-							setMoreMenu({ top: rect.bottom + 4, left: rect.right - 176 });
+							setMoreMenu({ top: rect.bottom + 4, left: rect.right });
 						}}
 					>
 						<MoreGlyph />
@@ -428,7 +461,8 @@ export default function FileExplorer({
 				<ExplorerMenu
 					top={menu.top}
 					left={menu.left}
-					items={menuItems}
+					title={{ name: menu.entry.name, icon: menu.entry.kind === "directory" ? <FolderGlyph open={false} /> : <FileGlyph /> }}
+					sections={contextMenuSections(menu.entry)}
 					onClose={() => setMenu(null)}
 				/>
 			)}
@@ -436,10 +470,8 @@ export default function FileExplorer({
 				<ExplorerMenu
 					top={moreMenu.top}
 					left={moreMenu.left}
-					items={[
-						...(onOpenYazi ? [{ label: t("fileExplorer.openInYazi"), run: onOpenYazi }] : []),
-						{ label: t("fileExplorer.hide"), run: onHide },
-					]}
+					alignEnd
+					sections={moreSections}
 					onClose={() => setMoreMenu(null)}
 				/>
 			)}
@@ -447,14 +479,18 @@ export default function FileExplorer({
 	);
 }
 
-function ExplorerMenu({ top, left, items, onClose }: {
+function ExplorerMenu({ top, left, alignEnd = false, title, sections, onClose }: {
 	top: number;
 	left: number;
-	items: Array<{ label: string; run: () => void }>;
+	/** `left` is the menu's right edge: a header button's menu opens under it, flush right. */
+	alignEnd?: boolean;
+	/** The entry the menu acts on, so a right-click in a long list is never ambiguous. */
+	title?: { name: string; icon: ReactNode };
+	sections: MenuItem[][];
 	onClose: () => void;
 }) {
 	const menuRef = useRef<HTMLDivElement>(null);
-	const [position, setPosition] = useState({ top, left });
+	const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
 	useEffect(() => {
 		const el = menuRef.current;
@@ -462,7 +498,7 @@ function ExplorerMenu({ top, left, items, onClose }: {
 			const rect = el.getBoundingClientRect();
 			setPosition({
 				top: Math.max(8, Math.min(top, window.innerHeight - rect.height - 8)),
-				left: Math.max(8, Math.min(left, window.innerWidth - rect.width - 8)),
+				left: Math.max(8, Math.min(alignEnd ? left - rect.width : left, window.innerWidth - rect.width - 8)),
 			});
 			el.querySelector<HTMLElement>("[role=menuitem]")?.focus();
 		}
@@ -474,14 +510,18 @@ function ExplorerMenu({ top, left, items, onClose }: {
 		};
 		window.addEventListener("keydown", onKey, true);
 		return () => window.removeEventListener("keydown", onKey, true);
-	}, [top, left, onClose]);
+	}, [top, left, alignEnd, onClose]);
 
 	function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-		event.preventDefault();
 		const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []);
 		const index = buttons.indexOf(document.activeElement as HTMLElement);
-		const next = event.key === "ArrowDown" ? (index + 1) % buttons.length : (index - 1 + buttons.length) % buttons.length;
+		let next: number;
+		if (event.key === "ArrowDown") next = (index + 1) % buttons.length;
+		else if (event.key === "ArrowUp") next = (index - 1 + buttons.length) % buttons.length;
+		else if (event.key === "Home") next = 0;
+		else if (event.key === "End") next = buttons.length - 1;
+		else return;
+		event.preventDefault();
 		buttons[next]?.focus();
 	}
 
@@ -495,26 +535,41 @@ function ExplorerMenu({ top, left, items, onClose }: {
 					onClose();
 				}}
 			/>
+			{/* Measured invisible first, so clamping into the window never shows a jump. */}
 			<div
 				ref={menuRef}
 				role="menu"
+				aria-label={title?.name}
 				onKeyDown={onMenuKeyDown}
-				className="fixed z-[201] min-w-[11rem] rounded-lg border border-edge bg-overlay py-1 shadow-2xl"
-				style={{ top: position.top, left: position.left }}
+				className={`fixed z-[201] w-max min-w-[12.5rem] max-w-[20rem] rounded-xl bg-overlay p-1 ring-1 ring-edge-active shadow-2xl shadow-black/40 ${position ? "" : "invisible"}`}
+				style={{ top: position?.top ?? top, left: position?.left ?? left }}
 			>
-				{items.map((item) => (
-					<button
-						key={item.label}
-						type="button"
-						role="menuitem"
-						onClick={() => {
-							onClose();
-							item.run();
-						}}
-						className="w-full text-left px-3 py-1.5 text-xs text-fg-2 hover:bg-elevated hover:text-fg focus-visible:bg-elevated focus-visible:text-fg focus-visible:outline-none transition-colors"
-					>
-						{item.label}
-					</button>
+				{title && (
+					<div className="flex min-w-0 items-center gap-2 px-2 pb-1.5 pt-1 text-xs text-fg-muted" data-testid="file-explorer-menu-title">
+						<span className="flex w-4 flex-shrink-0 justify-center" aria-hidden="true">{title.icon}</span>
+						<span className="min-w-0 truncate font-medium text-fg-3">{title.name}</span>
+					</div>
+				)}
+				{sections.map((section, sectionIndex) => (
+					<div key={section[0]?.id ?? sectionIndex} role="group" className={sectionIndex > 0 || title ? "mt-1 border-t border-edge pt-1" : ""}>
+						{section.map((item) => (
+							<button
+								key={item.id}
+								type="button"
+								role="menuitem"
+								onClick={() => {
+									onClose();
+									item.run();
+								}}
+								className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-xs text-fg-2 transition-colors hover:bg-elevated-hover hover:text-fg focus-visible:bg-elevated-hover focus-visible:text-fg focus-visible:outline-none"
+							>
+								<span className="flex w-4 flex-shrink-0 justify-center text-fg-3 transition-colors group-hover:text-accent group-focus-visible:text-accent" aria-hidden="true">
+									{item.icon}
+								</span>
+								<span className="min-w-0 flex-1 truncate">{item.label}</span>
+							</button>
+						))}
+					</div>
 				))}
 			</div>
 		</>,
@@ -604,6 +659,87 @@ export function ExplorerRailGlyph() {
 	return (
 		<svg {...glyph} width={16} height={16}>
 			<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+		</svg>
+	);
+}
+
+// Menu glyphs: one outline set, a lighter stroke to sit beside 12px regular text.
+const menuGlyph = { ...glyph, strokeWidth: 1.75 };
+
+function EyeGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+			<circle cx="12" cy="12" r="2.75" />
+		</svg>
+	);
+}
+
+function InsertGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+			<path d="m7.5 10 2.5 2-2.5 2" />
+			<path d="M12.5 14.5h4" />
+		</svg>
+	);
+}
+
+function CopyGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<rect x="8.5" y="8.5" width="12" height="12" rx="2" />
+			<path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3" />
+		</svg>
+	);
+}
+
+function PathGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" />
+			<path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+		</svg>
+	);
+}
+
+function ExternalGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<path d="M14 4h6v6" />
+			<path d="M20 4 11 13" />
+			<path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+		</svg>
+	);
+}
+
+function RevealGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v3" />
+			<path d="M3 6v12a2 2 0 0 0 2 2h6" />
+			<circle cx="16.5" cy="16.5" r="3" />
+			<path d="m21 21-2.4-2.4" />
+		</svg>
+	);
+}
+
+function TuiGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+			<path d="M3 9h18" />
+			<path d="M9 9v10.5" />
+		</svg>
+	);
+}
+
+function HideGlyph() {
+	return (
+		<svg {...menuGlyph}>
+			<path d="M3 3l18 18" />
+			<path d="M10.6 5.6A9.7 9.7 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.6 9.6 0 0 0 4.4-1.1" />
+			<path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
 		</svg>
 	);
 }
