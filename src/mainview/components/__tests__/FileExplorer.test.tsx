@@ -138,6 +138,15 @@ describe("FileExplorerFrame", () => {
 		expect(screen.getByRole("treeitem", { name: /^src/ })).toHaveAttribute("aria-expanded", "true");
 	});
 
+	it("shows long names in full and scrolls the tree sideways instead of truncating", async () => {
+		setFileExplorerMode("pinned");
+		renderFrame();
+		const name = await screen.findByText("README.md");
+		expect(name.className).not.toContain("truncate");
+		expect(name.className).toContain("whitespace-nowrap");
+		expect(screen.getByRole("tree").firstElementChild?.className).toContain("w-max");
+	});
+
 	it("opens a clicked file in the in-app preview", async () => {
 		setFileExplorerMode("pinned");
 		const onPreview = vi.fn();

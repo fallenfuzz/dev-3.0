@@ -204,7 +204,7 @@ export default function FileExplorer({
 			setActiveRel(target.entry.relPath);
 			treeRef.current
 				?.querySelector<HTMLElement>(`[data-rel="${CSS.escape(target.entry.relPath)}"]`)
-				?.scrollIntoView({ block: "nearest" });
+				?.scrollIntoView({ block: "nearest", inline: "nearest" });
 		};
 		switch (event.key) {
 			case "ArrowDown": move(activeRel === null ? 0 : index + 1); break;
@@ -336,7 +336,9 @@ export default function FileExplorer({
 				) : rows.length === 0 ? (
 					<div className="px-3 py-1 text-xs text-fg-muted">{t("fileExplorer.empty")}</div>
 				) : (
-					rows.map(({ entry, depth }) => {
+					// Rows size to their longest name so the tree scrolls sideways instead of truncating.
+					<div className="min-w-full w-max">
+					{rows.map(({ entry, depth }) => {
 						const isDir = entry.kind === "directory";
 						const isOpen = isDir && expanded.has(entry.relPath);
 						const dirState = isOpen ? dirs.get(entry.relPath) : undefined;
@@ -363,7 +365,7 @@ export default function FileExplorer({
 									<span className={`flex-shrink-0 ${isDir ? "text-accent" : "text-fg-3"}`} aria-hidden="true">
 										{isDir ? <FolderGlyph open={isOpen} /> : <FileGlyph />}
 									</span>
-									<span className="min-w-0 truncate">{entry.name}</span>
+									<span className="whitespace-nowrap">{entry.name}</span>
 								</div>
 								{isOpen && dirState && dirState.status !== "ready" && !(dirState.status === "loading" && dirState.entries) && (
 									<div className="h-6 flex items-center text-xs text-fg-muted" style={{ paddingLeft: 8 + (depth + 1) * 12 + 18 }}>
@@ -382,7 +384,8 @@ export default function FileExplorer({
 								)}
 							</div>
 						);
-					})
+					})}
+					</div>
 				)}
 				{rootState?.status === "ready" && rootState.truncated && (
 					<div className="px-3 py-1 text-xs text-fg-muted">{t("fileExplorer.truncated", { limit: String(EXPLORER_MAX_ENTRIES) })}</div>
