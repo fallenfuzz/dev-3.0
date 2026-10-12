@@ -78,6 +78,21 @@ export function toggleFileExplorer(): void {
 	else window.dispatchEvent(new CustomEvent(REVEAL_FILE_EXPLORER_EVENT));
 }
 
+let revealOnMount = false;
+
+/** Makes sure the explorer is on screen: shown if hidden, and an auto-hide rail slides its tree in once mounted. */
+export function showFileExplorer(): void {
+	if (prefs.mode === "hidden") update({ mode: prefs.lastVisibleMode });
+	revealOnMount = getFileExplorerPrefs().mode === "autohide";
+}
+
+/** Read once by the next auto-hide frame that mounts. */
+export function consumeRevealOnMount(): boolean {
+	const pending = revealOnMount;
+	revealOnMount = false;
+	return pending;
+}
+
 function subscribe(listener: () => void): () => void {
 	listeners.add(listener);
 	return () => { listeners.delete(listener); };
@@ -90,5 +105,6 @@ export function useFileExplorerPrefs(): FileExplorerPrefs {
 /** Test-only: re-read storage and drop listeners. */
 export function _resetFileExplorerPrefs(): void {
 	prefs = load();
+	revealOnMount = false;
 	listeners.clear();
 }

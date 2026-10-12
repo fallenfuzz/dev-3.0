@@ -859,7 +859,7 @@ function terminalMenu(): ApplicationMenuItemConfig {
 				],
 			},
 			SEP,
-			item({ label: "Toggle Project Terminal", action: MENU_ACTIONS.termToggleProjectTerminal, accelerator: "`" }),
+			item({ label: "Toggle Repo", action: MENU_ACTIONS.termToggleProjectTerminal, accelerator: "`" }),
 			item({ label: "Quick Shell", action: MENU_ACTIONS.termOpenQuickShell }),
 			SEP,
 			item({ label: "Show Tmux Cheat Sheet", action: MENU_ACTIONS.termCheatSheet }),

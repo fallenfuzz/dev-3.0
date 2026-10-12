@@ -11,7 +11,7 @@ const fileExplorer = {
 	"fileExplorer.loading": "Загрузка…",
 	"fileExplorer.empty": "Пустая папка",
 	"fileExplorer.truncated": "Слишком много элементов. Показаны первые {limit}.",
-	"fileExplorer.noRoot": "У этой доски нет папки проекта.",
+	"fileExplorer.noRoot": "Здесь нет папки, которую можно показать.",
 	"fileExplorer.notFound": "Этой папки больше нет.",
 	"fileExplorer.unreadable": "Не удаётся прочитать эту папку.",
 	"fileExplorer.failed": "Не удалось получить список файлов: {error}",

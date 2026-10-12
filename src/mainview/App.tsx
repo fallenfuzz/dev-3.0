@@ -75,7 +75,6 @@ import AboutModal from "./components/AboutModal";
 import FeatureFlagsModal from "./components/FeatureFlagsModal";
 import TerminalPerfOverlay from "./components/TerminalPerfOverlay";
 import FilePreviewModal from "./components/FilePreviewModal";
-import { toggleFileExplorer } from "./file-explorer-prefs";
 import { OPEN_FILE_PREVIEW_EVENT, type OpenFilePreviewDetail } from "./terminal-path-open";
 import RosettaWarningModal from "./components/RosettaWarningModal";
 import { initTaskSoundPlayback, playTaskCompletionSound, playTaskSoundFromPush, setTaskCompletionSoundEnabled } from "./task-sounds";
@@ -1447,7 +1446,8 @@ function App() {
 				e.preventDefault();
 				e.stopPropagation();
 				if (showQuitDialog) return;
-				toggleFileExplorer();
+				// Through the router: on a board the toggle navigates to the Repo screen.
+				handleMenuBarAction("view-toggle-file-explorer");
 			} else if (matchesShortcut(e, "help-mode")) {
 				// Help mode ("Explain this screen"): every data-help-id zone gets an (i)
 				// badge with a HelpCard. Sibling of the shortcuts reference overlay.
@@ -1594,7 +1594,7 @@ function App() {
 				}
 			}
 		},
-		[armGoToIndex, armGoToVerb, clearGoTo, createTaskProjectId, cycleVariant, dispatch, goToCurrentProject, goToProjectIndex, hintMode, navigate, navigateToProject, openAddProject, openCreateTaskModal, openInCurrent, openQuickShell, showAddProjectModal, showQuitDialog, state.projects, state.route, toggleTerminalImmersive],
+		[armGoToIndex, armGoToVerb, clearGoTo, createTaskProjectId, cycleVariant, dispatch, goToCurrentProject, goToProjectIndex, handleMenuBarAction, hintMode, navigate, navigateToProject, openAddProject, openCreateTaskModal, openInCurrent, openQuickShell, showAddProjectModal, showQuitDialog, state.projects, state.route, toggleTerminalImmersive],
 		{ capture: true },
 	);
 
@@ -3854,6 +3854,7 @@ function App() {
 						<ProjectTerminal
 							projectId={route.projectId}
 							projectPath={proj.path}
+							projectName={proj.name}
 							onBack={() => navigate({ screen: "project", projectId: route.projectId })}
 						/>
 					</div>

@@ -15,7 +15,6 @@ import ActiveTasksSidebar from "./ActiveTasksSidebar";
 import { useState } from "react";
 import { useT } from "../i18n";
 import TaskWorkspacePane from "./TaskWorkspacePane";
-import FileExplorerFrame from "./FileExplorerFrame";
 import BackToKanbanEmptyState from "./BackToKanbanEmptyState";
 import { createUnresolvedCommentsDiffRequest, useTaskInlineDiffState } from "./task-inline-diff";
 import { trackDiffView } from "../analytics";
@@ -371,29 +370,22 @@ function ProjectView({
 
 	return (
 		<div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col">
-			{/* A space board spans several projects, so it has no one folder to list. */}
-			<FileExplorerFrame
-				projectId={project.id}
-				rootLabel={project.name}
-				enabled={!isNarrow && !space && project.kind !== "virtual"}
-			>
-				<KanbanBoard
-					project={project}
-					space={space}
-					memberProjects={memberProjects}
-					tasks={boardTasks}
-					dispatch={dispatch}
-					navigate={navigate}
-					bellCounts={bellCounts}
-					bellReasons={bellReasons}
-					taskPorts={taskPorts}
-					taskDevServers={taskDevServers}
-					taskResourceUsage={taskResourceUsage}
-					onOpenUnresolvedComments={openUnresolvedFromBoard}
-					detailTaskId={taskDetailId}
-					onCloseTaskDetail={closeTaskDetail}
-				/>
-			</FileExplorerFrame>
+			<KanbanBoard
+				project={project}
+				space={space}
+				memberProjects={memberProjects}
+				tasks={boardTasks}
+				dispatch={dispatch}
+				navigate={navigate}
+				bellCounts={bellCounts}
+				bellReasons={bellReasons}
+				taskPorts={taskPorts}
+				taskDevServers={taskDevServers}
+				taskResourceUsage={taskResourceUsage}
+				onOpenUnresolvedComments={openUnresolvedFromBoard}
+				detailTaskId={taskDetailId}
+				onCloseTaskDetail={closeTaskDetail}
+			/>
 		</div>
 	);
 }

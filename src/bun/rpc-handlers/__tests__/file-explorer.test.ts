@@ -39,6 +39,7 @@ beforeAll(() => {
 	mkdirSync(join(worktree, "src", "deep"), { recursive: true });
 	mkdirSync(join(worktree, "node_modules"), { recursive: true });
 	mkdirSync(join(worktree, "Zeta"), { recursive: true });
+	mkdirSync(join(worktree, "..cfg"), { recursive: true });
 	writeFileSync(join(worktree, "README.md"), "# hi\n");
 	writeFileSync(join(worktree, "a.log"), "log\n");
 	writeFileSync(join(worktree, ".env.example"), "X=1\n");
@@ -65,7 +66,7 @@ describe("listExplorerDirectory", () => {
 		expect(listing.root).toBe(worktree);
 		expect(listing.error).toBeUndefined();
 		expect(listing.entries.map((e) => e.name)).toEqual([
-			"node_modules", "src", "Zeta",
+			"..cfg", "node_modules", "src", "Zeta",
 			".env.example", "a.log", "file2.ts", "file10.ts", "README.md",
 		]);
 		const src = listing.entries.find((e) => e.name === "src");
@@ -89,6 +90,18 @@ describe("listExplorerDirectory", () => {
 			["src/deep", true],
 			["src/index.ts", false],
 		]);
+	});
+
+	it("marks everything inside an ignored folder without asking git", async () => {
+		const listing = await list({ projectId: "proj-1", taskId: "task-1", relPath: "src", insideIgnored: true });
+		expect(listing.entries.every((e) => e.ignored)).toBe(true);
+		expect(runGit).not.toHaveBeenCalled();
+	});
+
+	it("lists a folder whose name merely starts with two dots", async () => {
+		const listing = await list({ projectId: "proj-1", taskId: "task-1", relPath: "..cfg" });
+		expect(listing.error).toBeUndefined();
+		expect(listing.relPath).toBe("..cfg");
 	});
 
 	it("still lists, undimmed, when the root is not a git repo", async () => {

@@ -5099,7 +5099,7 @@ export type AppRPCSchema = {
 			};
 			/** One level of the file explorer tree, gated to the task worktree or project checkout. */
 			listExplorerDirectory: {
-				params: { projectId: string; taskId?: string | null; relPath?: string };
+				params: { projectId: string; taskId?: string | null; relPath?: string; insideIgnored?: boolean };
 				response: ExplorerListing;
 			};
 			listAgentSkills: {

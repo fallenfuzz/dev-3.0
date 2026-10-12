@@ -5,7 +5,7 @@ import { api, isElectrobun } from "../rpc";
 import { useT } from "../i18n";
 import { toast } from "../toast";
 import { openFilePreview } from "../terminal-path-open";
-import { requestTaskTerminalPaste } from "../terminal-paste-request";
+import { requestTerminalPaste, terminalPasteTarget } from "../terminal-paste-request";
 import { writeClipboardText } from "../utils/clipboard-write";
 import Tooltip from "./Tooltip";
 
@@ -21,6 +21,16 @@ type DirState =
 interface VisibleRow {
 	entry: ExplorerEntry;
 	depth: number;
+	/** Git reports only the outermost ignored folder, so its whole subtree inherits the flag. */
+	ignored: boolean;
+}
+
+/** An expanded folder is only on screen while every folder above it is expanded too. */
+function isReachable(relPath: string, expanded: Set<string>): boolean {
+	for (let i = relPath.indexOf("/"); i !== -1; i = relPath.indexOf("/", i + 1)) {
+		if (!expanded.has(relPath.slice(0, i))) return false;
+	}
+	return true;
 }
 
 export interface FileExplorerProps {
@@ -48,8 +58,13 @@ function errorMessage(listing: ExplorerListing, t: ReturnType<typeof useT>): str
 	}
 }
 
-function quoteForShell(relPath: string): string {
-	return /[\s'"$`\\]/.test(relPath) ? `'${relPath.replace(/'/g, "'\\''")}'` : relPath;
+/**
+ * Anything outside a conservative safe set gets single quotes, which mean the
+ * same to POSIX shells and PowerShell; only an embedded quote is escaped the
+ * POSIX way, so a name with `'` still needs care in PowerShell.
+ */
+export function quoteForShell(relPath: string): string {
+	return /^[\w./@%+=:,-]+$/.test(relPath) ? relPath : `'${relPath.replace(/'/g, "'\\''")}'`;
 }
 
 export default function FileExplorer({
@@ -72,10 +87,11 @@ export default function FileExplorer({
 	const [menu, setMenu] = useState<{ entry: ExplorerEntry; top: number; left: number } | null>(null);
 	const [moreMenu, setMoreMenu] = useState<{ top: number; left: number } | null>(null);
 	const treeRef = useRef<HTMLDivElement>(null);
+	const ignoredDirsRef = useRef<Set<string>>(new Set());
 	const rootKeyRef = useRef(rootKey);
 	rootKeyRef.current = rootKey;
 
-	const loadDir = useCallback(async (relPath: string, quiet = false) => {
+	const loadDir = useCallback(async (relPath: string, quiet = false, insideIgnored = false) => {
 		const requestedFor = rootKeyRef.current;
 		if (!quiet) {
 			setDirs((prev) => {
@@ -88,7 +104,7 @@ export default function FileExplorer({
 		let state: DirState;
 		let listing: ExplorerListing | null = null;
 		try {
-			listing = await api.request.listExplorerDirectory({ projectId, taskId: taskId ?? null, relPath });
+			listing = await api.request.listExplorerDirectory({ projectId, taskId: taskId ?? null, relPath, insideIgnored });
 			state = listing.error
 				? { status: "error", message: errorMessage(listing, t) }
 				: { status: "ready", entries: listing.entries, truncated: listing.truncated };
@@ -97,6 +113,15 @@ export default function FileExplorer({
 		}
 		if (rootKeyRef.current !== requestedFor) return;
 		if (relPath === "" && listing?.root) setRootPath(listing.root);
+		// A folder deleted under an expanded row stops being polled.
+		if (relPath !== "" && listing?.error === "not-found") {
+			setExpanded((prev) => {
+				if (!prev.has(relPath)) return prev;
+				const next = new Set(prev);
+				next.delete(relPath);
+				return next;
+			});
+		}
 		setDirs((prev) => new Map(prev).set(relPath, state));
 	}, [projectId, taskId, t]);
 
@@ -107,8 +132,9 @@ export default function FileExplorer({
 		setDirs(new Map());
 		setActiveRel(null);
 		setRootPath("");
+		ignoredDirsRef.current = new Set();
 		void loadDir("");
-		for (const rel of remembered) void loadDir(rel);
+		for (const rel of remembered) if (isReachable(rel, remembered)) void loadDir(rel);
 	}, [rootKey, loadDir]);
 
 	useEffect(() => {
@@ -117,7 +143,10 @@ export default function FileExplorer({
 
 	const refreshAll = useCallback((quiet: boolean) => {
 		void loadDir("", quiet);
-		for (const rel of expandedByRoot.get(rootKeyRef.current) ?? []) void loadDir(rel, quiet);
+		const open = expandedByRoot.get(rootKeyRef.current) ?? new Set<string>();
+		for (const rel of open) {
+			if (isReachable(rel, open)) void loadDir(rel, quiet, ignoredDirsRef.current.has(rel));
+		}
 	}, [loadDir]);
 
 	// No file watcher: agents create files continuously, so the tree re-lists what
@@ -140,17 +169,22 @@ export default function FileExplorer({
 
 	const rows = useMemo(() => {
 		const out: VisibleRow[] = [];
-		const walk = (relPath: string, depth: number) => {
+		const walk = (relPath: string, depth: number, insideIgnored: boolean) => {
 			const state = dirs.get(relPath);
 			const entries = state && state.status !== "error" ? state.entries ?? [] : [];
 			for (const entry of entries) {
-				out.push({ entry, depth });
-				if (entry.kind === "directory" && expanded.has(entry.relPath)) walk(entry.relPath, depth + 1);
+				const ignored = insideIgnored || entry.ignored;
+				out.push({ entry, depth, ignored });
+				if (entry.kind === "directory" && expanded.has(entry.relPath)) walk(entry.relPath, depth + 1, ignored);
 			}
 		};
-		walk("", 0);
+		walk("", 0, false);
 		return out;
 	}, [dirs, expanded]);
+
+	useEffect(() => {
+		ignoredDirsRef.current = new Set(rows.filter((row) => row.ignored && row.entry.kind === "directory").map((row) => row.entry.relPath));
+	}, [rows]);
 
 	const toggleDir = useCallback((relPath: string, open?: boolean) => {
 		const isOpen = expanded.has(relPath);
@@ -160,7 +194,7 @@ export default function FileExplorer({
 		if (want) next.add(relPath);
 		else next.delete(relPath);
 		setExpanded(next);
-		if (want) void loadDir(relPath);
+		if (want) void loadDir(relPath, false, ignoredDirsRef.current.has(relPath));
 	}, [expanded, loadDir]);
 
 	const openFile = useCallback((entry: ExplorerEntry) => {
@@ -250,15 +284,13 @@ export default function FileExplorer({
 		if (entry.kind === "file") items.push({ label: t("fileExplorer.open"), run: () => openFile(entry) });
 		items.push({ label: t("fileExplorer.copyRelativePath"), run: () => void copyText(entry.relPath) });
 		items.push({ label: t("fileExplorer.copyPath"), run: () => void copyText(entry.path) });
-		if (taskId) {
-			items.push({
-				label: t("fileExplorer.insertPath"),
-				run: () => {
-					requestTaskTerminalPaste(taskId, `${quoteForShell(entry.relPath)} `);
-					onHandOff?.();
-				},
-			});
-		}
+		items.push({
+			label: t("fileExplorer.insertPath"),
+			run: () => {
+				requestTerminalPaste(terminalPasteTarget(projectId, taskId), `${quoteForShell(entry.relPath)} `);
+				onHandOff?.();
+			},
+		});
 		// Desktop only: in a browser tab these would open the file on the host machine.
 		if (isElectrobun) {
 			if (entry.kind === "file") items.push({ label: t("fileExplorer.openSystem"), run: () => void openWithSystem(entry, "system") });
@@ -338,7 +370,7 @@ export default function FileExplorer({
 				) : (
 					// Rows size to their longest name so the tree scrolls sideways instead of truncating.
 					<div className="min-w-full w-max">
-					{rows.map(({ entry, depth }) => {
+					{rows.map(({ entry, depth, ignored }) => {
 						const isDir = entry.kind === "directory";
 						const isOpen = isDir && expanded.has(entry.relPath);
 						const dirState = isOpen ? dirs.get(entry.relPath) : undefined;
@@ -356,7 +388,7 @@ export default function FileExplorer({
 									title={entry.relPath}
 									className={`flex h-6 cursor-pointer select-none items-center gap-1 pr-2 text-xs ${
 										isActive ? "bg-accent/15 text-fg" : "hover:bg-raised-hover"
-									} ${entry.ignored ? "text-fg-muted" : ""}`}
+									} ${ignored ? "text-fg-muted" : ""}`}
 									style={{ paddingLeft: 8 + depth * 12 }}
 								>
 									<span className="inline-flex w-3.5 flex-shrink-0 justify-center text-fg-muted" aria-hidden="true">

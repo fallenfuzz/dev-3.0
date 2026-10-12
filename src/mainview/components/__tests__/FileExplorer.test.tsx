@@ -18,6 +18,7 @@ vi.mock("../../rpc", () => ({
 
 import { api } from "../../rpc";
 import FileExplorerFrame from "../FileExplorerFrame";
+import { quoteForShell } from "../FileExplorer";
 import { OPEN_FILE_PREVIEW_EVENT } from "../../terminal-path-open";
 import {
 	_resetFileExplorerPrefs,
@@ -35,7 +36,9 @@ function entry(relPath: string, kind: ExplorerEntry["kind"], ignored = false): E
 
 const TREE: Record<string, ExplorerEntry[]> = {
 	"": [entry("src", "directory"), entry("node_modules", "directory", true), entry("README.md", "file")],
-	src: [entry("src/index.ts", "file")],
+	src: [entry("src/index.ts", "file"), entry("src/lib", "directory")],
+	"src/lib": [entry("src/lib/util.ts", "file")],
+	node_modules: [entry("node_modules/react", "directory")],
 };
 
 function serveTree() {
@@ -131,7 +134,7 @@ describe("FileExplorerFrame", () => {
 		renderFrame();
 		const ignored = await screen.findByRole("treeitem", { name: /node_modules/ });
 		expect(ignored.className).toContain("text-fg-muted");
-		expect(mockedApi.request.listExplorerDirectory).toHaveBeenCalledWith({ projectId: "proj-1", taskId: "task-1", relPath: "" });
+		expect(mockedApi.request.listExplorerDirectory).toHaveBeenCalledWith({ projectId: "proj-1", taskId: "task-1", relPath: "", insideIgnored: false });
 
 		await userEvent.click(screen.getByRole("treeitem", { name: /^src/ }));
 		expect(await screen.findByRole("treeitem", { name: /index\.ts/ })).toBeInTheDocument();
@@ -165,15 +168,55 @@ describe("FileExplorerFrame", () => {
 		fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /README\.md/ }));
 		await userEvent.click(screen.getByRole("menuitem", { name: "Insert path in terminal" }));
 		window.removeEventListener("dev3:requestTerminalPaste", onPaste);
-		expect((onPaste.mock.calls[0][0] as CustomEvent).detail).toEqual({ taskId: "task-1", text: "README.md " });
+		expect((onPaste.mock.calls[0][0] as CustomEvent).detail).toEqual({ target: "task-1", text: "README.md " });
 	});
 
-	it("offers no terminal insert or host-side open on the board, and none of the desktop items in a browser", async () => {
+	it("on the Repo screen inserts into the project terminal, and offers no host-side open in a browser", async () => {
 		setFileExplorerMode("pinned");
+		const onPaste = vi.fn();
+		window.addEventListener("dev3:requestTerminalPaste", onPaste);
 		renderFrame(null);
 		fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /README\.md/ }));
 		const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
-		expect(labels).toEqual(["Open preview", "Copy relative path", "Copy path"]);
+		expect(labels).toEqual(["Open preview", "Copy relative path", "Copy path", "Insert path in terminal"]);
+		await userEvent.click(screen.getByRole("menuitem", { name: "Insert path in terminal" }));
+		window.removeEventListener("dev3:requestTerminalPaste", onPaste);
+		expect((onPaste.mock.calls[0][0] as CustomEvent).detail).toEqual({ target: "project-proj-1", text: "README.md " });
+	});
+
+	it("dims everything inside an ignored folder and lists it without asking git", async () => {
+		setFileExplorerMode("pinned");
+		renderFrame("task-ignored");
+		await userEvent.click(await screen.findByRole("treeitem", { name: /node_modules/ }));
+		const child = await screen.findByRole("treeitem", { name: /react/ });
+		expect(child.className).toContain("text-fg-muted");
+		expect(mockedApi.request.listExplorerDirectory).toHaveBeenCalledWith(expect.objectContaining({ relPath: "node_modules", insideIgnored: true }));
+	});
+
+	it("polls only folders on screen and forgets one that was deleted", async () => {
+		setFileExplorerMode("pinned");
+		// Its own root: expanded folders are remembered per root for the session.
+		renderFrame("task-poll");
+		await userEvent.click(await screen.findByRole("treeitem", { name: /^src/ }));
+		await userEvent.click(await screen.findByRole("treeitem", { name: /lib/ }));
+		await screen.findByRole("treeitem", { name: /util\.ts/ });
+		// Collapse src: its open child lib is no longer on screen.
+		await userEvent.click(screen.getByRole("treeitem", { name: /^src/ }));
+		mockedApi.request.listExplorerDirectory.mockClear();
+		act(() => { window.dispatchEvent(new Event("focus")); });
+		await waitFor(() => expect(mockedApi.request.listExplorerDirectory).toHaveBeenCalled());
+		const polled = mockedApi.request.listExplorerDirectory.mock.calls.map(([params]) => params.relPath);
+		expect(polled).toEqual([""]);
+
+		// src is deleted while expanded: the next listing drops it from the open set.
+		await userEvent.click(screen.getByRole("treeitem", { name: /^src/ }));
+		mockedApi.request.listExplorerDirectory.mockImplementation(async ({ relPath }: { relPath?: string }) => (
+			relPath === "src"
+				? { root: "/wt", relPath: "src", entries: [], error: "not-found" }
+				: { root: "/wt", relPath: relPath ?? "", entries: TREE[relPath ?? ""] ?? [] }
+		) satisfies ExplorerListing);
+		act(() => { window.dispatchEvent(new Event("focus")); });
+		await waitFor(() => expect(screen.getByRole("treeitem", { name: /^src/ })).toHaveAttribute("aria-expanded", "false"));
 	});
 
 	it("walks the tree with the arrow keys", async () => {
@@ -191,11 +234,11 @@ describe("FileExplorerFrame", () => {
 		expect(screen.getByRole("treeitem", { name: /^src/ })).toHaveAttribute("aria-selected", "true");
 	});
 
-	it("shows the no-root message for a board without a folder", async () => {
+	it("shows the no-root message when there is no folder to list", async () => {
 		setFileExplorerMode("pinned");
 		mockedApi.request.listExplorerDirectory.mockResolvedValue({ root: "", relPath: "", entries: [], error: "no-root" });
 		renderFrame(null);
-		expect(await screen.findByText("This board has no project folder to show.")).toBeInTheDocument();
+		expect(await screen.findByText("There is no folder to show here.")).toBeInTheDocument();
 	});
 });
 
@@ -247,5 +290,15 @@ describe("explorer header", () => {
 		const tip = await screen.findByRole("tooltip");
 		expect(tip).toHaveTextContent("/wt");
 		expect(screen.getByTestId("file-explorer-root-path")).toHaveClass("streamer-private");
+	});
+});
+
+describe("quoteForShell", () => {
+	it("leaves plain paths alone and quotes anything a shell would read", () => {
+		expect(quoteForShell("src/app/index.ts")).toBe("src/app/index.ts");
+		expect(quoteForShell("src/components/a;b.tsx")).toBe("'src/components/a;b.tsx'");
+		expect(quoteForShell("src/(old).tsx")).toBe("'src/(old).tsx'");
+		expect(quoteForShell("my file.md")).toBe("'my file.md'");
+		expect(quoteForShell("it's.md")).toBe("'it'\\''s.md'");
 	});
 });

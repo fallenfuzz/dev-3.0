@@ -11,7 +11,7 @@ const fileExplorer = {
 	"fileExplorer.loading": "Cargando…",
 	"fileExplorer.empty": "Carpeta vacía",
 	"fileExplorer.truncated": "Demasiados elementos. Se muestran los primeros {limit}.",
-	"fileExplorer.noRoot": "Este tablero no tiene una carpeta de proyecto.",
+	"fileExplorer.noRoot": "Aquí no hay ninguna carpeta que mostrar.",
 	"fileExplorer.notFound": "Esta carpeta ya no existe.",
 	"fileExplorer.unreadable": "No se puede leer esta carpeta.",
 	"fileExplorer.failed": "No se pudieron listar los archivos: {error}",

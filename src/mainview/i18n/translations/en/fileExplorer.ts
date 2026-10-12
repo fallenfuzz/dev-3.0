@@ -11,7 +11,7 @@ const fileExplorer = {
 	"fileExplorer.loading": "Loading…",
 	"fileExplorer.empty": "Empty folder",
 	"fileExplorer.truncated": "Too many items. Showing the first {limit}.",
-	"fileExplorer.noRoot": "This board has no project folder to show.",
+	"fileExplorer.noRoot": "There is no folder to show here.",
 	"fileExplorer.notFound": "This folder no longer exists.",
 	"fileExplorer.unreadable": "This folder cannot be read.",
 	"fileExplorer.failed": "Could not list files: {error}",

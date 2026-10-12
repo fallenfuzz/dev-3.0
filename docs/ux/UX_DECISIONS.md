@@ -717,6 +717,6 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 - **Rule:** each active coordinator gets its own navigation-only row in its project's dashboard card, whatever its status — yaml `dashboard-coordinator-rows`.
 - **Why:** a working coordinator vanished into the footer count, yet it is what the user opens to talk to a project. Rejected a global coordinators panel (new chrome; ⇧⌘P `Find coordinator…` already exists). Evidence: `DashboardCoordinatorRows.tsx`.
 
-## 2026-10-02 - File explorer overlays when auto-hidden
-- **Rule:** yaml `file_explorer`; the Files button is its one visible toggle.
-- **Why:** a reveal that reflowed the terminal would refit the PTY on every hover. `decisions/2026/10/02/file-explorer-panel.md`.
+## 2026-10-12 — The file explorer lives beside a terminal, never on the board
+- **Rule:** yaml `file_explorer`: task terminal or the Repo screen (`project-terminal`, renamed); on a board ⇧⌘E opens Repo; auto-hide overlays, never reflows.
+- **Why:** "insert path" needs a terminal and the board is task triage. Rejected a Board/Files switch (a destination hidden in a toolbar, IDE drift) and a Files destination (budget spent). `decisions/2026/10/02/file-explorer-panel.md`.

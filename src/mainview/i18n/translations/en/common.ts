@@ -461,7 +461,7 @@ const common = {
 	"command.moveUserQuestions": "Move to User Questions",
 	"command.moveReviewAi": "Move to Review by AI",
 	"command.moveReviewUser": "Move to Review by User",
-	"command.openProjectTerminal": "Open project terminal",
+	"command.openProjectTerminal": "Open Repo (project terminal and files)",
 	"command.openQuickShell": "Open Quick Shell",
 	"command.tmuxCheatSheet": "Show tmux cheat sheet",
 	"command.keyboardShortcuts": "Keyboard shortcuts",
