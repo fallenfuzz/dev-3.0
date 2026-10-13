@@ -201,6 +201,8 @@ const dashboard = {
 	"sessions.details": "Details",
 	"sessions.empty": "No Claude task sessions in the last 6 hours.",
 	"sessions.emptyHint": "Sessions show up here while agent rate-limit tracking is on (Settings → Agents).",
+	"sessions.emptyScope": "No sessions in this project in the last 6 hours.",
+	"sessions.showAllProjects": "Show all projects",
 	"sessions.noMatch": "No sessions match this search.",
 	"command.openSessions": "Open Claude Sessions",
 	"rateLimits.noRecentData": "no recent data",

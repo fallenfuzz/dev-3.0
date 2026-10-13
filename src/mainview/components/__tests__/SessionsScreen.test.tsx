@@ -125,4 +125,13 @@ describe("SessionsScreen", () => {
 		expect(screen.getByText("Alpha").className).not.toContain("streamer-private");
 		expect(screen.getAllByText("dev-3.0")[0].className).not.toContain("streamer-private");
 	});
+
+	it("offers all projects when the scoped project has no sessions but others do", async () => {
+		await renderScreen({ projectId: "p3", projectName: "quiet" });
+		expect(screen.getByText("No sessions in this project in the last 6 hours.")).toBeTruthy();
+		expect(screen.queryByText("No Claude task sessions in the last 6 hours.")).toBeNull();
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("button", { name: "Show all projects" }));
+		expect(titles()).toHaveLength(4);
+	});
 });
