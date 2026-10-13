@@ -134,4 +134,30 @@ describe("SessionsScreen", () => {
 		await user.click(screen.getByRole("button", { name: "Show all projects" }));
 		expect(titles()).toHaveLength(4);
 	});
+
+	it("has no details toggle for a session with nothing more to show", async () => {
+		const bare = session("e", {
+			taskTitle: "Echo",
+			effort: null,
+			thinking: false,
+			totalTokens: null,
+			cacheReadTokens: null,
+			cacheWriteTokens: null,
+			turnInputTokens: null,
+			turnOutputTokens: null,
+			durationMs: null,
+			apiDurationMs: null,
+			linesAdded: null,
+			linesRemoved: null,
+		});
+		mockGet.mockResolvedValue({ snapshots: [], sessions: [bare, SESSIONS[0]], generatedAt: NOW } satisfies AgentRateLimitsReport);
+		render(
+			<I18nProvider>
+				<SessionsScreen projectId="p1" projectName="dev-3.0" onOpenTask={() => {}} />
+			</I18nProvider>,
+		);
+		await act(async () => {});
+		expect(screen.queryByRole("button", { name: "Details: Echo" })).toBeNull();
+		expect(screen.getByRole("button", { name: "Details: Alpha" })).toBeTruthy();
+	});
 });
