@@ -67,6 +67,17 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 		() => sessions.filter((s) => scope === ALL_PROJECTS || s.projectId === scope),
 		[sessions, scope],
 	);
+	const projectOptions = useMemo(() => {
+		const names = new Map<string, string>();
+		if (projectId) names.set(projectId, projectName ?? projectId);
+		for (const s of sessions) {
+			if (s.projectId && !names.has(s.projectId)) names.set(s.projectId, s.projectName ?? s.projectId);
+		}
+		const projects = [...names]
+			.map(([id, name]) => ({ value: id, label: privacy.isLocked(id) ? t("streamer.privateTitle") : name }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+		return [{ value: ALL_PROJECTS, label: t("sessions.scopeAll") }, ...projects];
+	}, [sessions, projectId, projectName, privacy, t]);
 	const rows = sortSessions(
 		scoped.filter((s) => matches(s, query)),
 		sort.key,
@@ -165,15 +176,12 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 						aria-label={t("sessions.search")}
 						className={`${narrow ? "w-full" : "min-w-[12rem] flex-1"} rounded-xl border border-edge bg-base px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-accent/60 focus:ring-2 focus:ring-accent/20`}
 					/>
-					{projectId && (
+					{projectOptions.length > 1 && (
 						<div className={narrow ? "min-w-0 flex-1" : "w-48"}>
 							<Select
 								value={scope}
 								onChange={setScope}
-								options={[
-									{ value: projectId, label: projectName ?? projectId },
-									{ value: ALL_PROJECTS, label: t("sessions.scopeAll") },
-								]}
+								options={projectOptions}
 								ariaLabel={t("sessions.scopeLabel")}
 							/>
 						</div>
