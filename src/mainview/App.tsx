@@ -76,7 +76,6 @@ import AboutModal from "./components/AboutModal";
 import FeatureFlagsModal from "./components/FeatureFlagsModal";
 import TerminalPerfOverlay from "./components/TerminalPerfOverlay";
 import FilePreviewModal from "./components/FilePreviewModal";
-import { toggleFileExplorer } from "./file-explorer-prefs";
 import { OPEN_FILE_PREVIEW_EVENT, type OpenFilePreviewDetail } from "./terminal-path-open";
 import RosettaWarningModal from "./components/RosettaWarningModal";
 import { initTaskSoundPlayback, playTaskCompletionSound, playTaskSoundFromPush, setTaskCompletionSoundEnabled } from "./task-sounds";
