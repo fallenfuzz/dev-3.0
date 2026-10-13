@@ -7,7 +7,7 @@ import {
 	sessionAttention,
 	type ClaudeSessionStats,
 } from "../../shared/session-stats";
-import { useLocale, useT } from "../i18n";
+import { useLocale, useT, type TFunction } from "../i18n";
 
 /** Context fills earlier than a limit window matters, so it escalates at 60/85, not 80/95. */
 export function contextTone(percent: number): string {
@@ -60,9 +60,8 @@ export function CacheState({ session, now }: { session: ClaudeSessionStats; now:
 	);
 }
 
-/** Everything the statusLine reports beyond the table's columns, for a row's disclosure. */
-export function SessionDetails({ session }: { session: ClaudeSessionStats }) {
-	const t = useT();
+/** Everything the statusLine reports beyond the table's columns, one node per field. */
+export function sessionDetailItems(session: ClaudeSessionStats, t: TFunction): ReactNode[] {
 	const items: ReactNode[] = [];
 	const push = (key: string, node: ReactNode) => items.push(<span key={key}>{node}</span>);
 	if (session.sessionName) push("sessionName", <span className="text-fg-2 streamer-private">{session.sessionName}</span>);
@@ -104,6 +103,13 @@ export function SessionDetails({ session }: { session: ClaudeSessionStats }) {
 	}
 	if (session.effort) push("effort", t("rateLimits.sessionEffort", { level: session.effort }));
 	if (session.thinking) push("thinking", t("rateLimits.sessionThinking"));
+	return items;
+}
+
+/** A row's disclosure; renders nothing when the session has no extra fields. */
+export function SessionDetails({ session }: { session: ClaudeSessionStats }) {
+	const t = useT();
+	const items = sessionDetailItems(session, t);
 	if (items.length === 0) return null;
 	return <div className="flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums text-fg-3">{items}</div>;
 }

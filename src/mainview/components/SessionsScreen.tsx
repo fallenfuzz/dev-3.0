@@ -15,7 +15,7 @@ import { useT, type TranslationKey } from "../i18n";
 import { useProjectPrivacy } from "../sensitive-projects";
 import { CAROUSEL_MAX_WIDTH } from "./MobileBoardCarousel";
 import { formatAge } from "./rate-limit-ui";
-import { CacheState, ContextBar, SessionDetails, contextTone } from "./session-stats-ui";
+import { CacheState, ContextBar, SessionDetails, contextTone, sessionDetailItems } from "./session-stats-ui";
 import Select from "./Select";
 
 const ALL_PROJECTS = "__all__";
@@ -118,7 +118,8 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 		);
 	};
 
-	const detailsToggle = (s: ClaudeSessionStats) => (
+	const detailsToggle = (s: ClaudeSessionStats) =>
+		sessionDetailItems(s, t).length > 0 && (
 		<button
 			type="button"
 			onClick={() => toggleExpanded(s.taskId)}
