@@ -221,6 +221,8 @@ const dashboard = {
 	"sessions.details": "Подробности",
 	"sessions.empty": "За последние 6 часов сессий Claude в задачах не было.",
 	"sessions.emptyHint": "Сессии появляются здесь, пока включено отслеживание лимитов агентов (Настройки → Агенты).",
+	"sessions.emptyScope": "В этом проекте нет сессий за последние 6 часов.",
+	"sessions.showAllProjects": "Показать все проекты",
 	"sessions.noMatch": "Ни одна сессия не подходит под поиск.",
 	"command.openSessions": "Открыть сессии Claude",
 	"rateLimits.noRecentData": "нет свежих данных",

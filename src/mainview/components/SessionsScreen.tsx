@@ -62,9 +62,10 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 	const privacy = useProjectPrivacy();
 
+	const sessions = useMemo(() => report?.sessions ?? [], [report]);
 	const scoped = useMemo(
-		() => (report?.sessions ?? []).filter((s) => scope === ALL_PROJECTS || s.projectId === scope),
-		[report, scope],
+		() => sessions.filter((s) => scope === ALL_PROJECTS || s.projectId === scope),
+		[sessions, scope],
 	);
 	const rows = sortSessions(
 		scoped.filter((s) => matches(s, query)),
@@ -192,7 +193,18 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 					)}
 				</div>
 
-				{empty ? (
+				{empty && scope !== ALL_PROJECTS && sessions.length > 0 ? (
+					<div className="rounded-2xl border border-edge border-dashed bg-raised px-4 py-8 text-center">
+						<p className="text-fg-2 text-sm font-semibold">{t("sessions.emptyScope")}</p>
+						<button
+							type="button"
+							onClick={() => setScope(ALL_PROJECTS)}
+							className="mt-1 rounded text-accent text-xs hover:text-accent-emphasis hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+						>
+							{t("sessions.showAllProjects")}
+						</button>
+					</div>
+				) : empty ? (
 					<div className="rounded-2xl border border-edge border-dashed bg-raised px-4 py-8 text-center">
 						<p className="text-fg-2 text-sm font-semibold">{t("sessions.empty")}</p>
 						<p className="mt-1 text-fg-muted text-xs">{t("sessions.emptyHint")}</p>
