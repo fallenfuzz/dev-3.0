@@ -1,6 +1,8 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../i18n";
+import { setSensitiveProjectIds } from "../../sensitive-projects";
+import { setStreamerMode } from "../../streamer-mode";
 import UsageSessionsStrip from "../UsageSessionsStrip";
 import { NOW, session, warmFor } from "./session-test-fixtures";
 
@@ -19,6 +21,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	setStreamerMode(false);
+	setSensitiveProjectIds([]);
 });
 
 describe("UsageSessionsStrip", () => {
@@ -48,6 +52,19 @@ describe("UsageSessionsStrip", () => {
 	it("does not blur task titles - the board shows them unblurred", () => {
 		renderStrip([session("a", { taskTitle: "Visible title", contextPercent: 90 })]);
 		expect(screen.getByText("Visible title").className).not.toContain("streamer-private");
+	});
+
+	it("masks a sensitive project's task title in streamer mode", () => {
+		setStreamerMode(true);
+		setSensitiveProjectIds(["p2"]);
+		renderStrip([
+			session("a", { taskTitle: "Open task", contextPercent: 90 }),
+			session("b", { taskTitle: "Secret task", contextPercent: 95, projectId: "p2" }),
+		]);
+		const secret = screen.getByText("Secret task");
+		expect(secret.className).toContain("streamer-private");
+		expect(secret.getAttribute("title")).toBeNull();
+		expect(screen.getByText("Open task").className).not.toContain("streamer-private");
 	});
 
 	it("lets a cache go cold while the panel stays open, with no push", () => {

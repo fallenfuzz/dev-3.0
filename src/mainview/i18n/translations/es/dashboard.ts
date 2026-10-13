@@ -199,6 +199,8 @@ const dashboard = {
 	"sessions.details": "Detalles",
 	"sessions.empty": "No hubo sesiones de Claude en tareas en las últimas 6 horas.",
 	"sessions.emptyHint": "Las sesiones aparecen aquí mientras el seguimiento de límites de agentes está activado (Ajustes → Agentes).",
+	"sessions.emptyScope": "No hay sesiones en este proyecto en las últimas 6 horas.",
+	"sessions.showAllProjects": "Mostrar todos los proyectos",
 	"sessions.noMatch": "Ninguna sesión coincide con la búsqueda.",
 	"command.openSessions": "Abrir sesiones de Claude",
 	"rateLimits.noRecentData": "sin datos recientes",

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRateLimitsReport } from "../../../shared/rate-limits";
 import type { ClaudeSessionStats } from "../../../shared/session-stats";
 import { I18nProvider } from "../../i18n";
+import { setSensitiveProjectIds } from "../../sensitive-projects";
+import { setStreamerMode } from "../../streamer-mode";
 import SessionsScreen from "../SessionsScreen";
 import { NOW, session, warmFor } from "./session-test-fixtures";
 
@@ -48,6 +50,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	setStreamerMode(false);
+	setSensitiveProjectIds([]);
 });
 
 describe("SessionsScreen", () => {
@@ -106,5 +110,73 @@ describe("SessionsScreen", () => {
 		);
 		await act(async () => {});
 		expect(screen.getByText("No Claude task sessions in the last 6 hours.")).toBeTruthy();
+	});
+
+	it("masks a sensitive project's titles and name in streamer mode", async () => {
+		setStreamerMode(true);
+		setSensitiveProjectIds(["p2"]);
+		await renderScreen({ projectId: null, projectName: null });
+		const secret = screen.getByText("Delta");
+		expect(secret.className).toContain("streamer-private");
+		expect(secret.closest("button")?.getAttribute("title")).toBeNull();
+		const projectCell = screen.getByText("other");
+		expect(projectCell.className).toContain("streamer-private");
+		expect(projectCell.getAttribute("title")).toBeNull();
+		expect(screen.getByText("Alpha").className).not.toContain("streamer-private");
+		expect(screen.getAllByText("dev-3.0")[0].className).not.toContain("streamer-private");
+	});
+
+	it("names a sensitive project only as private in the scope picker", async () => {
+		setStreamerMode(true);
+		setSensitiveProjectIds(["p2"]);
+		await renderScreen({ projectId: null, projectName: null });
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Projects" }));
+		const options = screen.getAllByRole("option").map((o) => o.textContent);
+		expect(options).toContain("Private project");
+		expect(options).not.toContain("other");
+	});
+
+	it("filters to one project when opened outside one", async () => {
+		await renderScreen({ projectId: null, projectName: null });
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Projects" }));
+		await user.click(screen.getByRole("option", { name: "other" }));
+		expect(titles()).toEqual(["#44Delta"]);
+	});
+
+	it("offers all projects when the scoped project has no sessions but others do", async () => {
+		await renderScreen({ projectId: "p3", projectName: "quiet" });
+		expect(screen.getByText("No sessions in this project in the last 6 hours.")).toBeTruthy();
+		expect(screen.queryByText("No Claude task sessions in the last 6 hours.")).toBeNull();
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("button", { name: "Show all projects" }));
+		expect(titles()).toHaveLength(4);
+	});
+
+	it("has no details toggle for a session with nothing more to show", async () => {
+		const bare = session("e", {
+			taskTitle: "Echo",
+			effort: null,
+			thinking: false,
+			totalTokens: null,
+			cacheReadTokens: null,
+			cacheWriteTokens: null,
+			turnInputTokens: null,
+			turnOutputTokens: null,
+			durationMs: null,
+			apiDurationMs: null,
+			linesAdded: null,
+			linesRemoved: null,
+		});
+		mockGet.mockResolvedValue({ snapshots: [], sessions: [bare, SESSIONS[0]], generatedAt: NOW } satisfies AgentRateLimitsReport);
+		render(
+			<I18nProvider>
+				<SessionsScreen projectId="p1" projectName="dev-3.0" onOpenTask={() => {}} />
+			</I18nProvider>,
+		);
+		await act(async () => {});
+		expect(screen.queryByRole("button", { name: "Details: Echo" })).toBeNull();
+		expect(screen.getByRole("button", { name: "Details: Alpha" })).toBeTruthy();
 	});
 });
