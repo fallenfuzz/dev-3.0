@@ -126,6 +126,25 @@ describe("SessionsScreen", () => {
 		expect(screen.getAllByText("dev-3.0")[0].className).not.toContain("streamer-private");
 	});
 
+	it("names a sensitive project only as private in the scope picker", async () => {
+		setStreamerMode(true);
+		setSensitiveProjectIds(["p2"]);
+		await renderScreen({ projectId: null, projectName: null });
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Projects" }));
+		const options = screen.getAllByRole("option").map((o) => o.textContent);
+		expect(options).toContain("Private project");
+		expect(options).not.toContain("other");
+	});
+
+	it("filters to one project when opened outside one", async () => {
+		await renderScreen({ projectId: null, projectName: null });
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Projects" }));
+		await user.click(screen.getByRole("option", { name: "other" }));
+		expect(titles()).toEqual(["#44Delta"]);
+	});
+
 	it("offers all projects when the scoped project has no sessions but others do", async () => {
 		await renderScreen({ projectId: "p3", projectName: "quiet" });
 		expect(screen.getByText("No sessions in this project in the last 6 hours.")).toBeTruthy();
