@@ -1453,7 +1453,8 @@ function App() {
 				e.preventDefault();
 				e.stopPropagation();
 				if (showQuitDialog) return;
-				toggleFileExplorer();
+				// Through the router: on a board the toggle navigates to the Repo screen.
+				handleMenuBarAction("view-toggle-file-explorer");
 			} else if (matchesShortcut(e, "help-mode")) {
 				// Help mode ("Explain this screen"): every data-help-id zone gets an (i)
 				// badge with a HelpCard. Sibling of the shortcuts reference overlay.
@@ -1600,7 +1601,7 @@ function App() {
 				}
 			}
 		},
-		[armGoToIndex, armGoToVerb, clearGoTo, createTaskProjectId, cycleVariant, dispatch, goToCurrentProject, goToProjectIndex, hintMode, navigate, navigateToProject, openAddProject, openCreateTaskModal, openInCurrent, openQuickShell, showAddProjectModal, showQuitDialog, state.projects, state.route, toggleTerminalImmersive],
+		[armGoToIndex, armGoToVerb, clearGoTo, createTaskProjectId, cycleVariant, dispatch, goToCurrentProject, goToProjectIndex, handleMenuBarAction, hintMode, navigate, navigateToProject, openAddProject, openCreateTaskModal, openInCurrent, openQuickShell, showAddProjectModal, showQuitDialog, state.projects, state.route, toggleTerminalImmersive],
 		{ capture: true },
 	);
 
@@ -2498,7 +2499,7 @@ function App() {
 	) => {
 		const { requestId } = request;
 		setLaunchRequests((queue) => queue.filter((r) => r.requestId !== requestId));
-		if (approved && !request.spawn) {
+		if (approved && !request.spawn && !request.resume) {
 			trackEvent("task_moved", { to_status: "in-progress", agent_requested: true });
 			const variantCount = launch?.variants.length ?? 1;
 			if (variantCount > 1) trackEvent("task_spawned", { agent_requested: true, variant_count: variantCount });
@@ -3870,6 +3871,7 @@ function App() {
 						<ProjectTerminal
 							projectId={route.projectId}
 							projectPath={proj.path}
+							projectName={proj.name}
 							onBack={() => navigate({ screen: "project", projectId: route.projectId })}
 						/>
 					</div>

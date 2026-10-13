@@ -44,7 +44,7 @@ this page and the website all read from it.
 | Settings | ⌘, | Ctrl+, |
 | Zoom in / out / reset | ⌘= / ⌘- / ⌘0 | Ctrl+= / Ctrl+- / Ctrl+0 |
 | Hard refresh | ⌘R | Ctrl+R |
-| Toggle project terminal / open Quick Shell | ⌘` / ⇧⌘` | Ctrl+` / Ctrl+Shift+` |
+| Toggle Repo (project terminal and files) / open Quick Shell | ⌘` / ⇧⌘` | Ctrl+` / Ctrl+Shift+` |
 | Close dialog / step back (not inside a task) | Esc | Esc |
 | Quit / Hide | ⌘Q / ⌘H | Ctrl+Q / Ctrl+H |
 

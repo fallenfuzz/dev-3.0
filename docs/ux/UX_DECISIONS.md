@@ -556,7 +556,7 @@ Folded: rule and reasoning in `decisions/2026/07/03/close-pane-visual-picker.md`
 - **Status:** Observed. Evidence: `tips.ts` (`TipContext`), `hooks/useTipRotation.ts`.
 
 ## 2026-07-11 — Active Tasks sidebar: readiness tiers + visible priority (supersedes 2026-06-22)
-- **Rule:** The sidebar groups by **readiness tier** — `NEEDS YOU` (review-by-user ∪ user-questions ∪ *signalled* review-by-colleague) → custom columns (project order) → `WAITING` (in-progress ∪ review-by-ai ∪ unsignalled review-by-colleague) — not by status; within every tier it sorts by priority band P0→P4, t.
+- **Rule:** The sidebar groups by **readiness tier** — `NEEDS YOU` (review-by-user ∪ user-questions ∪ *signalled* review-by-colleague) → custom columns (project order) → `WAITING` (in-progress ∪ review-by-ai ∪ unsignalled review-by-colleague) — not by status; tiers sort by priority; NEEDS YOU: coordinators, then questions.
 - **Why:** `decisions/2026/07/11/sidebar-readiness-tiers.md`.
 
 ## 2026-06-21 — Hint navigation is a cross-surface primitive; keyboard-first expert layer
@@ -713,12 +713,12 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 - **Rule:** each active coordinator gets its own navigation-only row in its project's dashboard card, whatever its status — yaml `dashboard-coordinator-rows`.
 - **Why:** a working coordinator vanished into the footer count, yet it is what the user opens to talk to a project. Rejected a global coordinators panel (new chrome; ⇧⌘P `Find coordinator…` already exists). Evidence: `DashboardCoordinatorRows.tsx`.
 
-## 2026-10-02 - File explorer overlays when auto-hidden
-- **Rule:** yaml `file_explorer`; the Files button is its one visible toggle.
-- **Why:** a reveal that reflowed the terminal would refit the PTY on every hover. `decisions/2026/10/02/file-explorer-panel.md`.
-
 ## 2026-10-02 - Git workflow is a project property, switched on the Board tab
 - **Rule:** `Project.gitWorkflow=false` hides the git domain like a virtual board but keeps the real folder and its config. The switch is a Board-tab ToggleSwitch beside Privacy, refused while a task is live. AddProject's folder pane carries the same switch (off: Local only, shared-folder copy); a non-git folder picked with it on gets an inline offer; no dashboard badge.
 - **Why:** project-record state like `sensitive`, not git-committed config. Rejected: a per-task toggle (columns and teardown are board-level), a third AddProject kind segment, a "No git" badge. Evidence: `ProjectSettings.tsx`, `AddProjectModal.tsx`, `decisions/2026/10/02/per-project-git-workflow-switch.md`.
 
 2026-10-04 - Add Project auto-configure is an opt-in switch. Why: `decisions/2026/10/04/opt-in-project-auto-configure.md`.
+
+## 2026-10-12 — The file explorer lives beside a terminal, never on the board
+- **Rule:** yaml `file_explorer`: task terminal or the Repo screen (`project-terminal`, renamed); on a board ⇧⌘E opens Repo; auto-hide overlays, never reflows.
+- **Why:** "insert path" needs a terminal and the board is task triage. Rejected a Board/Files switch (a destination hidden in a toolbar, IDE drift) and a Files destination (budget spent). `decisions/2026/10/02/file-explorer-panel.md`.

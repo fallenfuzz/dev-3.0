@@ -38,6 +38,12 @@ const common = {
 
 	// Un agente pide iniciar otra tarea (o una tarea scratch desechable)
 	"agentLaunch.titleSpawn": "El agente quiere añadir un agente a esta tarea",
+	"agentLaunch.titleResume": "El agente quiere reanudar la sesión guardada de esta tarea",
+	"agentLaunch.resumeNote": "Reabre las conversaciones guardadas, cada una con su propio agente, preset y cuenta.",
+	"agentLaunch.resumeConversation": "Conversación {id}",
+	"agentLaunch.resumeLatest": "Sin id de conversación guardado: el agente abre la última",
+	"agentLaunch.resume": "Reanudar",
+	"agentLaunch.resuming": "Reanudando…",
 	"agentLaunch.initialPrompt": "Instrucciones iniciales",
 	"agentLaunch.spawnHandoff": "El nuevo agente también recibirá la última conversación de esta tarea.",
 	"agentLaunch.title": "El agente quiere iniciar esta tarea",
@@ -50,6 +56,7 @@ const common = {
 	"agentLaunch.launching": "Iniciando…",
 	"agentLaunch.decline": "Rechazar",
 	"agentLaunch.autoApproveIn": "Se inicia solo en {time}",
+	"agentLaunch.autoResumeIn": "Se reanuda solo en {time}",
 	"agentLaunch.autoApproveHeld": "Esperando tu respuesta",
 
 	// Navegación estilo Vimium
@@ -457,7 +464,7 @@ const common = {
 	"command.moveUserQuestions": "Mover a «User Questions»",
 	"command.moveReviewAi": "Mover a «Review by AI»",
 	"command.moveReviewUser": "Mover a «Review by User»",
-	"command.openProjectTerminal": "Abrir terminal del proyecto",
+	"command.openProjectTerminal": "Abrir repo (terminal y archivos del proyecto)",
 	"command.openQuickShell": "Abrir Shell rápido",
 	"command.tmuxCheatSheet": "Mostrar referencia de tmux",
 	"command.keyboardShortcuts": "Atajos de teclado",

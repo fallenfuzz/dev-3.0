@@ -38,6 +38,12 @@ const common = {
 
 	// An agent asking to start another task (or a throwaway scratch peer)
 	"agentLaunch.titleSpawn": "Agent wants to add an agent to this task",
+	"agentLaunch.titleResume": "Agent wants to resume this task's saved session",
+	"agentLaunch.resumeNote": "Reopens the saved conversations, each with its own agent, preset and account.",
+	"agentLaunch.resumeConversation": "Conversation {id}",
+	"agentLaunch.resumeLatest": "No saved conversation id — the agent opens its latest",
+	"agentLaunch.resume": "Resume",
+	"agentLaunch.resuming": "Resuming…",
 	"agentLaunch.initialPrompt": "Initial instructions",
 	"agentLaunch.spawnHandoff": "The new agent will also receive this task's latest conversation.",
 	"agentLaunch.title": "Agent wants to start this task",
@@ -50,6 +56,7 @@ const common = {
 	"agentLaunch.launching": "Launching…",
 	"agentLaunch.decline": "Decline",
 	"agentLaunch.autoApproveIn": "Starts on its own in {time}",
+	"agentLaunch.autoResumeIn": "Resumes on its own in {time}",
 	"agentLaunch.autoApproveHeld": "Waiting for your answer",
 
 	// Vimium-style hint navigation
@@ -457,7 +464,7 @@ const common = {
 	"command.moveUserQuestions": "Move to User Questions",
 	"command.moveReviewAi": "Move to Review by AI",
 	"command.moveReviewUser": "Move to Review by User",
-	"command.openProjectTerminal": "Open project terminal",
+	"command.openProjectTerminal": "Open Repo (project terminal and files)",
 	"command.openQuickShell": "Open Quick Shell",
 	"command.tmuxCheatSheet": "Show tmux cheat sheet",
 	"command.keyboardShortcuts": "Keyboard shortcuts",

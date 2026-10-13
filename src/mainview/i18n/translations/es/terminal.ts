@@ -235,16 +235,16 @@ const terminal = {
 	"resources.details": "{memory} · {cpu}% CPU",
 
 	// Project Terminal
-	"projectTerminal.open": "Terminal",
-	"projectTerminal.close": "Cerrar terminal",
-	"projectTerminal.tooltip": "Abrir terminal en la raíz del proyecto",
+	"projectTerminal.open": "Repo",
+	"projectTerminal.close": "Cerrar repo",
+	"projectTerminal.tooltip": "Repo: terminal y archivos de la raíz del proyecto",
 	"projectTerminal.sessionEnded": "Sesión de terminal finalizada",
 	"projectTerminal.sessionEndedDesc": "El proceso del terminal ha terminado. Haz clic en reiniciar para abrir una nueva sesión.",
 	"projectTerminal.restart": "Reiniciar",
-	"projectTerminal.label": "Terminal del proyecto",
+	"projectTerminal.label": "Repo",
 	"projectTerminal.backToBoard": "Volver al tablero",
 	"projectTerminal.shortcutHint": "⌘`",
-	"projectTerminal.tooltipWithShortcut": "Terminal del proyecto (⌘`)",
+	"projectTerminal.tooltipWithShortcut": "Repo: terminal y archivos (⌘`)",
 
 	// Quick Shell (consola Operations integrada en $HOME)
 	"quickShell.open": "Shell rápido",
@@ -297,6 +297,10 @@ const terminal = {
 	"terminal.filePreviewRendered": "Renderizado",
 	"terminal.filePreviewSearch": "Buscar en el archivo",
 	"terminal.filePreviewRaw": "Sin formato",
+	"terminal.filePreviewWrap": "Ajustar líneas",
+	"terminal.filePreviewWrapHint": "Ajusta las líneas largas al ancho de la ventana. El archivo y el texto copiado no cambian.",
+	"terminal.filePreviewExpand": "Ampliar",
+	"terminal.filePreviewRestore": "Restaurar tamaño",
 	"terminal.rendererCrashed": "El renderizador del terminal falló y no pudo reiniciarse solo. Haz clic para recargar la ventana — tu sesión sigue activa.",
 	"terminal.perf.title": "Rendimiento del terminal",
 	"terminal.perf.close": "Cerrar el panel de rendimiento",

@@ -235,16 +235,16 @@ const terminal = {
 	"resources.details": "{memory} · {cpu}% CPU",
 
 	// Project Terminal
-	"projectTerminal.open": "Terminal",
-	"projectTerminal.close": "Close Terminal",
-	"projectTerminal.tooltip": "Open a terminal in the project root",
+	"projectTerminal.open": "Repo",
+	"projectTerminal.close": "Close Repo",
+	"projectTerminal.tooltip": "Repo: a terminal and the files of the project root",
 	"projectTerminal.sessionEnded": "Terminal session ended",
 	"projectTerminal.sessionEndedDesc": "The terminal process has exited. Click restart to open a new session.",
 	"projectTerminal.restart": "Restart",
-	"projectTerminal.label": "Project Terminal",
+	"projectTerminal.label": "Repo",
 	"projectTerminal.backToBoard": "Back to Board",
 	"projectTerminal.shortcutHint": "\u2318`",
-	"projectTerminal.tooltipWithShortcut": "Project Terminal (\u2318`)",
+	"projectTerminal.tooltipWithShortcut": "Repo: terminal and files (\u2318`)",
 
 	// Quick Shell (built-in Operations shell in $HOME)
 	"quickShell.open": "Quick Shell",
@@ -297,6 +297,10 @@ const terminal = {
 	"terminal.filePreviewRendered": "Rendered",
 	"terminal.filePreviewSearch": "Find in file",
 	"terminal.filePreviewRaw": "Raw",
+	"terminal.filePreviewWrap": "Wrap lines",
+	"terminal.filePreviewWrapHint": "Wrap long lines to fit the window. The file and copied text are unchanged.",
+	"terminal.filePreviewExpand": "Expand",
+	"terminal.filePreviewRestore": "Restore size",
 	"terminal.rendererCrashed": "The terminal renderer crashed and could not restart itself. Click to reload the window — your session keeps running.",
 	// TerminalPerfOverlay (View → Debug). Metric names inside the HUD name code —
 	// `fps`, `render`, `write`, `p50` — and stay untranslated like terminal output.

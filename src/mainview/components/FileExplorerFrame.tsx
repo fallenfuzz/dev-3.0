@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
 	clampExplorerWidth,
+	consumeRevealOnMount,
 	FILE_EXPLORER_DEFAULT_WIDTH,
 	FILE_EXPLORER_MAX_WIDTH,
 	FILE_EXPLORER_MIN_WIDTH,
@@ -55,6 +56,10 @@ export default function FileExplorerFrame({ projectId, taskId, rootLabel, enable
 
 	useEffect(() => {
 		if (mode !== "autohide") return;
+		if (consumeRevealOnMount()) {
+			setRevealed("sticky");
+			setFocusSignal((n) => n + 1);
+		}
 		const onToggle = () => {
 			if (revealedRef.current) {
 				setRevealed(null);

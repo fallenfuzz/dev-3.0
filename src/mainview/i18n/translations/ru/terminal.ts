@@ -247,16 +247,16 @@ const terminal = {
 	"resources.details": "{memory} · {cpu}% CPU",
 
 	// Project Terminal
-	"projectTerminal.open": "Терминал",
-	"projectTerminal.close": "Закрыть терминал",
-	"projectTerminal.tooltip": "Открыть терминал в корне проекта",
+	"projectTerminal.open": "Репо",
+	"projectTerminal.close": "Закрыть репо",
+	"projectTerminal.tooltip": "Репо: терминал и файлы корня проекта",
 	"projectTerminal.sessionEnded": "Сессия терминала завершена",
 	"projectTerminal.sessionEndedDesc": "Процесс терминала завершился. Нажмите «Перезапустить» для новой сессии.",
 	"projectTerminal.restart": "Перезапустить",
-	"projectTerminal.label": "Терминал проекта",
+	"projectTerminal.label": "Репо",
 	"projectTerminal.backToBoard": "Назад к доске",
 	"projectTerminal.shortcutHint": "⌘`",
-	"projectTerminal.tooltipWithShortcut": "Терминал проекта (⌘`)",
+	"projectTerminal.tooltipWithShortcut": "Репо: терминал и файлы (⌘`)",
 
 	// Quick Shell (встроенная Operations-консоль в $HOME)
 	"quickShell.open": "Быстрая консоль",
@@ -309,6 +309,10 @@ const terminal = {
 	"terminal.filePreviewRendered": "Рендер",
 	"terminal.filePreviewSearch": "Поиск по файлу",
 	"terminal.filePreviewRaw": "Исходник",
+	"terminal.filePreviewWrap": "Перенос строк",
+	"terminal.filePreviewWrapHint": "Переносить длинные строки по ширине окна. Файл и копируемый текст не меняются.",
+	"terminal.filePreviewExpand": "Развернуть",
+	"terminal.filePreviewRestore": "Вернуть размер",
 	"terminal.rendererCrashed": "Отрисовщик терминала упал и не смог подняться сам. Нажмите, чтобы перезагрузить окно — сессия продолжает работать.",
 	"terminal.perf.title": "Производительность терминала",
 	"terminal.perf.close": "Закрыть панель производительности",

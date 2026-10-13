@@ -1,5 +1,5 @@
 import { readdir, stat } from "node:fs/promises";
-import { join, relative, resolve as resolvePath, sep } from "node:path";
+import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { EXPLORER_MAX_ENTRIES, type ExplorerEntry, type ExplorerListing } from "../../shared/types";
 import * as data from "../data";
 import { run as runGit } from "../git";
@@ -7,7 +7,7 @@ import { log } from "./shared";
 
 /**
  * Backend for the file explorer panel: lists one directory level under a fixed
- * root - the task worktree, or the project checkout on the board. The renderer
+ * root - the task worktree, or the project checkout on the project terminal screen. The renderer
  * sends only a root-relative path, and anything resolving outside the root is
  * refused. See decisions/2026/10/02/file-explorer-panel.md.
  */
@@ -59,16 +59,17 @@ async function listExplorerDirectory(params: {
 	projectId: string;
 	taskId?: string | null;
 	relPath?: string;
+	/** The folder sits inside an ignored one: git reports only the outer folder, so everything here is ignored too. */
+	insideIgnored?: boolean;
 }): Promise<ExplorerListing> {
 	const requested = (params.relPath ?? "").replace(/^\/+|\/+$/g, "");
-	log.info("→ listExplorerDirectory", { taskId: params.taskId?.slice(0, 8), relPath: requested });
 
 	const root = await explorerRoot(params.projectId, params.taskId);
 	if (!root) return { root: "", relPath: requested, entries: [], error: "no-root" };
 
 	const absDir = resolvePath(root, requested);
 	const relDir = toPosix(relative(root, absDir));
-	if (relDir.startsWith("..") || resolvePath(root, relDir) !== absDir) {
+	if (relDir === ".." || relDir.startsWith("../") || isAbsolute(relDir) || resolvePath(root, relDir) !== absDir) {
 		log.warn("listExplorerDirectory: path outside root", { relPath: requested });
 		return { root, relPath: requested, entries: [], error: "outside-root" };
 	}
@@ -81,7 +82,7 @@ async function listExplorerDirectory(params: {
 		return { root, relPath: relDir, entries: [], error: code === "ENOENT" || code === "ENOTDIR" ? "not-found" : "unreadable" };
 	}
 
-	const ignored = await ignoredChildren(root, relDir);
+	const ignored = params.insideIgnored ? null : await ignoredChildren(root, relDir);
 	const entries: ExplorerEntry[] = [];
 	await Promise.all(
 		names.filter((name) => !HIDDEN_NAMES.has(name)).map(async (name) => {
@@ -94,7 +95,7 @@ async function listExplorerDirectory(params: {
 					path,
 					relPath: relDir ? `${relDir}/${name}` : name,
 					kind: st.isDirectory() ? "directory" : "file",
-					ignored: ignored.has(name),
+					ignored: ignored ? ignored.has(name) : true,
 				});
 			} catch {
 				// Broken symlink or permission denied: nothing to show or open.
@@ -103,7 +104,6 @@ async function listExplorerDirectory(params: {
 	);
 	entries.sort(compareEntries);
 	const truncated = entries.length > EXPLORER_MAX_ENTRIES;
-	log.info("← listExplorerDirectory", { count: entries.length, truncated });
 	return { root, relPath: relDir, entries: truncated ? entries.slice(0, EXPLORER_MAX_ENTRIES) : entries, ...(truncated ? { truncated } : {}) };
 }
 
