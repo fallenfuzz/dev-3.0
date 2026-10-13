@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRateLimitsReport } from "../../../shared/rate-limits";
 import type { ClaudeSessionStats } from "../../../shared/session-stats";
 import { I18nProvider } from "../../i18n";
+import { setSensitiveProjectIds } from "../../sensitive-projects";
+import { setStreamerMode } from "../../streamer-mode";
 import SessionsScreen from "../SessionsScreen";
 import { NOW, session, warmFor } from "./session-test-fixtures";
 
@@ -48,6 +50,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	setStreamerMode(false);
+	setSensitiveProjectIds([]);
 });
 
 describe("SessionsScreen", () => {
@@ -106,5 +110,19 @@ describe("SessionsScreen", () => {
 		);
 		await act(async () => {});
 		expect(screen.getByText("No Claude task sessions in the last 6 hours.")).toBeTruthy();
+	});
+
+	it("masks a sensitive project's titles and name in streamer mode", async () => {
+		setStreamerMode(true);
+		setSensitiveProjectIds(["p2"]);
+		await renderScreen({ projectId: null, projectName: null });
+		const secret = screen.getByText("Delta");
+		expect(secret.className).toContain("streamer-private");
+		expect(secret.closest("button")?.getAttribute("title")).toBeNull();
+		const projectCell = screen.getByText("other");
+		expect(projectCell.className).toContain("streamer-private");
+		expect(projectCell.getAttribute("title")).toBeNull();
+		expect(screen.getByText("Alpha").className).not.toContain("streamer-private");
+		expect(screen.getAllByText("dev-3.0")[0].className).not.toContain("streamer-private");
 	});
 });

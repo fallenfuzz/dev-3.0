@@ -7,16 +7,22 @@ import {
 } from "../../shared/session-stats";
 import { useNow } from "../hooks/useNow";
 import { useT } from "../i18n";
+import { useProjectPrivacy } from "../sensitive-projects";
 import { CacheState, contextTone } from "./session-stats-ui";
 
 function AttentionRow({ session, now }: { session: ClaudeSessionStats; now: number }) {
 	const t = useT();
+	const privacy = useProjectPrivacy();
+	const locked = privacy.isLocked(session.projectId);
 	const reason = sessionAttention(session, now);
 	const percent = Math.round(session.contextPercent ?? 0);
 	return (
 		<li className="flex items-baseline gap-1.5 rounded-md px-2 py-1 bg-raised/65">
 			{session.taskSeq != null && <span className="shrink-0 tabular-nums text-fg-muted">#{session.taskSeq}</span>}
-			<span className="min-w-0 flex-1 truncate text-fg-2" title={session.taskTitle ?? undefined}>
+			<span
+				className={`min-w-0 flex-1 truncate text-fg-2 ${privacy.maskClass(session.projectId)}`}
+				title={locked ? undefined : (session.taskTitle ?? undefined)}
+			>
 				{session.taskTitle}
 			</span>
 			<span className="shrink-0 whitespace-nowrap tabular-nums">

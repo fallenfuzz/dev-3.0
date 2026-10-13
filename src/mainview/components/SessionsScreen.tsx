@@ -12,6 +12,7 @@ import { useAgentRateLimitsReport } from "../hooks/useAgentRateLimitsReport";
 import { useNarrowViewport } from "../hooks/useNarrowViewport";
 import { useNow } from "../hooks/useNow";
 import { useT, type TranslationKey } from "../i18n";
+import { useProjectPrivacy } from "../sensitive-projects";
 import { CAROUSEL_MAX_WIDTH } from "./MobileBoardCarousel";
 import { formatAge } from "./rate-limit-ui";
 import { CacheState, ContextBar, SessionDetails, contextTone } from "./session-stats-ui";
@@ -59,6 +60,7 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<{ key: SessionSortKey; dir: SortDirection }>({ key: "attention", dir: "asc" });
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+	const privacy = useProjectPrivacy();
 
 	const scoped = useMemo(
 		() => (report?.sessions ?? []).filter((s) => scope === ALL_PROJECTS || s.projectId === scope),
@@ -88,15 +90,19 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 	if (summary.warm > 0) summaryParts.push(t.plural("rateLimits.sessionsWarm", summary.warm));
 	if (summary.costUsd != null) summaryParts.push(formatCostUsd(summary.costUsd));
 
+	// A native tooltip is not blurred, so a masked cell carries none.
+	const unlessLocked = (s: ClaudeSessionStats, text: string | null) =>
+		privacy.isLocked(s.projectId) ? undefined : (text ?? undefined);
+
 	const taskLink = (s: ClaudeSessionStats) => (
 		<button
 			type="button"
 			onClick={() => s.projectId && onOpenTask(s.taskId, s.projectId)}
 			className="flex min-w-0 max-w-full items-baseline gap-1.5 text-left hover:text-accent-emphasis focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent rounded"
-			title={s.taskTitle ?? undefined}
+			title={unlessLocked(s, s.taskTitle)}
 		>
 			{s.taskSeq != null && <span className="shrink-0 tabular-nums text-fg-muted">#{s.taskSeq}</span>}
-			<span className="min-w-0 truncate text-fg">{s.taskTitle}</span>
+			<span className={`min-w-0 truncate text-fg ${privacy.maskClass(s.projectId)}`}>{s.taskTitle}</span>
 		</button>
 	);
 
@@ -205,7 +211,7 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 									{detailsToggle(s)}
 								</div>
 								<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-fg-3">
-									{showProject && s.projectName && <span>{s.projectName}</span>}
+									{showProject && s.projectName && <span className={privacy.maskClass(s.projectId)}>{s.projectName}</span>}
 									{contextCell(s)}
 									<CacheState session={s} now={now} />
 									{s.model && <span>{s.model}</span>}
@@ -255,7 +261,10 @@ export default function SessionsScreen({ projectId, projectName, onOpenTask }: S
 										<tr className="border-b border-edge/60 last:border-b-0 hover:bg-raised-hover">
 											<td className="max-w-[18rem] px-3 py-2">{taskLink(s)}</td>
 											{showProject && (
-												<td className="max-w-[9rem] truncate whitespace-nowrap px-3 py-2 text-fg-3" title={s.projectName ?? undefined}>
+												<td
+													className={`max-w-[9rem] truncate whitespace-nowrap px-3 py-2 text-fg-3 ${privacy.maskClass(s.projectId)}`}
+													title={unlessLocked(s, s.projectName)}
+												>
 													{s.projectName}
 												</td>
 											)}
