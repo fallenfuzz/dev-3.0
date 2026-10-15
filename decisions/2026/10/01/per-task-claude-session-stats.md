@@ -15,6 +15,7 @@ The account dumps (`rate-limits/claude.json`, `rate-limits/claude/<accountId>.js
 - **Full list.** The `sessions` route (`SessionsScreen`) is a sortable, searchable table with a project scope that lists every project with a session, whichever entry opened it. Rows open their task and expand to the remaining statusLine fields; a row with none has no toggle. Entry points: the strip's "All sessions" link and the `view-sessions` palette command.
 - **Streamer mode.** Task titles are not blurred as a class, since the board shows them. A sensitive project's titles and name take `maskClass` from `useProjectPrivacy()` in the strip and the screen, as `GoToPalette` does, and drop their native `title` tooltip, which a blur cannot reach. The scope picker labels such a project "Private project".
 - **No field picker.** The columns are fixed, and the rest is a per-row disclosure, so there is no setting.
+- **Per agent, per login.** `AgentSessionStats` carries a `source` (only `claude` today), so Codex gets its own parser instead of a second screen. The billing login comes from the dump envelope's `accountId` / `configDir`, not from the payload, and the screen names it and filters by it. Hence the name Agent sessions.
 
 ## Risks
 

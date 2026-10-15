@@ -1,10 +1,14 @@
 /**
- * Per-task Claude session stats - pure parsing shared by the CLI (`dev3 statusline`
+ * Per-task agent session stats - pure parsing shared by the CLI (`dev3 statusline`
  * writes the raw payload per task), the bun monitor (parses and attaches task
  * identity) and the renderer (the usage panel's attention strip and the Sessions screen).
+ * Claude is the only source today; the shape is per agent so Codex can join without a new screen.
  */
 
-export interface ClaudeSessionCacheStats {
+/** The agent harness a session belongs to. Each source brings its own parser. */
+export type SessionSource = "claude";
+
+export interface SessionCacheStats {
 	warm: boolean;
 	/** Cache TTL as reported by Claude Code, e.g. "5m" or "1h". */
 	ttl: string | null;
@@ -16,8 +20,13 @@ export interface ClaudeSessionCacheStats {
 	misses: number | null;
 }
 
-export interface ClaudeSessionStats {
+export interface AgentSessionStats {
+	source: SessionSource;
 	taskId: string;
+	/** The managed account the session bills; null with no `configDir` means the default login. */
+	accountId: string | null;
+	/** A project-pinned `CLAUDE_CONFIG_DIR` login, when the session runs under one. */
+	configDir: string | null;
 	/** Filled in by the bun monitor from the board; null when the task is unknown. */
 	taskTitle: string | null;
 	taskSeq: number | null;
@@ -41,7 +50,7 @@ export interface ClaudeSessionStats {
 	/** Fresh (uncached) input and output tokens of the last request. */
 	turnInputTokens: number | null;
 	turnOutputTokens: number | null;
-	cache: ClaudeSessionCacheStats | null;
+	cache: SessionCacheStats | null;
 	costUsd: number | null;
 	durationMs: number | null;
 	apiDurationMs: number | null;
@@ -72,7 +81,7 @@ function str(v: unknown): string | null {
 
 /** Parse a Claude Code statusLine payload into session stats. Null when it carries
  *  nothing session-shaped (no model and no context window). */
-export function parseClaudeSessionStats(payload: unknown, taskId: string, capturedAt: number): ClaudeSessionStats | null {
+export function parseClaudeSessionStats(payload: unknown, taskId: string, capturedAt: number): AgentSessionStats | null {
 	const root = asRecord(payload);
 	if (!root) return null;
 	const model = asRecord(root.model);
@@ -86,7 +95,10 @@ export function parseClaudeSessionStats(payload: unknown, taskId: string, captur
 	const expiresSec = num(pc?.expires_at);
 	const thinkingEnabled = asRecord(root.thinking)?.enabled;
 	return {
+		source: "claude",
 		taskId,
+		accountId: null,
+		configDir: null,
 		taskTitle: null,
 		taskSeq: null,
 		projectName: null,
@@ -121,7 +133,7 @@ export function parseClaudeSessionStats(payload: unknown, taskId: string, captur
 }
 
 /** A warm cache whose expiry has passed is cold, whatever the last refresh said. */
-export function isSessionCacheWarm(cache: ClaudeSessionCacheStats, nowMs: number): boolean {
+export function isSessionCacheWarm(cache: SessionCacheStats, nowMs: number): boolean {
 	return cache.warm && (cache.expiresAt == null || cache.expiresAt > nowMs);
 }
 
@@ -157,7 +169,7 @@ export type SessionAttentionReason = "cacheExpiring" | "context";
  * minutes from expiry", so expiry counts only while the task waits on the user -
  * a working agent refreshes its own cache.
  */
-export function sessionAttention(session: ClaudeSessionStats, nowMs: number): SessionAttentionReason | null {
+export function sessionAttention(session: AgentSessionStats, nowMs: number): SessionAttentionReason | null {
 	const cache = session.cache;
 	if (
 		session.awaitingUser &&
@@ -172,7 +184,7 @@ export function sessionAttention(session: ClaudeSessionStats, nowMs: number): Se
 }
 
 /** The attention strip: soonest cache expiry first, then fullest context, capped. */
-export function attentionSessions(sessions: readonly ClaudeSessionStats[], nowMs: number): ClaudeSessionStats[] {
+export function attentionSessions(sessions: readonly AgentSessionStats[], nowMs: number): AgentSessionStats[] {
 	const flagged = sessions.filter((s) => sessionAttention(s, nowMs) != null);
 	return sortSessions(flagged, "attention", "asc", nowMs).slice(0, MAX_ATTENTION_SESSIONS);
 }
@@ -184,7 +196,7 @@ export interface SessionsSummary {
 	costUsd: number | null;
 }
 
-export function summarizeSessions(sessions: readonly ClaudeSessionStats[], nowMs: number): SessionsSummary {
+export function summarizeSessions(sessions: readonly AgentSessionStats[], nowMs: number): SessionsSummary {
 	let warm = 0;
 	let costUsd: number | null = null;
 	for (const s of sessions) {
@@ -205,7 +217,7 @@ export function defaultSortDirection(key: SessionSortKey): SortDirection {
 
 /** Attention order as one number: expiring caches by expiry, then high context
  *  fullest first, then everything else. Epoch ms stays far below the offsets. */
-function attentionValue(session: ClaudeSessionStats, nowMs: number): number {
+function attentionValue(session: AgentSessionStats, nowMs: number): number {
 	const reason = sessionAttention(session, nowMs);
 	if (reason === "cacheExpiring") return session.cache!.expiresAt!;
 	if (reason === "context") return 1e14 - (session.contextPercent ?? 0);
@@ -213,7 +225,7 @@ function attentionValue(session: ClaudeSessionStats, nowMs: number): number {
 }
 
 /** Seconds until a warm cache expires; cold or unknown sorts last. */
-function cacheSortValue(session: ClaudeSessionStats, nowMs: number): number {
+function cacheSortValue(session: AgentSessionStats, nowMs: number): number {
 	const cache = session.cache;
 	if (!cache || !isSessionCacheWarm(cache, nowMs)) return Number.POSITIVE_INFINITY;
 	return cache.expiresAt ?? Number.MAX_SAFE_INTEGER;
@@ -221,12 +233,12 @@ function cacheSortValue(session: ClaudeSessionStats, nowMs: number): number {
 
 /** Sort a copy. Missing values sort last in either direction; ties fall back to newest first. */
 export function sortSessions(
-	sessions: readonly ClaudeSessionStats[],
+	sessions: readonly AgentSessionStats[],
 	key: SessionSortKey,
 	direction: SortDirection,
 	nowMs: number,
-): ClaudeSessionStats[] {
-	const value = (s: ClaudeSessionStats): string | number | null => {
+): AgentSessionStats[] {
+	const value = (s: AgentSessionStats): string | number | null => {
 		switch (key) {
 			case "attention":
 				return attentionValue(s, nowMs);

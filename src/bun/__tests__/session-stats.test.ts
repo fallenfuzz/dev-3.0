@@ -10,7 +10,7 @@ import {
 	sessionAttention,
 	sortSessions,
 	summarizeSessions,
-	type ClaudeSessionStats,
+	type AgentSessionStats,
 } from "../../shared/session-stats";
 
 const PAYLOAD = {
@@ -33,7 +33,10 @@ const PAYLOAD = {
 describe("parseClaudeSessionStats", () => {
 	it("extracts model, context, cache and cost from a statusLine payload", () => {
 		expect(parseClaudeSessionStats(PAYLOAD, "task-1", 1000)).toEqual({
+			source: "claude",
 			taskId: "task-1",
+			accountId: null,
+			configDir: null,
 			taskTitle: null,
 			taskSeq: null,
 			projectName: null,
@@ -84,7 +87,7 @@ describe("isSessionCacheWarm", () => {
 
 const NOW = 1_790_866_000_000;
 
-function stats(taskId: string, overrides: Partial<ClaudeSessionStats> = {}): ClaudeSessionStats {
+function stats(taskId: string, overrides: Partial<AgentSessionStats> = {}): AgentSessionStats {
 	return {
 		...parseClaudeSessionStats({ model: { display_name: "Opus" } }, taskId, NOW - 60_000)!,
 		taskTitle: taskId,

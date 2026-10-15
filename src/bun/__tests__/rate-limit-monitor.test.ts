@@ -200,6 +200,18 @@ describe("readClaudeSessionDumps", () => {
 	it("returns nothing when the directory does not exist", () => {
 		expect(readClaudeSessionDumps(join(tmp, "missing"))).toEqual([]);
 	});
+
+	it("takes the billing login from the dump envelope", () => {
+		const now = Date.now();
+		writeFileSync(join(tmp, "managed.json"), JSON.stringify({ capturedAt: now - 3_000, accountId: "acc-1", payload: payload(10) }));
+		writeFileSync(join(tmp, "pinned.json"), JSON.stringify({ capturedAt: now - 2_000, accountId: null, configDir: "/p/.claude", payload: payload(10) }));
+		writeFileSync(join(tmp, "default.json"), JSON.stringify({ capturedAt: now - 1_000, accountId: null, payload: payload(10) }));
+		expect(readClaudeSessionDumps(tmp, now).map((s) => [s.taskId, s.source, s.accountId, s.configDir])).toEqual([
+			["default", "claude", null, null],
+			["pinned", "claude", null, "/p/.claude"],
+			["managed", "claude", "acc-1", null],
+		]);
+	});
 });
 
 describe("attachTaskIdentity", () => {

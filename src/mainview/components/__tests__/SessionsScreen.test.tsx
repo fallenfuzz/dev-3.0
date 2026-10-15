@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRateLimitsReport } from "../../../shared/rate-limits";
-import type { ClaudeSessionStats } from "../../../shared/session-stats";
+import type { AgentSessionStats } from "../../../shared/session-stats";
 import { I18nProvider } from "../../i18n";
 import { setSensitiveProjectIds } from "../../sensitive-projects";
 import { setStreamerMode } from "../../streamer-mode";
@@ -10,14 +10,28 @@ import SessionsScreen from "../SessionsScreen";
 import { NOW, session, warmFor } from "./session-test-fixtures";
 
 vi.mock("../../rpc", () => ({
-	api: { request: { getAgentRateLimits: vi.fn() } },
+	api: {
+		request: {
+			getAgentRateLimits: vi.fn(),
+			listAgentAccounts: vi.fn(async () => ({
+				claude: {
+					accounts: [{ id: "acc-1", kind: "claude", label: "work@example.com", identity: null, auth: "oauth", api: null, createdAt: 0 }],
+					activeId: null,
+					systemConfigDir: "/home/me/.claude",
+					systemIdentity: { email: "me@example.com" },
+				},
+				codex: { accounts: [], activeId: null },
+			})),
+			listPinnedClaudeLogins: vi.fn(async () => []),
+		},
+	},
 }));
 vi.mock("../../hooks/useNarrowViewport", () => ({ useNarrowViewport: () => false }));
 
 import { api } from "../../rpc";
 const mockGet = api.request.getAgentRateLimits as unknown as ReturnType<typeof vi.fn>;
 
-const SESSIONS: ClaudeSessionStats[] = [
+const SESSIONS: AgentSessionStats[] = [
 	session("a", { taskTitle: "Alpha", taskSeq: 11, costUsd: 1.2, contextPercent: 30 }),
 	session("b", { taskTitle: "Beta", taskSeq: 22, costUsd: 4.5, contextPercent: 91 }),
 	session("c", { taskTitle: "Gamma", taskSeq: 33, costUsd: 0.3, awaitingUser: true, cache: warmFor(60_000) }),
@@ -71,10 +85,11 @@ describe("SessionsScreen", () => {
 		expect(screen.getByRole("columnheader", { name: /Cost/ }).getAttribute("aria-sort")).toBe("ascending");
 	});
 
-	it("lists every project, with a Project column, when opened outside one", async () => {
+	it("lists every project, naming each row's project under its title, when opened outside one", async () => {
 		await renderScreen({ projectId: null, projectName: null });
 		expect(titles()).toHaveLength(4);
-		expect(screen.getByRole("columnheader", { name: "Project" })).toBeTruthy();
+		const delta = screen.getByText("Delta").closest("tr")!;
+		expect(within(delta).getByText("other")).toBeTruthy();
 	});
 
 	it("searches by title and by #number", async () => {
@@ -109,7 +124,7 @@ describe("SessionsScreen", () => {
 			</I18nProvider>,
 		);
 		await act(async () => {});
-		expect(screen.getByText("No Claude task sessions in the last 6 hours.")).toBeTruthy();
+		expect(screen.getByText("No agent task sessions in the last 6 hours.")).toBeTruthy();
 	});
 
 	it("masks a sensitive project's titles and name in streamer mode", async () => {
@@ -148,7 +163,7 @@ describe("SessionsScreen", () => {
 	it("offers all projects when the scoped project has no sessions but others do", async () => {
 		await renderScreen({ projectId: "p3", projectName: "quiet" });
 		expect(screen.getByText("No sessions in this project in the last 6 hours.")).toBeTruthy();
-		expect(screen.queryByText("No Claude task sessions in the last 6 hours.")).toBeNull();
+		expect(screen.queryByText("No agent task sessions in the last 6 hours.")).toBeNull();
 		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 		await user.click(screen.getByRole("button", { name: "Show all projects" }));
 		expect(titles()).toHaveLength(4);
@@ -178,5 +193,63 @@ describe("SessionsScreen", () => {
 		await act(async () => {});
 		expect(screen.queryByRole("button", { name: "Details: Echo" })).toBeNull();
 		expect(screen.getByRole("button", { name: "Details: Alpha" })).toBeTruthy();
+	});
+	it("names the login each session bills and filters by it", async () => {
+		mockGet.mockResolvedValue({
+			snapshots: [],
+			sessions: [
+				session("a", { taskTitle: "Alpha", taskSeq: 11 }),
+				session("b", { taskTitle: "Beta", taskSeq: 22, accountId: "acc-1" }),
+				session("c", { taskTitle: "Gamma", taskSeq: 33, accountId: "gone" }),
+			],
+			generatedAt: NOW,
+		} satisfies AgentRateLimitsReport);
+		render(
+			<I18nProvider>
+				<SessionsScreen projectId={null} projectName={null} onOpenTask={() => {}} />
+			</I18nProvider>,
+		);
+		await act(async () => {});
+		const table = within(screen.getByRole("table"));
+		expect(table.getByText("me@example.com")).toBeTruthy();
+		expect(table.getByText("work@example.com")).toBeTruthy();
+		expect(table.getByText("Removed account")).toBeTruthy();
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Accounts" }));
+		await user.click(screen.getByRole("option", { name: "Claude · work@example.com" }));
+		expect(titles()).toEqual(["#22Beta"]);
+	});
+
+	it("blurs every login email in streamer mode, the account picker included", async () => {
+		setStreamerMode(true);
+		mockGet.mockResolvedValue({
+			snapshots: [],
+			sessions: [session("a", { taskTitle: "Alpha", taskSeq: 11 }), session("b", { taskTitle: "Beta", taskSeq: 22, accountId: "acc-1" })],
+			generatedAt: NOW,
+		} satisfies AgentRateLimitsReport);
+		render(
+			<I18nProvider>
+				<SessionsScreen projectId={null} projectName={null} onOpenTask={() => {}} />
+			</I18nProvider>,
+		);
+		await act(async () => {});
+		const cell = within(screen.getByRole("table")).getByText("work@example.com");
+		expect(cell.className).toContain("streamer-private");
+		expect(cell.getAttribute("title")).toBeNull();
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		await user.click(screen.getByRole("combobox", { name: "Accounts" }));
+		const option = within(screen.getByRole("option", { name: "Claude · work@example.com" })).getByText("work@example.com");
+		expect(option.className).toContain("streamer-private");
+	});
+
+	it("offers no account filter while every session bills the same login", async () => {
+		await renderScreen();
+		expect(screen.queryByRole("combobox", { name: "Accounts" })).toBeNull();
+	});
+
+	it("counts the sessions that need the user in a summary tile", async () => {
+		await renderScreen();
+		const tile = screen.getByText("Need you").parentElement!;
+		expect(within(tile).getByText("2")).toBeTruthy();
 	});
 });

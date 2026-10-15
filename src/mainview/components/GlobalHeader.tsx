@@ -52,6 +52,7 @@ import {
 	RemoteQRIcon,
 	AgentTrafficIcon,
 	StatsIcon,
+	SessionsIcon,
 	GitHubIcon,
 	ReportBugIcon,
 	ChangelogIcon,
@@ -741,6 +742,9 @@ function GlobalHeader({ route, projects, tasks, agents, navigate, goBack, goForw
 					label: t("header.remoteAccessLabel"),
 					run: () => { void openRemoteAccess(); },
 				},
+				// The strip inside the usage sheet links here too, but only once sessions exist;
+				// the screen is a destination, so the sheet carries a row for it like Changelog.
+				...(route.screen !== "sessions" ? [{ key: "sessions", label: t("sessions.title"), run: openSessions }] : []),
 				...(route.screen !== "changelog" ? [{ key: "changelog", label: t("header.changelogLabel"), run: () => navigate({ screen: "changelog" }) }] : []),
 				{ key: "website", label: t("header.githubLabel"), run: () => window.open("https://h0x91b.github.io/dev-3.0/", "_blank") },
 				{ key: "report", label: t("header.reportLabel"), run: () => window.open("https://github.com/h0x91b/dev-3.0/issues", "_blank") },
@@ -1213,6 +1217,19 @@ function GlobalHeader({ route, projects, tasks, agents, navigate, goBack, goForw
 									>
 										<StatsIcon className="w-[1.125rem] h-[1.125rem] flex-shrink-0" />
 										<span className="text-sm">{t("header.statsLabel")}</span>
+									</button>
+								)}
+								{route.screen !== "sessions" && (
+									<button
+										role="menuitem"
+										onClick={() => {
+											setShowOverflowMenu(false);
+											openSessions();
+										}}
+										className="header-anim w-full text-left px-3 py-2 flex items-center gap-2.5 text-fg-2 hover:bg-elevated hover:text-fg transition-colors"
+									>
+										<SessionsIcon className="w-[1.125rem] h-[1.125rem] flex-shrink-0" />
+										<span className="text-sm">{t("sessions.title")}</span>
 									</button>
 								)}
 								<button

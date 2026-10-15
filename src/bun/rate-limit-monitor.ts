@@ -28,7 +28,7 @@ import {
 	rateLimitActivityAt,
 	rateLimitLoginKey,
 } from "../shared/rate-limits";
-import type { ClaudeSessionStats } from "../shared/session-stats";
+import type { AgentSessionStats } from "../shared/session-stats";
 import { SESSION_STATS_RECENT_MS, parseClaudeSessionStats } from "../shared/session-stats";
 import { fetchCodexRateLimitSnapshot } from "./codex-rate-limits";
 import { loadProjects, loadTasks, loadVirtualProjects } from "./data";
@@ -147,23 +147,32 @@ export function readClaudeSnapshot(dumpPath: string = CLAUDE_RATE_LIMIT_DUMP_PAT
 }
 
 /** Parse every per-task session dump captured within SESSION_STATS_RECENT_MS, newest first. */
-export function readClaudeSessionDumps(dir: string = CLAUDE_SESSION_STATS_DIR, now: number = Date.now()): ClaudeSessionStats[] {
+export function readClaudeSessionDumps(dir: string = CLAUDE_SESSION_STATS_DIR, now: number = Date.now()): AgentSessionStats[] {
 	let files: string[];
 	try {
 		files = readdirSync(dir).filter((f) => f.endsWith(".json"));
 	} catch {
 		return [];
 	}
-	const sessions: ClaudeSessionStats[] = [];
+	const sessions: AgentSessionStats[] = [];
 	for (const file of files) {
 		const path = join(dir, file);
 		try {
 			if (statSync(path).mtimeMs < now - SESSION_STATS_RECENT_MS) continue;
-			const parsed = JSON.parse(readFileSync(path, "utf-8")) as { capturedAt?: unknown; payload?: unknown };
+			const parsed = JSON.parse(readFileSync(path, "utf-8")) as {
+				capturedAt?: unknown;
+				accountId?: unknown;
+				configDir?: unknown;
+				payload?: unknown;
+			};
 			const capturedAt = typeof parsed.capturedAt === "number" ? parsed.capturedAt : statSync(path).mtimeMs;
 			if (capturedAt < now - SESSION_STATS_RECENT_MS) continue;
 			const stats = parseClaudeSessionStats(parsed.payload, basename(file, ".json"), capturedAt);
-			if (stats) sessions.push(stats);
+			if (!stats) continue;
+			// The envelope, not the payload, names the login that wrote it (dumpPayload in statusline.ts).
+			if (typeof parsed.accountId === "string" && parsed.accountId) stats.accountId = parsed.accountId;
+			if (typeof parsed.configDir === "string" && parsed.configDir) stats.configDir = parsed.configDir;
+			sessions.push(stats);
 		} catch {
 			// torn write or corrupt dump - skip it this round
 		}
@@ -177,12 +186,12 @@ const AWAITING_USER_STATUSES: readonly TaskStatus[] = ["user-questions", "review
 /** Attach board identity and drop sessions whose task is gone or finished. No cap:
  *  the Sessions screen lists them all, and the panel's attention strip bounds itself. */
 export async function attachTaskIdentity(
-	sessions: ClaudeSessionStats[],
+	sessions: AgentSessionStats[],
 	load: { projects: () => Promise<Project[]>; tasks: (project: Project) => Promise<Task[]> } = {
 		projects: async () => [...(await loadProjects()), ...(await loadVirtualProjects())],
 		tasks: loadTasks,
 	},
-): Promise<ClaudeSessionStats[]> {
+): Promise<AgentSessionStats[]> {
 	if (sessions.length === 0) return [];
 	const wanted = new Set(sessions.map((s) => s.taskId));
 	const found = new Map<
@@ -214,7 +223,7 @@ export async function attachTaskIdentity(
 			log.warn("Session stats task lookup failed", { projectId: project.id, error: String(err) });
 		}
 	}
-	const out: ClaudeSessionStats[] = [];
+	const out: AgentSessionStats[] = [];
 	for (const s of sessions) {
 		const task = found.get(s.taskId);
 		if (!task) continue;

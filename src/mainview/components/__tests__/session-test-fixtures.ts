@@ -1,10 +1,13 @@
-import type { ClaudeSessionStats } from "../../../shared/session-stats";
+import type { AgentSessionStats } from "../../../shared/session-stats";
 
 export const NOW = 1_790_866_000_000;
 
-export function session(taskId: string, overrides: Partial<ClaudeSessionStats> = {}): ClaudeSessionStats {
+export function session(taskId: string, overrides: Partial<AgentSessionStats> = {}): AgentSessionStats {
 	return {
+		source: "claude",
 		taskId,
+		accountId: null,
+		configDir: null,
 		taskTitle: `Task ${taskId}`,
 		taskSeq: 1,
 		projectName: "dev-3.0",
