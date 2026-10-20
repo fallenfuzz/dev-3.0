@@ -16,11 +16,11 @@ Three teardown steps act on the task's folder by path and would have damaged a s
 
 ## Decision
 
-- `Project.gitWorkflow?: boolean` in `projects.json`, absent means on. `hasGitWorkflow(project)` in `src/shared/types.ts` is false for virtual boards and for `gitWorkflow: false`; every git-domain check uses it, identity checks keep `kind`.
+- `Project.gitWorkflow?: boolean` in `projects.json`, absent means on. `hasGitWorkflow(project)` in `src/shared/types/project.ts` is false for virtual boards and for `gitWorkflow: false`; every git-domain check uses it, identity checks keep `kind`.
 - A gitless task runs in `project.path` (`folderWorkDir` in `src/bun/task-folder.ts`), resolves the folder's `.dev3/` config, and skips setup and cleanup scripts. Completion clears `worktreePath` like a git task.
 - The lifecycle fact `projectKind` became `usesWorktrees: boolean`.
 - Teardown only reaps processes in a folder the task owns (`taskOwnedFolder` in `src/bun/lifecycle/executor.ts`), `git.removeWorktree` refuses the project folder itself, and MCP pre-approval skips the project folder (`src/bun/agents.ts`).
-- The switch is refused while any task holds a folder or is preparing or tearing down (`gitWorkflowSwitchBlocker`), and switching on needs a git repository. `addProject` with `gitWorkflow: false` adds any folder, git repository or not, with the flag off; the Add Project dialog sets it from a Git workflow switch in its folder pane.
+- The switch is refused while any task holds a folder or is preparing or tearing down (`gitWorkflowSwitchBlocker`), and switching on needs a git repository. `addProject` with `gitWorkflow: false` adds any folder, git repository or not, with the flag off; the Add Project dialog sets it from a Git workflow switch in its folder pane. It skips the git-init and first-commit offers, since a gitless folder needs neither. With git on, a plain folder still gets the git-init offer first. If the user declines it, the folder falls through to the Add with Git workflow off offer, so declining never ends in a dead-end error.
 - `dev3 current` prints `Git workflow: off` and `Folder:` so the agent does not plan branch or PR steps.
 - Claude hooks written outside a dev3-owned folder (`isDev3OwnedFolder` in `src/shared/agent-hooks.ts`: anything not under `worktrees/` or `ops/` in the dev3 home) are prefixed with `[ -z "$DEV3_TASK_ID" ] ||`. They stay in the folder after the task ends, and a `claude` session the user starts there would otherwise run `dev3 task move` with no task to resolve and show a usage error on every event. Worktree hooks keep the bare command, so a session started outside dev3 in a worktree still moves its task.
 
