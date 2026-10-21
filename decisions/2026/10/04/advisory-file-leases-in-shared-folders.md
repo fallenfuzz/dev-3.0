@@ -14,7 +14,7 @@ In a folder dev3 does not own, Claude's hooks gain a `PreToolUse` entry on `Edit
 
 ## Risks
 
-- Advisory only: Bash writes (`sed`, generators, `cat >`) are not claimed. The New Task warning stays as the backstop.
+- Advisory only: Bash writes (`sed`, generators, `cat >`) and whole-tree git commands (`git stash`, `git add -A`) are not claimed. The New Task warning and the `Shared folder:` rule in `dev3 current` are the backstop; nothing enforces the rule.
 - Claude only. Codex has `PreToolUse` on `apply_patch`, but its deny contract was not verified here; Copilot and omp are follow-ups.
 - Leases live in memory, so an app restart frees every file. That fails open, which is the intent.
 - Two agents each holding a file the other wants wait at most the TTL.
