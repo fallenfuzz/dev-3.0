@@ -201,8 +201,8 @@ function isGitlessProject(project: ProjectDirect | null): boolean {
 
 /**
  * Where the task works. A gitless task runs in the user's own project folder, so
- * its agent is told there is no branch to rename, no PR to open and no worktree
- * that completion would destroy.
+ * its agent is told there is no branch to rename, no PR to open, no worktree that
+ * completion would destroy, and that other tasks' uncommitted edits share the tree.
  */
 function workspaceFields(
 	project: ProjectDirect | null,
@@ -212,6 +212,7 @@ function workspaceFields(
 	if (isGitlessProject(project)) {
 		const fields: Array<[string, string]> = [["Git workflow:", "off - no worktree, branch or PR; completion keeps every file"]];
 		if (worktreePath) fields.push(["Folder:", worktreePath]);
+		fields.push(["Shared folder:", "other tasks edit here too - stage by explicit path; never git stash, git add -A, git checkout --, git reset or git clean"]);
 		return fields;
 	}
 	const fields: Array<[string, string]> = [];
