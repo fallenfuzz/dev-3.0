@@ -125,6 +125,12 @@ export const DEV3_REPO_CONFIG_KEYS: (keyof Dev3RepoConfig)[] = [
 	"env",
 ];
 
+/** What Add Project's auto-configure did: the keys it wrote, or that a `.dev3` config was already there. */
+export interface AutoConfigureResult {
+	written: string[];
+	existingConfig?: true;
+}
+
 export type ConfigSource = "repo" | "local";
 
 export interface ConfigSourceEntry {
