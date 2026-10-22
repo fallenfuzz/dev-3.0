@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CliResponse, Task, TaskStatus, TaskType, TaskHistoryEntry, TaskNote } from "../../shared/types";
-import { STATUS_LABELS, ACTIVE_STATUSES, ALL_STATUSES, DEFAULT_PRIORITY, DRAFT_TASK_ACTIVATION_ERROR, TASK_REF_UNRESOLVED_PREFIX, TASK_TYPES, getTaskTitle, getTaskOverview, hasGitWorkflow, normalizePriority, normalizeTaskType, taskAgentSessionLooksLive, taskCompletesManually } from "../../shared/types";
+import { STATUS_LABELS, ACTIVE_STATUSES, ALL_STATUSES, DEFAULT_PRIORITY, DRAFT_TASK_ACTIVATION_ERROR, TASK_REF_UNRESOLVED_PREFIX, TASK_TYPES, getTaskTitle, getTaskOverview, normalizePriority, normalizeTaskType, taskAgentSessionLooksLive, taskCompletesManually, taskUsesWorktree } from "../../shared/types";
 import { CLI_EXIT_CODE_APPROVAL_OUTCOME_UNKNOWN, CLI_EXIT_CODE_APPROVAL_STILL_PENDING, CLI_EXIT_CODE_CANCELLATION_DECLINED, CLI_EXIT_CODE_COMPLETION_DECLINED, CLI_EXIT_CODE_HIBERNATE_DECLINED, CLI_EXIT_CODE_HIBERNATE_NOTHING_TO_FREE, CLI_EXIT_CODE_LAUNCH_DECLINED, CLI_EXIT_CODE_RESET_DECLINED, CLI_EXIT_CODE_TASK_IS_DRAFT, CLI_EXIT_CODE_TASK_NOT_HIBERNATED, CLI_EXIT_CODE_TASK_REF_UNRESOLVED } from "../../shared/cli-exit-codes";
 import { CODEX_STOP_HOOK_FLAG, CODEX_STOP_HOOK_SUCCESS_JSON, TOLERATE_APP_OFFLINE_FLAG } from "../../shared/agent-hooks";
 import { allPullRequests } from "../../shared/task-pull-requests";
@@ -10,7 +10,7 @@ import { senderAgentParams } from "../sender-agent";
 import { DESTRUCTIVE_APPROVAL_TARGET, isAgentApprovalNotAttached, type AgentApprovalStatus, type DestructiveApprovalKind } from "../../shared/agent-approval";
 import { printDetail, exitError, exitUsage } from "../output";
 import type { ParsedArgs } from "../args";
-import { expandShortId, readProjectDirect, resolveProjectId, type CliContext } from "../context";
+import { expandShortId, readProjectDirect, readTaskDirect, resolveProjectId, type CliContext } from "../context";
 import { rejectUnknownFlags } from "../flag-validation";
 import { exitOnSenderError, readSenderFlag } from "./sender";
 import { readStdin } from "../stdin";
@@ -238,7 +238,7 @@ async function showTask(args: ParsedArgs, socketPath: string, context: CliContex
 }
 
 async function createTask(args: ParsedArgs, socketPath: string, context: CliContext | null): Promise<void> {
-	rejectUnknownFlags(args, ["project", "title", "description", "type", "scratch", "run", "pr", "branch", "handoff-file", "agent", "config"]);
+	rejectUnknownFlags(args, ["project", "title", "description", "type", "scratch", "run", "pr", "branch", "worktree", "handoff-file", "agent", "config"]);
 	const projectId = resolveProjectId(args.flags.project, context);
 	if (!projectId) {
 		exitUsage("--project <id> is required (or run from the project's worktree or checkout)");
@@ -253,7 +253,7 @@ async function createTask(args: ParsedArgs, socketPath: string, context: CliCont
 		);
 	}
 	if (scratch) {
-		if (args.positional[0] || args.flags.title || args.flags.description || args.flags.type || args.flags.pr || args.flags.branch) {
+		if (args.positional[0] || args.flags.title || args.flags.description || args.flags.type || args.flags.pr || args.flags.branch || args.flags.worktree) {
 			exitUsage(
 				"A scratch task takes no title, description or type — it has no prompt by design.\n" +
 				"Create a normal task instead, or send instructions with `dev3 message --task seq:<N>` after it starts.",
@@ -273,6 +273,10 @@ async function createTask(args: ParsedArgs, socketPath: string, context: CliCont
 	if (prFlag && branchFlag) {
 		exitUsage("--pr and --branch name the same thing two ways — pass one of them.");
 	}
+	if (args.flags.worktree !== undefined && args.flags.worktree !== "true") {
+		exitUsage("--worktree takes no value. Put the title in --title or after the other flags.");
+	}
+	const ownWorktree = args.flags.worktree === "true";
 
 	// Read before the title check so a bad --type fails on its own message.
 	// `--pr` means the task is about someone's pull request, which is what
@@ -305,6 +309,7 @@ async function createTask(args: ParsedArgs, socketPath: string, context: CliCont
 	if (taskType) params.taskType = taskType;
 	if (prFlag) params.pr = prFlag;
 	if (branchFlag) params.branch = branchFlag;
+	if (ownWorktree) params.ownWorktree = true;
 
 	const resp = await sendRequest(socketPath, "task.create", params);
 	if (!resp.ok) {
@@ -334,6 +339,11 @@ async function createTask(args: ParsedArgs, socketPath: string, context: CliCont
 		process.stderr.write(
 			`Starts on: ${task.existingBranch}${task.foreignCode ? " (someone else's code — the branch's own scripts and MCP config are ignored)" : ""}\n`,
 		);
+	}
+	if (task.ownWorktree) {
+		process.stderr.write("Runs in its own worktree, not the shared project folder.\n");
+	} else if (ownWorktree) {
+		process.stderr.write("--worktree ignored: this project's tasks already get their own worktree.\n");
 	}
 }
 
@@ -555,10 +565,11 @@ const FOLDER_APPROVAL_TEXT: Record<DestructiveApprovalKind, Partial<DestructiveA
 	},
 };
 
-/** The approval wording for this task's project: worktree or kept folder. */
-function approvalSpecFor(spec: DestructiveApprovalSpec, projectId: string | undefined): DestructiveApprovalSpec {
+/** The approval wording for this task: worktree or kept folder. */
+function approvalSpecFor(spec: DestructiveApprovalSpec, projectId: string | undefined, taskId: string): DestructiveApprovalSpec {
 	const project = projectId ? readProjectDirect(projectId) : null;
-	const keepsFolder = !!project && project.kind !== "virtual" && !hasGitWorkflow(project);
+	const task = projectId ? readTaskDirect(projectId, taskId) as Pick<Task, "ownWorktree"> | null : null;
+	const keepsFolder = !!project && project.kind !== "virtual" && !taskUsesWorktree(project, task ?? {});
 	return keepsFolder ? { ...spec, ...FOLDER_APPROVAL_TEXT[spec.kind], keepsFolder } : spec;
 }
 
@@ -756,7 +767,7 @@ async function requestDestructiveApproval(
 	const params: Record<string, unknown> = { taskId };
 	const projectId = resolveProjectId(args.flags.project, context);
 	if (projectId) params.projectId = projectId;
-	const spec = approvalSpecFor(baseSpec, projectId);
+	const spec = approvalSpecFor(baseSpec, projectId, taskId);
 	const ownSession = targetsOwnSession(taskId, args, context);
 
 	process.stderr.write(`${spec.intro}\nWaiting for the user to respond in the dev-3.0 app (up to 10 minutes)...\n`);

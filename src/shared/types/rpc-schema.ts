@@ -547,7 +547,7 @@ export type AppRPCSchema = {
 				 * `renameTask`'s customTitle: this does NOT mark the title user-edited,
 				 * so an agent may still rename it.
 				 */
-				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType };
+				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType; ownWorktree?: boolean };
 				response: Task;
 			};
 			/** Stored PR a review task reviews; looks it up once for tasks created before it was stored. */
@@ -666,6 +666,7 @@ export type AppRPCSchema = {
 					existingBranch?: string | null;
 					draft?: boolean;
 					taskType?: TaskType | null;
+					ownWorktree?: boolean;
 				};
 				response: Task;
 			};
