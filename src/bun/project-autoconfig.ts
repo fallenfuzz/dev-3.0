@@ -5,6 +5,7 @@ import * as git from "./git";
 import { parsePackageScripts, resolveRunnerCommand } from "./package-scripts";
 import * as repoConfig from "./repo-config";
 import { createLogger } from "./logger";
+import { whichSync } from "./which";
 
 const log = createLogger("project-autoconfig");
 
@@ -28,8 +29,8 @@ const AUTO_CONFIGURE_KEYS: AutoConfigureKey[] = ["setupScript", "devScript"];
 
 /**
  * Read what a project folder already says about itself: the install command its
- * lockfiles imply, and the dev server its package.json declares. Pure file reads,
- * nothing is run.
+ * lockfiles imply, and the dev server its package.json declares. File reads and
+ * PATH lookups only, nothing is run.
  */
 export function detectProjectConfig(projectPath: string): Pick<Dev3RepoConfig, AutoConfigureKey> {
 	const config: Pick<Dev3RepoConfig, AutoConfigureKey> = {};
@@ -38,7 +39,10 @@ export function detectProjectConfig(projectPath: string): Pick<Dev3RepoConfig, A
 	const installs: string[] = [];
 	if (pkg.exists) installs.push(`${pkg.runner} install`);
 	for (const rule of INSTALL_RULES) {
-		if (existsSync(join(projectPath, rule.file))) installs.push(rule.command);
+		if (!existsSync(join(projectPath, rule.file))) continue;
+		// The installs are chained with &&, so one missing toolchain would fail setup for every task.
+		if (whichSync(rule.command.split(" ")[0])) installs.push(rule.command);
+		else log.info("Skipping install, toolchain not on PATH", { file: rule.file, command: rule.command });
 	}
 	if (installs.length > 0) config.setupScript = installs.join(" && ");
 

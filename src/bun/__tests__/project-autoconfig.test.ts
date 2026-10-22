@@ -9,6 +9,11 @@ vi.mock("../logger", () => ({
 
 vi.mock("../paths", () => ({ DEV3_HOME: "/tmp/dev3-test" }));
 
+const onPath = new Set(["uv", "cargo"]);
+vi.mock("../which", () => ({
+	whichSync: (command: string) => (onPath.has(command) ? `/usr/bin/${command}` : null),
+}));
+
 vi.mock("../spawn", async () => {
 	const { createSpawnMock } = await import("./git-test-helpers");
 	return createSpawnMock();
@@ -61,6 +66,16 @@ describe("project-autoconfig", () => {
 			write("Cargo.lock");
 			expect(detectProjectConfig(tmp)).toEqual({
 				setupScript: "bun install && uv sync && cargo fetch",
+			});
+		});
+
+		it("leaves out an ecosystem whose toolchain is not on PATH", () => {
+			write("package.json", JSON.stringify({}));
+			write("bun.lock");
+			write("uv.lock");
+			write("Gemfile.lock");
+			expect(detectProjectConfig(tmp)).toEqual({
+				setupScript: "bun install && uv sync",
 			});
 		});
 

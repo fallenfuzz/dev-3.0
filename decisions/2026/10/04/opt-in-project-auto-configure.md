@@ -10,11 +10,12 @@ Adding a project never wrote a `.dev3/` config. Its settings lived in `projects.
 - On, `addProject`, `cloneAndAddProject` and the Local pane's git-init path (`initAndAddProject`) call `autoConfigureProject` (`src/bun/project-autoconfig.ts`). It reads lockfiles and `package.json`, writes `setupScript` and `devScript` to `.dev3/config.local.json`, and returns the keys written. The dialog names them in a toast.
 - It writes the local file, not `.dev3/config.json`, and ignores it through the clone's `info/exclude` (`git rev-parse --git-path info/exclude`), not the tracked `.gitignore`. `git status` stays clean, so nothing can slip into the user's next commit. The user can promote the values in Project Settings.
 - It skips a project that is already configured: either `.dev3` file exists, or `data.addProject` returned an existing record that has a setup or dev script or has repo config switched off (`useRepoConfig: false` promises no repo file). The New tab has no switch: a fresh repository has nothing to detect.
-- Detection is file reads only, with no agent and no command run. `clonePaths` keeps its existing always-on detection in `data.addProject`.
+- Detection is file reads and PATH lookups only, with no agent and no command run. An install for a non-JS ecosystem is kept only when its binary (`uv`, `cargo`, ...) resolves on PATH, because the installs are chained with `&&` and one missing toolchain would fail setup for every task. `clonePaths` keeps its existing always-on detection in `data.addProject`.
 
 ## Risks
 
 - A wrong guess, such as `npm install` for a repo that uses a different installer, runs on the first task. The toast and the local file make it visible and easy to edit.
+- A toolchain installed after the project was added is not picked up; the user adds its install in Project Settings.
 - Detection covers only the root folder. A monorepo with installs in subfolders gets the root command only.
 
 ## Alternatives considered
