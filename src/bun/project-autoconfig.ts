@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import type { AutoConfigureResult, Dev3RepoConfig } from "../shared/types";
+import { repoConfigEnabled, type AutoConfigureResult, type Dev3RepoConfig, type Project } from "../shared/types";
 import * as git from "./git";
 import { parsePackageScripts, resolveRunnerCommand } from "./package-scripts";
 import * as repoConfig from "./repo-config";
@@ -63,12 +63,14 @@ async function excludeLocally(projectPath: string, entry: string): Promise<void>
 
 /**
  * Write the detected settings into `.dev3/config.local.json` of a freshly added
- * project. Never touches a project that already has a `.dev3` config - that one
- * was written by a person, and says so in the result.
+ * project. Never touches a project that is already configured - a `.dev3` file,
+ * scripts on a re-added record, or repo config switched off - and says so in the result.
  */
-export async function autoConfigureProject(projectPath: string): Promise<AutoConfigureResult> {
-	if (repoConfig.hasRepoConfig(projectPath) || repoConfig.hasLocalConfig(projectPath)) {
-		log.info("Skipping auto-configure, .dev3 config already exists", { path: projectPath });
+export async function autoConfigureProject(project: Project): Promise<AutoConfigureResult> {
+	const projectPath = project.path;
+	if (!repoConfigEnabled(project) || project.setupScript || project.devScript
+		|| repoConfig.hasRepoConfig(projectPath) || repoConfig.hasLocalConfig(projectPath)) {
+		log.info("Skipping auto-configure, project is already configured", { path: projectPath });
 		return { written: [], existingConfig: true };
 	}
 	const config = detectProjectConfig(projectPath);

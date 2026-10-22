@@ -645,7 +645,7 @@ describe("AddProjectModal", () => {
 			);
 		});
 
-		it("says so when the project already had a .dev3 config", async () => {
+		it("says so when the project was already configured", async () => {
 			const user = userEvent.setup();
 			const { toast } = await import("../../toast");
 			const info = vi.spyOn(toast, "info");
@@ -660,7 +660,7 @@ describe("AddProjectModal", () => {
 			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
 			await user.click(screen.getByText("Browse..."));
 
-			expect(info).toHaveBeenCalledWith("my-repo already has a .dev3 config, so it was left as is.", expect.anything());
+			expect(info).toHaveBeenCalledWith("my-repo is already configured, so auto-configure left it as is.", expect.anything());
 		});
 
 		it("starts on when the user left it on last time", async () => {

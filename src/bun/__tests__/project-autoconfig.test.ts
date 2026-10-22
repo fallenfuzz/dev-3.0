@@ -14,6 +14,7 @@ vi.mock("../spawn", async () => {
 	return createSpawnMock();
 });
 
+import type { Project } from "../../shared/types";
 import { autoConfigureProject, detectProjectConfig } from "../project-autoconfig";
 import { g } from "./git-test-helpers";
 
@@ -29,6 +30,7 @@ describe("project-autoconfig", () => {
 	});
 
 	const write = (name: string, content = "") => writeFileSync(join(tmp, name), content);
+	const project = (overrides: Partial<Project> = {}) => ({ id: "p1", name: "p", path: tmp, ...overrides }) as Project;
 	const gitInit = () => g("git init -q", tmp);
 	const gitCommitAll = () => g("git add -A && git commit -qm init", tmp);
 	const gitStatus = () => g("git status --porcelain", tmp).trim();
@@ -74,7 +76,7 @@ describe("project-autoconfig", () => {
 			write("bun.lock");
 			gitCommitAll();
 
-			const result = await autoConfigureProject(tmp);
+			const result = await autoConfigureProject(project());
 
 			expect(result).toEqual({ written: ["setupScript", "devScript"] });
 			expect(localConfig()).toEqual({ setupScript: "bun install", devScript: "bun run dev" });
@@ -87,10 +89,10 @@ describe("project-autoconfig", () => {
 		it("adds the exclude entry only once", async () => {
 			gitInit();
 			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
-			await autoConfigureProject(tmp);
+			await autoConfigureProject(project());
 			rmSync(join(tmp, ".dev3"), { recursive: true });
 
-			await autoConfigureProject(tmp);
+			await autoConfigureProject(project());
 
 			const exclude = readFileSync(join(tmp, ".git/info/exclude"), "utf-8");
 			expect(exclude.split("\n").filter((line) => line === ".dev3/config.local.json")).toHaveLength(1);
@@ -101,14 +103,28 @@ describe("project-autoconfig", () => {
 			mkdirSync(join(tmp, ".dev3"));
 			write(".dev3/config.json", JSON.stringify({ devScript: "make dev" }));
 
-			const result = await autoConfigureProject(tmp);
+			const result = await autoConfigureProject(project());
 
 			expect(result).toEqual({ written: [], existingConfig: true });
 			expect(existsSync(join(tmp, ".dev3/config.local.json"))).toBe(false);
 		});
 
+		it.each([
+			["repo config is off", { useRepoConfig: false }],
+			["the record already has a setup script", { setupScript: "make setup" }],
+			["the record already has a dev script", { devScript: "make dev" }],
+		] as const)("leaves a re-added project alone when %s", async (_label, overrides) => {
+			gitInit();
+			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
+
+			const result = await autoConfigureProject(project(overrides));
+
+			expect(result).toEqual({ written: [], existingConfig: true });
+			expect(existsSync(join(tmp, ".dev3"))).toBe(false);
+		});
+
 		it("creates no .dev3 folder when nothing is detected", async () => {
-			const result = await autoConfigureProject(tmp);
+			const result = await autoConfigureProject(project());
 
 			expect(result).toEqual({ written: [] });
 			expect(existsSync(join(tmp, ".dev3"))).toBe(false);
