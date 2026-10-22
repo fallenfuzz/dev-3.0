@@ -1,8 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+vi.mock("../logger", () => ({
+	createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
+
+vi.mock("../paths", () => ({ DEV3_HOME: "/tmp/dev3-test" }));
+
+vi.mock("../spawn", async () => {
+	const { createSpawnMock } = await import("./git-test-helpers");
+	return createSpawnMock();
+});
+
 import { autoConfigureProject, detectProjectConfig } from "../project-autoconfig";
+import { g } from "./git-test-helpers";
 
 describe("project-autoconfig", () => {
 	let tmp: string;
@@ -16,6 +29,9 @@ describe("project-autoconfig", () => {
 	});
 
 	const write = (name: string, content = "") => writeFileSync(join(tmp, name), content);
+	const gitInit = () => g("git init -q", tmp);
+	const gitCommitAll = () => g("git add -A && git commit -qm init", tmp);
+	const gitStatus = () => g("git status --porcelain", tmp).trim();
 	const localConfig = () => JSON.parse(readFileSync(join(tmp, ".dev3/config.local.json"), "utf-8"));
 
 	describe("detectProjectConfig", () => {
@@ -52,16 +68,32 @@ describe("project-autoconfig", () => {
 	});
 
 	describe("autoConfigureProject", () => {
-		it("writes config.local.json and gitignores it", async () => {
+		it("writes config.local.json and ignores it without touching git status", async () => {
+			gitInit();
 			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
 			write("bun.lock");
+			gitCommitAll();
 
 			const result = await autoConfigureProject(tmp);
 
 			expect(result).toEqual({ written: ["setupScript", "devScript"] });
 			expect(localConfig()).toEqual({ setupScript: "bun install", devScript: "bun run dev" });
-			expect(readFileSync(join(tmp, ".gitignore"), "utf-8")).toContain(".dev3/config.local.json");
+			expect(existsSync(join(tmp, ".gitignore"))).toBe(false);
+			expect(readFileSync(join(tmp, ".git/info/exclude"), "utf-8")).toContain(".dev3/config.local.json");
 			expect(existsSync(join(tmp, ".dev3/config.json"))).toBe(false);
+			expect(gitStatus()).toBe("");
+		});
+
+		it("adds the exclude entry only once", async () => {
+			gitInit();
+			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
+			await autoConfigureProject(tmp);
+			rmSync(join(tmp, ".dev3"), { recursive: true });
+
+			await autoConfigureProject(tmp);
+
+			const exclude = readFileSync(join(tmp, ".git/info/exclude"), "utf-8");
+			expect(exclude.split("\n").filter((line) => line === ".dev3/config.local.json")).toHaveLength(1);
 		});
 
 		it("never touches a project that already has a .dev3 config", async () => {

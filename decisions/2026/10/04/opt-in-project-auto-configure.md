@@ -8,7 +8,7 @@ Adding a project never wrote a `.dev3/` config. Its settings lived in `projects.
 
 - The Add Project dialog has an `Auto-configure` switch on its Local and Clone panes. It is off by default, and its last position is kept in `GlobalSettings.autoConfigureNewProjects`.
 - On, `addProject`, `cloneAndAddProject` and the Local pane's git-init path (`initAndAddProject`) call `autoConfigureProject` (`src/bun/project-autoconfig.ts`). It reads lockfiles and `package.json`, writes `setupScript` and `devScript` to `.dev3/config.local.json`, and returns the keys written. The dialog names them in a toast.
-- It writes the local file, not `.dev3/config.json`, so nothing new shows up in the team's git status. The user can promote the values in Project Settings.
+- It writes the local file, not `.dev3/config.json`, and ignores it through the clone's `info/exclude` (`git rev-parse --git-path info/exclude`), not the tracked `.gitignore`. `git status` stays clean, so nothing can slip into the user's next commit. The user can promote the values in Project Settings.
 - It skips a project that already has either `.dev3` file. The New tab has no switch: a fresh repository has nothing to detect.
 - Detection is file reads only, with no agent and no command run. `clonePaths` keeps its existing always-on detection in `data.addProject`.
 

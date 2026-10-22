@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import type { AutoConfigureResult, Dev3RepoConfig } from "../shared/types";
+import * as git from "./git";
 import { parsePackageScripts, resolveRunnerCommand } from "./package-scripts";
 import * as repoConfig from "./repo-config";
 import { createLogger } from "./logger";
@@ -20,6 +21,8 @@ const INSTALL_RULES: { file: string; command: string }[] = [
 
 /** Dev-server script names, most specific first. */
 const DEV_SCRIPT_NAMES = ["dev", "start", "serve"];
+
+const LOCAL_CONFIG_PATH = ".dev3/config.local.json";
 
 /**
  * Read what a project folder already says about itself: the install command its
@@ -44,6 +47,21 @@ export function detectProjectConfig(projectPath: string): Dev3RepoConfig {
 }
 
 /**
+ * Ignore `entry` through the clone's own `info/exclude`, which is never committed,
+ * so auto-configure leaves the tracked `.gitignore` and `git status` untouched.
+ */
+async function excludeLocally(projectPath: string, entry: string): Promise<void> {
+	const res = await git.run(["git", "rev-parse", "--git-path", "info/exclude"], projectPath);
+	if (!res.ok) throw new Error(`git rev-parse failed: ${res.stderr || "unknown error"}`);
+	const excludePath = isAbsolute(res.stdout) ? res.stdout : join(projectPath, res.stdout);
+	const content = existsSync(excludePath) ? readFileSync(excludePath, "utf-8") : "";
+	if (content.split("\n").some((line) => line.trim() === entry)) return;
+	mkdirSync(dirname(excludePath), { recursive: true });
+	const separator = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+	writeFileSync(excludePath, `${content}${separator}${entry}\n`);
+}
+
+/**
  * Write the detected settings into `.dev3/config.local.json` of a freshly added
  * project. Never touches a project that already has a `.dev3` config - that one
  * was written by a person, and says so in the result.
@@ -56,7 +74,10 @@ export async function autoConfigureProject(projectPath: string): Promise<AutoCon
 	const config = detectProjectConfig(projectPath);
 	const keys = Object.keys(config);
 	if (keys.length === 0) return { written: [] };
-	await repoConfig.saveRepoLocalConfig(projectPath, config);
+	// Excluded first, so a failed exclude never leaves an unignored file behind.
+	await excludeLocally(projectPath, LOCAL_CONFIG_PATH);
+	mkdirSync(join(projectPath, ".dev3"), { recursive: true });
+	writeFileSync(join(projectPath, LOCAL_CONFIG_PATH), JSON.stringify(config, null, 2) + "\n");
 	log.info("Auto-configured project", { path: projectPath, fields: keys });
 	return { written: keys };
 }
