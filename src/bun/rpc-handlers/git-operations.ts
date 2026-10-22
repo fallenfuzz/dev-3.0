@@ -10,6 +10,8 @@ import {
 	type UnsavedWork,
 	getTaskTitle,
 	hasGitWorkflow,
+	LOCAL_MERGE_SHARED_FOLDER_ERROR,
+	taskUsesWorktree,
 	resolveTaskCompareBaseBranch,
 } from "../../shared/types";
 import * as data from "../data";
@@ -60,7 +62,7 @@ function assertGitTask(project: Project, task: Task): asserts task is Task & { w
 	if (project.kind === "virtual") {
 		throw new Error("Git operations are not available for Operations tasks");
 	}
-	if (!hasGitWorkflow(project)) {
+	if (!taskUsesWorktree(project, task)) {
 		throw new Error("Git operations are not available: this project's git workflow is off");
 	}
 	if (!task.worktreePath) {
@@ -220,7 +222,7 @@ async function getBranchStatusImpl(params: { taskId: string; projectId: string; 
 	// Tasks without the git workflow have a working dir but no worktree. The renderer
 	// polls this every 15s for any active task with a worktreePath, so return an
 	// inert status instead of spawning `git` in a folder that is not the task's own.
-	if (!hasGitWorkflow(project) || !task.worktreePath) {
+	if (!taskUsesWorktree(project, task) || !task.worktreePath) {
 		return { ahead: 0, behind: 0, baseUnreachable: false, canRebase: false, insertions: 0, deletions: 0, unpushed: 0, preservedOutsideBranch: false, mergedByContent: false, diffFiles: 0, diffInsertions: 0, diffDeletions: 0, diffFileStats: [], prNumber: null, prUrl: null, prState: null, mergeCompletionFingerprint: null, hasRemote: false, remoteIsGitHub: false, remoteAhead: 0 };
 	}
 
@@ -364,7 +366,7 @@ async function getBranchStatusImpl(params: { taskId: string; projectId: string; 
 async function getUnsavedWork(params: { taskId: string; projectId: string }): Promise<UnsavedWork> {
 	const project = await data.getProject(params.projectId);
 	const task = await data.getTask(project, params.taskId);
-	if (!hasGitWorkflow(project) || !task.worktreePath) {
+	if (!taskUsesWorktree(project, task) || !task.worktreePath) {
 		return { insertions: 0, deletions: 0, unpushed: 0, preservedOutsideBranch: false, ahead: 0, baseUnreachable: false };
 	}
 
@@ -584,6 +586,12 @@ async function mergeTask(params: { taskId: string; projectId: string; expectRout
 	if (openPr) {
 		await mergeViaPullRequest(project, task, openPr.number, baseBranch);
 		return;
+	}
+
+	// The local squash checks out and commits in the project folder, which other
+	// tasks of a gitless project are editing.
+	if (!hasGitWorkflow(project)) {
+		throw new Error(LOCAL_MERGE_SHARED_FOLDER_ERROR);
 	}
 
 	if (await git.hasOriginRemote(project.path)) await git.fetchOrigin(project.path, baseBranch);

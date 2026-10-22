@@ -536,7 +536,7 @@ export type AppRPCSchema = {
 				 * `renameTask`'s customTitle: this does NOT mark the title user-edited,
 				 * so an agent may still rename it.
 				 */
-				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType };
+				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType; ownWorktree?: boolean };
 				response: Task;
 			};
 			hibernateTask: {
@@ -648,6 +648,7 @@ export type AppRPCSchema = {
 					labelIds?: string[];
 					existingBranch?: string | null;
 					draft?: boolean;
+					ownWorktree?: boolean;
 				};
 				response: Task;
 			};
