@@ -696,6 +696,25 @@ describe("AddProjectModal", () => {
 			expect(await screen.findByRole("switch", { name: "Auto-configure", checked: true })).toBeInTheDocument();
 		});
 
+		it("keeps a click made before the stored setting arrives", async () => {
+			const user = userEvent.setup();
+			let resolveSettings!: (value: Awaited<ReturnType<typeof api.request.getGlobalSettings>>) => void;
+			mockedApi.request.getGlobalSettings.mockImplementationOnce(() => new Promise((resolve) => { resolveSettings = resolve; }));
+			renderModal();
+
+			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
+			await act(async () => {
+				resolveSettings({
+					defaultAgentId: "builtin-claude",
+					defaultConfigId: "claude-default",
+					taskSortOrder: "oldest-first",
+					updateChannel: "stable",
+				} as Awaited<ReturnType<typeof api.request.getGlobalSettings>>);
+			});
+
+			expect(screen.getByRole("switch", { name: "Auto-configure", checked: true })).toBeInTheDocument();
+		});
+
 		it("sits below the tab strip, inside the Local and Clone panes", async () => {
 			const user = userEvent.setup();
 			renderModal();

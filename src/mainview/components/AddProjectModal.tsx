@@ -41,6 +41,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [activeTab, setActiveTab] = useState<"local" | "clone" | "init">("local");
 	// Off unless the user turned it on last time - the choice is remembered in global settings.
 	const [autoConfigure, setAutoConfigure] = useState(false);
+	// A click before the stored value arrives wins over it.
+	const autoConfigureTouched = useRef(false);
 	const [gitUrl, setGitUrl] = useState("");
 	const [repoName, setRepoName] = useState("");
 	const [cloneBaseDir, setCloneBaseDir] = useState<string | null>(null);
@@ -82,7 +84,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 			if (settings.cloneBaseDirectory) {
 				setCloneBaseDir(settings.cloneBaseDirectory);
 			}
-			setAutoConfigure(settings.autoConfigureNewProjects === true);
+			if (!autoConfigureTouched.current) setAutoConfigure(settings.autoConfigureNewProjects === true);
 		}).catch(() => {});
 	}, []);
 
@@ -144,6 +146,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	}
 
 	async function toggleAutoConfigure() {
+		autoConfigureTouched.current = true;
 		const next = !autoConfigure;
 		setAutoConfigure(next);
 		try {
