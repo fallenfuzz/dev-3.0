@@ -27,7 +27,7 @@ import type { AgentModelAvailability, CodingAgent } from "./coding-agents";
 import type { AgentLiveModels } from "../agent-live-models";
 import type { ExternalApp, FilePreviewResult, GlobalSettings, NativeTerminalAvailability, ResolvedTerminalPath, TaskTerminalBackendInfo, TipState } from "./global-settings";
 import type { ModelCatalogView, ModelSidecarStatus, PxpipeProxyStatus } from "./model-routing";
-import type { ConfigSourceEntry, Dev3RepoConfig, GitHubCliStatus, GitInitOffer, Project, ProjectSettingsUpdate, PrResolveFailureReason, ShellAvailability, ShellPromptPreview } from "./project";
+import type { AutoConfigureResult, ConfigSourceEntry, Dev3RepoConfig, GitHubCliStatus, GitInitOffer, Project, ProjectSettingsUpdate, PrResolveFailureReason, ShellAvailability, ShellPromptPreview } from "./project";
 import type { CustomColumn, Label } from "./labels-columns";
 import type { Space, SpacesFile } from "./spaces";
 import type { AgentCancellationRequest, AgentCompletionRequest, AgentLaunchChoice, AgentLaunchRequest, LaunchVariant, TaskDialogSubject } from "./agent-launch";
@@ -161,14 +161,15 @@ export type AppRPCSchema = {
 				/** `name` is optional: the backend derives it from the path, which is the
 				 *  only side that knows how to spell a path on its own platform. */
 				/** `gitWorkflow: false` adds the folder with the git workflow off, git repository or not. */
-				params: { path: string; name?: string; gitWorkflow?: boolean };
+				/** `autoConfigure` writes detected settings to `.dev3/config.local.json`; `autoConfigured` reports the outcome. */
+				params: { path: string; name?: string; gitWorkflow?: boolean; autoConfigure?: boolean };
 				/** `gitInit` is set when the folder could be made a repo in place (needs the user's confirmation).
 				 *  `notGitRepo` marks the refusal that `gitWorkflow: false` would lift. */
-				response: { ok: true; project: Project } | { ok: false; error: string; gitInit?: GitInitOffer; notGitRepo?: true };
+				response: { ok: true; project: Project; autoConfigured?: AutoConfigureResult } | { ok: false; error: string; gitInit?: GitInitOffer; notGitRepo?: true };
 			};
 			cloneAndAddProject: {
-				params: { url: string; baseDir: string; repoName?: string; progressId?: string };
-				response: { ok: true; project: Project } | { ok: false; error: string };
+				params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean };
+				response: { ok: true; project: Project; autoConfigured?: AutoConfigureResult } | { ok: false; error: string };
 			};
 			createDirectory: {
 				params: { parentPath: string; name: string };
@@ -176,8 +177,8 @@ export type AppRPCSchema = {
 			};
 			initAndAddProject: {
 				/** `initNonEmpty`: the user confirmed initializing a folder that already has files. */
-				params: { path: string; name?: string; initNonEmpty?: boolean };
-				response: { ok: true; project: Project; gitInit?: GitInitOffer } | { ok: false; error: string; gitInit?: GitInitOffer };
+				params: { path: string; name?: string; initNonEmpty?: boolean; autoConfigure?: boolean };
+				response: { ok: true; project: Project; gitInit?: GitInitOffer; autoConfigured?: AutoConfigureResult } | { ok: false; error: string; gitInit?: GitInitOffer };
 			};
 			/** Create (or re-open) the throwaway sandbox repo dev3 owns, under `~/.dev3.0/sandbox`. */
 			createSandboxProject: {
