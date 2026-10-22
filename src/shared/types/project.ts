@@ -1,7 +1,7 @@
 import type { PosixShellResolution, ShellFlavor } from "../posix-shell";
 import type { TaskType } from "./task-type";
 import type { ColumnAgentConfig } from "./column-agents";
-import { BOARD_CLEANUP_PROMPT, COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT } from "./prompts";
+import { BOARD_CLEANUP_PROMPT, COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT, GITLESS_COORDINATOR_PROMPT } from "./prompts";
 import type { GlobalSettings } from "./global-settings";
 import type { CustomColumn, Label } from "./labels-columns";
 import type { Task } from "./task";
@@ -386,13 +386,18 @@ export function resolvePresetPrompt(
  */
 export function presetPromptForTaskType(
 	type: TaskType,
-	project: Pick<Project, "coordinatorPrompt" | "reviewModePrompt">,
+	project: Pick<Project, "coordinatorPrompt" | "reviewModePrompt" | "kind" | "gitWorkflow">,
 	settings: Pick<GlobalSettings, "coordinatorPrompt" | "reviewModePrompt"> | null | undefined,
 ): string {
 	if (type === "board-cleanup") return BOARD_CLEANUP_PROMPT;
 	return type === "coordinator"
-		? resolvePresetPrompt(project.coordinatorPrompt, settings?.coordinatorPrompt, COORDINATOR_PROMPT)
+		? resolvePresetPrompt(project.coordinatorPrompt, settings?.coordinatorPrompt, builtinCoordinatorPrompt(project))
 		: resolvePresetPrompt(project.reviewModePrompt, settings?.reviewModePrompt, DEFAULT_PR_REVIEW_PROMPT);
+}
+
+/** The built-in coordinator brief for this project: the gitless one when it has no git workflow. */
+export function builtinCoordinatorPrompt(project: Pick<Project, "kind" | "gitWorkflow">): string {
+	return hasGitWorkflow(project) ? COORDINATOR_PROMPT : GITLESS_COORDINATOR_PROMPT;
 }
 
 /** Where {@link presetPromptForTaskType} took its text from, so a reader can tell an override from the default. */
