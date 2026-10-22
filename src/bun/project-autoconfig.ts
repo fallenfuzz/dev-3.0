@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import { repoConfigEnabled, type AutoConfigureResult, type Dev3RepoConfig, type Project } from "../shared/types";
+import { repoConfigEnabled, type AutoConfigureKey, type AutoConfigureResult, type Dev3RepoConfig, type Project } from "../shared/types";
 import * as git from "./git";
 import { parsePackageScripts, resolveRunnerCommand } from "./package-scripts";
 import * as repoConfig from "./repo-config";
@@ -24,13 +24,15 @@ const DEV_SCRIPT_NAMES = ["dev", "start", "serve"];
 
 const LOCAL_CONFIG_PATH = ".dev3/config.local.json";
 
+const AUTO_CONFIGURE_KEYS: AutoConfigureKey[] = ["setupScript", "devScript"];
+
 /**
  * Read what a project folder already says about itself: the install command its
  * lockfiles imply, and the dev server its package.json declares. Pure file reads,
  * nothing is run.
  */
-export function detectProjectConfig(projectPath: string): Dev3RepoConfig {
-	const config: Dev3RepoConfig = {};
+export function detectProjectConfig(projectPath: string): Pick<Dev3RepoConfig, AutoConfigureKey> {
+	const config: Pick<Dev3RepoConfig, AutoConfigureKey> = {};
 	const pkg = parsePackageScripts(projectPath);
 
 	const installs: string[] = [];
@@ -74,7 +76,7 @@ export async function autoConfigureProject(project: Project): Promise<AutoConfig
 		return { written: [], existingConfig: true };
 	}
 	const config = detectProjectConfig(projectPath);
-	const keys = Object.keys(config);
+	const keys = AUTO_CONFIGURE_KEYS.filter((key) => config[key] !== undefined);
 	if (keys.length === 0) return { written: [] };
 	// Excluded first, so a failed exclude never leaves an unignored file behind.
 	await excludeLocally(projectPath, LOCAL_CONFIG_PATH);

@@ -125,9 +125,12 @@ export const DEV3_REPO_CONFIG_KEYS: (keyof Dev3RepoConfig)[] = [
 	"env",
 ];
 
-/** What Add Project's auto-configure did: the keys it wrote, or that a `.dev3` config was already there. */
+/** The `.dev3` keys Add Project's auto-configure can write. */
+export type AutoConfigureKey = "setupScript" | "devScript";
+
+/** What Add Project's auto-configure did: the keys it wrote, or that the project was already configured. */
 export interface AutoConfigureResult {
-	written: string[];
+	written: AutoConfigureKey[];
 	existingConfig?: true;
 }
 

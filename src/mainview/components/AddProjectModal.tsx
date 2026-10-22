@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { extractRepoName } from "../../shared/types";
-import type { AutoConfigureResult, GitInitOffer, Project } from "../../shared/types";
+import type { AutoConfigureKey, AutoConfigureResult, GitInitOffer, Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
-import { useT } from "../i18n";
+import { useT, type TranslationKey } from "../i18n";
 import HelpSpot from "./HelpSpot";
 import { trackEvent } from "../analytics";
 import posthog from "../posthog";
@@ -14,6 +14,11 @@ import { confirm } from "../confirm";
 import { useFocusTrap } from "../utils/useFocusTrap";
 import ProjectSpacesField, { applyDeferredSpaces, type DeferredSpaces } from "./ProjectSpacesField";
 import { ToggleSwitch } from "./project-settings/fields";
+
+const AUTO_CONFIGURE_LABELS = {
+	setupScript: "addProject.autoConfigSetup",
+	devScript: "addProject.autoConfigDev",
+} as const satisfies Record<AutoConfigureKey, TranslationKey>;
 
 interface AddProjectModalProps {
 	dispatch: Dispatch<AppAction>;
@@ -161,7 +166,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 			toast.info(t("addProject.autoConfigNothing", { name: project.name }), { source: "dashboard" });
 			return;
 		}
-		const fields = keys.map((key) => t(key === "setupScript" ? "addProject.autoConfigSetup" : "addProject.autoConfigDev")).join(", ");
+		const fields = keys.map((key) => t(AUTO_CONFIGURE_LABELS[key])).join(", ");
 		toast.success(t("addProject.autoConfigDone", { name: project.name, fields }), { source: "dashboard" });
 	}
 
