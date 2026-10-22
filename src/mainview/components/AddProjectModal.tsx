@@ -174,6 +174,17 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		toast.success(t("addProject.autoConfigDone", { name: project.name, fields }), { source: "dashboard" });
 	}
 
+	// Lives inside the Local and Clone panes, so the tab strip stays put on New, which has nothing to detect.
+	const autoConfigureSwitch = (
+		<div className="flex items-center justify-between gap-4">
+			<div className="space-y-0.5">
+				<span className="block text-fg-2 text-sm font-medium">{t("addProject.autoConfig")}</span>
+				<span className="block text-fg-3 text-xs leading-5">{t("addProject.autoConfigHint")}</span>
+			</div>
+			<ToggleSwitch checked={autoConfigure} ariaLabel={t("addProject.autoConfig")} onToggle={() => void toggleAutoConfigure()} />
+		</div>
+	);
+
 	async function handleBrowseLocal() {
 		if (browsing) return;
 		setError(null);
@@ -410,17 +421,6 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 					<p>{t("addProject.safetyBranch")}</p>
 				</div>
 
-				{/* New repositories from the New tab have nothing to detect yet. */}
-				{activeTab !== "init" && (
-					<div className="flex items-center justify-between gap-4">
-						<div className="space-y-0.5">
-							<span className="block text-fg-2 text-sm font-medium">{t("addProject.autoConfig")}</span>
-							<span className="block text-fg-3 text-xs leading-5">{t("addProject.autoConfigHint")}</span>
-						</div>
-						<ToggleSwitch checked={autoConfigure} ariaLabel={t("addProject.autoConfig")} onToggle={() => void toggleAutoConfigure()} />
-					</div>
-				)}
-
 				{/* Tabs */}
 				<div className="flex gap-1 p-1 bg-raised rounded-xl">
 					<button
@@ -461,6 +461,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						<p className="text-fg-3 text-sm">
 							{t("addProject.browseHint")}
 						</p>
+						{autoConfigureSwitch}
 						<button
 							onClick={handleBrowseLocal}
 							disabled={browsing}
@@ -548,6 +549,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 								{t("addProject.targetPath")} {targetPath}
 							</div>
 						)}
+
+						{autoConfigureSwitch}
 
 						{/* Live clone output (last lines of `git clone --progress`) */}
 						{cloning && (

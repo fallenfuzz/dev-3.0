@@ -696,6 +696,18 @@ describe("AddProjectModal", () => {
 			expect(await screen.findByRole("switch", { name: "Auto-configure", checked: true })).toBeInTheDocument();
 		});
 
+		it("sits below the tab strip, inside the Local and Clone panes", async () => {
+			const user = userEvent.setup();
+			renderModal();
+			const tabs = screen.getByText("Local Folder").parentElement!;
+
+			for (const tab of ["Local Folder", "Clone from URL"]) {
+				await user.click(screen.getByText(tab));
+				const toggle = screen.getByRole("switch", { name: "Auto-configure" });
+				expect(tabs.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+			}
+		});
+
 		it("is hidden on the New tab, where there is nothing to detect", async () => {
 			const user = userEvent.setup();
 			renderModal();
