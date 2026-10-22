@@ -4,7 +4,7 @@ import { confirm } from "../confirm";
 import { confirmCustomColumnDelete } from "../utils/confirmCustomColumnDelete";
 import type { CodingAgent, ColumnAgentConfig, CustomColumn, Dev3RepoConfig, GitHubCliStatus, Label, Project, Task } from "../../shared/types";
 import { ACTIVE_STATUSES, GIT_WORKFLOW_NOT_A_REPO_ERROR, getTaskTitle, gitWorkflowSwitchBlocker, hasGitWorkflow, repoConfigEnabled } from "../../shared/types";
-import { COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT, DEFAULT_REVIEW_AGENT_ID, DEFAULT_REVIEW_CONFIG_ID, DEFAULT_REVIEW_PROMPT, resolveArtifactTemplate, resolvePresetPrompt, type ArtifactTemplateMode, type ProjectSettingsUpdate, type ResolvedArtifactTemplate } from "../../shared/types";
+import { builtinCoordinatorPrompt, COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT, DEFAULT_REVIEW_AGENT_ID, DEFAULT_REVIEW_CONFIG_ID, DEFAULT_REVIEW_PROMPT, resolveArtifactTemplate, resolvePresetPrompt, type ArtifactTemplateMode, type ProjectSettingsUpdate, type ResolvedArtifactTemplate } from "../../shared/types";
 import type { AppAction, Route } from "../state";
 import { api } from "../rpc";
 import { useT } from "../i18n";
@@ -228,7 +228,7 @@ function ProjectSettings({
 	const [globalReviewModePrompt, setGlobalReviewModePrompt] = useState<string | undefined>(undefined);
 	const inheritedReviewModePrompt = resolvePresetPrompt(undefined, globalReviewModePrompt, DEFAULT_PR_REVIEW_PROMPT);
 	const [globalArtifactTemplate, setGlobalArtifactTemplate] = useState<ResolvedArtifactTemplate>({ mode: "on" });
-	const inheritedCoordinatorPrompt = resolvePresetPrompt(undefined, globalCoordinatorPrompt, COORDINATOR_PROMPT);
+	const inheritedCoordinatorPrompt = resolvePresetPrompt(undefined, globalCoordinatorPrompt, project ? builtinCoordinatorPrompt(project) : COORDINATOR_PROMPT);
 
 	// Load available agents
 	useEffect(() => {
