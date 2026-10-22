@@ -384,6 +384,7 @@ const settings = {
 	"addProject.autoConfigDone": "{name}: saved to .dev3/config.local.json: {fields}. Edit in Project Settings.",
 	"addProject.autoConfigNothing": "{name}: no install or dev command found, nothing was saved.",
 	"addProject.autoConfigExisting": "{name} is already configured, so auto-configure left it as is.",
+	"addProject.autoConfigFailed": "{name}: could not save auto-configured settings.",
 	"addProject.autoConfigSetup": "setup script",
 	"addProject.autoConfigDev": "dev script",
 	"addProject.browseBtn": "Browse...",

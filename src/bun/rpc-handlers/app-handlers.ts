@@ -356,7 +356,7 @@ async function addProjectImpl(
 		const autoConfigured = params.autoConfigure
 			? await autoConfigureProject(project).catch((err) => {
 				log.warn("Auto-configure failed, project added without it", { id: project.id, error: String(err) });
-				return { written: [] };
+				return { written: [], failed: true as const };
 			})
 			: undefined;
 		// The renderer keeps whatever this returns until the next getProjects, and

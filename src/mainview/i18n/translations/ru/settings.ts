@@ -393,6 +393,7 @@ const settings = {
 	"addProject.autoConfigDone": "{name}: в .dev3/config.local.json сохранено: {fields}. Изменить можно в настройках проекта.",
 	"addProject.autoConfigNothing": "{name}: команды установки и запуска не найдены, ничего не сохранено.",
 	"addProject.autoConfigExisting": "{name} уже настроен, автонастройка его не тронула.",
+	"addProject.autoConfigFailed": "{name}: не удалось сохранить настройки автонастройки.",
 	"addProject.autoConfigSetup": "скрипт установки",
 	"addProject.autoConfigDev": "скрипт dev-сервера",
 	"addProject.browseHint": "Выберите один или несколько git-репозиториев на вашем компьютере",

@@ -1749,7 +1749,7 @@ describe("handlers.addProject", () => {
 		vi.mocked(data.updateProject).mockResolvedValue(project);
 
 		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
-		expect(result).toMatchObject({ ok: true, autoConfigured: { written: [] } });
+		expect(result).toMatchObject({ ok: true, autoConfigured: { written: [], failed: true } });
 	});
 
 	it("succeeds even if default branch detection fails", async () => {

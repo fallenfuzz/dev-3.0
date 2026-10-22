@@ -157,6 +157,10 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	// Says what auto-configure wrote, so a new .dev3 file never appears unannounced.
 	function reportAutoConfigured(project: Project, result: AutoConfigureResult | undefined) {
 		if (!result) return;
+		if (result.failed) {
+			toast.error(t("addProject.autoConfigFailed", { name: project.name }), { source: "dashboard" });
+			return;
+		}
 		if (result.existingConfig) {
 			toast.info(t("addProject.autoConfigExisting", { name: project.name }), { source: "dashboard" });
 			return;

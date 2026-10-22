@@ -385,6 +385,7 @@ const settings = {
 	"addProject.autoConfigDone": "{name}: guardado en .dev3/config.local.json: {fields}. Puedes editarlo en los ajustes del proyecto.",
 	"addProject.autoConfigNothing": "{name}: no se encontró ningún comando de instalación ni de desarrollo; no se guardó nada.",
 	"addProject.autoConfigExisting": "{name} ya está configurado, así que la configuración automática no lo tocó.",
+	"addProject.autoConfigFailed": "{name}: no se pudieron guardar los ajustes de la configuración automática.",
 	"addProject.autoConfigSetup": "script de instalación",
 	"addProject.autoConfigDev": "script de desarrollo",
 	"addProject.browseHint": "Selecciona uno o más repositorios git existentes en tu computadora",

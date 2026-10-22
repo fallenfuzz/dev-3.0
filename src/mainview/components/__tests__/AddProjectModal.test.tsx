@@ -663,6 +663,26 @@ describe("AddProjectModal", () => {
 			expect(info).toHaveBeenCalledWith("my-repo is already configured, so auto-configure left it as is.", expect.anything());
 		});
 
+		it("reports a failure as an error, not as nothing found", async () => {
+			const user = userEvent.setup();
+			const { toast } = await import("../../toast");
+			const error = vi.spyOn(toast, "error");
+			const info = vi.spyOn(toast, "info");
+			mockedOpenFolderPickerMulti.mockResolvedValue(["/work/app"]);
+			mockedApi.request.addProject.mockResolvedValue({
+				ok: true as const,
+				project: mockProject,
+				autoConfigured: { written: [], failed: true },
+			});
+			renderModal();
+
+			await user.click(screen.getByRole("switch", { name: "Auto-configure" }));
+			await user.click(screen.getByText("Browse..."));
+
+			expect(error).toHaveBeenCalledWith("my-repo: could not save auto-configured settings.", expect.anything());
+			expect(info).not.toHaveBeenCalled();
+		});
+
 		it("starts on when the user left it on last time", async () => {
 			mockedApi.request.getGlobalSettings.mockResolvedValueOnce({
 				defaultAgentId: "builtin-claude",
