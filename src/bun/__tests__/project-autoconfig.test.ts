@@ -101,6 +101,17 @@ describe("project-autoconfig", () => {
 			expect(gitStatus()).toBe("");
 		});
 
+		it("writes no exclude entry and no setup script into a folder without git", async () => {
+			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));
+
+			const result = await autoConfigureProject(project({ gitWorkflow: false }), { isGitRepo: false });
+
+			expect(result).toEqual({ written: ["devScript"] });
+			expect(localConfig()).toEqual({ devScript: "npm run dev" });
+			expect(existsSync(join(tmp, ".git"))).toBe(false);
+			expect(existsSync(join(tmp, ".gitignore"))).toBe(false);
+		});
+
 		it("adds the exclude entry only once", async () => {
 			gitInit();
 			write("package.json", JSON.stringify({ scripts: { dev: "vite" } }));

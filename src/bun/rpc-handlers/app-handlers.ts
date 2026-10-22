@@ -365,7 +365,7 @@ async function addProjectImpl(
 		}
 		// Written before resolveProjectConfig so the returned project already carries it.
 		const autoConfigured = params.autoConfigure
-			? await autoConfigureProject(project).catch((err) => {
+			? await autoConfigureProject(project, { isGitRepo: isRepo }).catch((err) => {
 				log.warn("Auto-configure failed, project added without it", { id: project.id, error: String(err) });
 				return { written: [], failed: true as const };
 			})

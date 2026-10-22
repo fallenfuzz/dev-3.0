@@ -1774,7 +1774,7 @@ describe("handlers.addProject", () => {
 		expect(plain).not.toHaveProperty("autoConfigured");
 
 		const result = await handlers.addProject({ path: "/tmp/test-project", name: "Test", autoConfigure: true });
-		expect(autoConfigureProject).toHaveBeenCalledWith(project);
+		expect(autoConfigureProject).toHaveBeenCalledWith(project, { isGitRepo: true });
 		expect(result).toMatchObject({ ok: true, autoConfigured: { written: ["devScript"] } });
 	});
 
@@ -2147,7 +2147,7 @@ describe("handlers.initAndAddProject", () => {
 		registerSucceeds(project);
 
 		const result = await handlers.initAndAddProject({ path: "/tmp/messy", name: "Messy", initNonEmpty: true, autoConfigure: true });
-		expect(autoConfigureProject).toHaveBeenCalledWith(project);
+		expect(autoConfigureProject).toHaveBeenCalledWith(project, { isGitRepo: true });
 		expect(result).toMatchObject({ ok: true, autoConfigured: { written: ["devScript"] }, gitInit: offer });
 	});
 
