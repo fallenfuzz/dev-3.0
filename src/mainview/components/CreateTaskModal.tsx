@@ -1288,32 +1288,32 @@ function WorkspaceModePicker({ value, onChange }: { value: boolean; onChange: (o
 	return (
 		<div className="space-y-1.5">
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-			<span className="text-fg-2 text-sm font-medium">{t("ops.create.workDirLabel")}</span>
-			<div
-				role="radiogroup"
-				aria-label={t("ops.create.workDirLabel")}
-				className="inline-flex items-center gap-0.5 rounded-lg border border-edge bg-raised p-0.5"
-				onKeyDown={(event) => handleRadioGroupKeys(event, WORKSPACE_MODES, value, onChange)}
-			>
-				{WORKSPACE_MODES.map((own) => {
-					const active = own === value;
-					return (
-						<button
-							key={String(own)}
-							type="button"
-							role="radio"
-							aria-checked={active}
-							data-testid={own ? "workspace-own-worktree" : "workspace-project-folder"}
-							onClick={() => onChange(own)}
-							className={`px-3 py-1 text-xs font-semibold rounded-md transition-[background-color,color,transform] active:scale-[0.96] ${
-								active ? "bg-accent-fill text-white" : "text-fg-3 hover:text-fg hover:bg-elevated"
-							}`}
-						>
-							{t(labelKey(own))}
-						</button>
-					);
-				})}
-			</div>
+				<span className="text-fg-2 text-sm font-medium">{t("ops.create.workDirLabel")}</span>
+				<div
+					role="radiogroup"
+					aria-label={t("ops.create.workDirLabel")}
+					className="inline-flex items-center gap-0.5 rounded-lg border border-edge bg-raised p-0.5"
+					onKeyDown={(event) => handleRadioGroupKeys(event, WORKSPACE_MODES, value, onChange)}
+				>
+					{WORKSPACE_MODES.map((own) => {
+						const active = own === value;
+						return (
+							<button
+								key={String(own)}
+								type="button"
+								role="radio"
+								aria-checked={active}
+								data-testid={own ? "workspace-own-worktree" : "workspace-project-folder"}
+								onClick={() => onChange(own)}
+								className={`px-3 py-1 text-xs font-semibold rounded-md transition-[background-color,color,transform] active:scale-[0.96] ${
+									active ? "bg-accent-fill text-white" : "text-fg-3 hover:text-fg hover:bg-elevated"
+								}`}
+							>
+								{t(labelKey(own))}
+							</button>
+						);
+					})}
+				</div>
 			</div>
 			<p className="text-xs text-fg-3">
 				{t(value ? "createTask.workspaceOwnWorktreeHint" : "createTask.workspaceProjectFolderHint")}
