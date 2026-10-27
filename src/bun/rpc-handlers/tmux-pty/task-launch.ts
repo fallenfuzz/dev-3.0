@@ -292,7 +292,7 @@ export async function launchTaskPty(
 	},
 ): Promise<void> {
 	// First, before any trust/hook/config write: tmux would start a missing cwd in $HOME.
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 	const sessionId = opts?.sessionId;
 	const accountId = opts?.codexHome
 		? codexAccountIdForHome(opts.codexHome) ?? null
@@ -704,7 +704,7 @@ export async function launchColumnAgent(
 		log.warn("launchColumnAgent: no worktreePath, skipping", { taskId: task.id.slice(0, 8) });
 		return;
 	}
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 
 	const { agentId, configId, prompt: rawPrompt } = agentConfig;
 	const baseBranch = task.baseBranch || project.defaultBaseBranch || "main";

@@ -13,7 +13,7 @@ The local Merge route runs `git checkout` and a squash merge in `project.path`. 
 ## Decision
 
 - `Task.ownWorktree?: boolean`, a task property like `draft`. It applies only to a git project with the git workflow off whose folder is a repository (`resolveOwnWorktree` in `src/bun/rpc-handlers/task-lifecycle.ts`). It is chosen at creation or while the task is in To Do (`editTask`).
-- `taskUsesWorktree(project, task)` in `src/shared/types/project.ts` answers the task questions. `folderWorkDir`, the lifecycle fact `usesWorktrees`, the executor teardown, rehydrate, the PR poll, git operations, branch sync, `dev3 current`, the CLI and in-app approval wording, the inspector Git bar and the reset confirm use it. Board questions keep `hasGitWorkflow`.
+- `taskUsesWorktree(project, task)` in `src/shared/types/project.ts` answers the task questions. `folderWorkDir`, the lifecycle fact `usesWorktrees`, the executor teardown, rehydrate, the PR poll, git operations, branch sync, `dev3 current`, the CLI and in-app approval wording, the inspector Git bar, the reset confirm, and the `.git` check of `assertTaskWorkspacePresent` and the terminal's lost-session screen use it. Board questions keep `hasGitWorkflow`.
 - Teardown in a gitless project always uses `branchPolicy: "unique-kept"` (`keepsUniqueBranch` in `src/bun/lifecycle/executor.ts`): there is no PR flow to have landed the branch, so commits found nowhere else survive.
 - `mergeTask` refuses the local squash in a gitless project (`LOCAL_MERGE_SHARED_FOLDER_ERROR`); the Git bar disables Merge with the reason. Merging an open pull request still works.
 - UI: CreateTask's Working folder block becomes a radiogroup, Project folder or Own worktree, offered only when `listBranches` returns branches. Own worktree replaces the path line with the existing `BranchSelector`. CLI parity: `dev3 task create --worktree [--branch <ref>]`.
@@ -23,7 +23,6 @@ The local Merge route runs `git checkout` and a squash merge in `project.path`. 
 
 - An older dev3 ignores `ownWorktree` and runs such a task in the shared folder. A task already holding a worktree keeps its `worktreePath`, so a running one is not moved.
 - The base branch for a new branch is `project.defaultBaseBranch`, not whatever the shared folder has checked out.
-- `assertTaskWorkspacePresent` still decides `requireGit` from the project, so a lost `.git` link in an own worktree is reported as present until a git command fails.
 - Variants, PR review tasks and the AI/PR review columns stay unavailable on a gitless board.
 
 ## Alternatives considered
