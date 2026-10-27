@@ -1,5 +1,5 @@
 import type { PrResolveFailureReason, Project } from "../shared/types";
-import { hasGitWorkflow, taskUsesWorktree, TASK_REF_UNRESOLVED_PREFIX } from "../shared/types";
+import { hasGitWorkflow, OWN_WORKTREE_NOT_A_REPO_ERROR, taskUsesWorktree, TASK_REF_UNRESOLVED_PREFIX } from "../shared/types";
 import * as github from "./github";
 import * as git from "./git";
 import * as data from "./data";
@@ -213,7 +213,13 @@ export async function resolveTaskStartRef(request: StartRefRequest): Promise<str
 		const ref = branch.trim();
 		if (!ref) throw unresolved("--branch needs a ref.");
 		if (!taskUsesWorktree(project, { ownWorktree })) {
-			throw unresolved("this project has no git workflow, so it has no branches. Pass --worktree to give the task its own.");
+			throw unresolved(project.kind === "virtual"
+				? "an Operations board has no repository, so it has no branches."
+				: "this project has no git workflow, so it has no branches. Pass --worktree to give the task its own.");
+		}
+		// Task creation refuses this anyway; say it before the ref lookup fails less clearly.
+		if (!hasGitWorkflow(project) && !(await git.isGitRepo(project.path))) {
+			throw new Error(OWN_WORKTREE_NOT_A_REPO_ERROR);
 		}
 		// Remote-tracking refs are checked under refs/remotes so `origin/main`
 		// cannot be satisfied by a local branch literally named `origin/main`.
