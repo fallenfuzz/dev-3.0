@@ -22,6 +22,7 @@ import {
 	getPreparingStageProgress,
 	getTaskTitle,
 	hasGitWorkflow,
+	taskUsesWorktree,
 	taskResetConsentMatches,
 } from "../../shared/types";
 import { voidAgentRequest } from "../agent-requests";
@@ -335,10 +336,18 @@ async function reopenCodexLaunch(project: Project, task: Task, worktreePath: str
  * Operations folder or a gitless project folder is shared with the user and with
  * other tasks, so only a worktree or a managed Operations folder qualifies.
  */
-function taskOwnedFolder(project: Project, folder: string | null): string | null {
+function taskOwnedFolder(project: Project, task: Task, folder: string | null): string | null {
 	if (!folder) return null;
-	if (hasGitWorkflow(project)) return folder;
+	if (taskUsesWorktree(project, task)) return folder;
 	return folder.startsWith(`${OPS_DIR}/`) ? folder : null;
+}
+
+/**
+ * A gitless project has no pull request or merge watch to land a task's own
+ * branch, so tearing its worktree down keeps any commits found nowhere else.
+ */
+function keepsUniqueBranch(project: Project): boolean {
+	return !hasGitWorkflow(project);
 }
 
 function derivedPreparationPath(project: Project, task: Task): string {
@@ -630,7 +639,7 @@ export async function runCleanupScript(
 	if (!task.worktreePath || !existsSync(task.worktreePath)) return;
 	// With the git workflow off the task ran in the user's own folder, which a
 	// cleanup script written for a throwaway worktree must never touch.
-	if (project.kind !== "virtual" && !hasGitWorkflow(project)) return;
+	if (project.kind !== "virtual" && !taskUsesWorktree(project, task)) return;
 	const resolved = await resolveOperationalProjectConfig(project, task.worktreePath, { foreignCode: task.foreignCode });
 	const script = resolved.cleanupScript?.trim() || 'echo "Task finished"';
 	const dialect = launchDialect();
@@ -664,7 +673,7 @@ export async function captureCompletedDiffStats(
 	project: Project,
 	task: Task,
 ): Promise<CompletedDiffStats | undefined> {
-	if (!hasGitWorkflow(project) || !task.worktreePath) return undefined;
+	if (!taskUsesWorktree(project, task) || !task.worktreePath) return undefined;
 	const baseBranch = task.baseBranch || project.defaultBaseBranch || "main";
 	try {
 		const ref = await git.resolveCompareRef(project.path, baseBranch);
@@ -1153,6 +1162,7 @@ export async function executeLifecycleEffect(
 			await reapWorktreeProcesses(
 				taskOwnedFolder(
 					ctx.project,
+					ctx.sourceTask,
 					ctx.sourceTask.worktreePath
 						?? (effect.allowDerivedPath ? derivedPreparationPath(ctx.project, ctx.sourceTask) : null),
 				),
@@ -1165,7 +1175,7 @@ export async function executeLifecycleEffect(
 				? derivedPreparationPath(ctx.project, ctx.sourceTask)
 				: ctx.sourceTask.worktreePath;
 			const target = worktreePath ? { ...ctx.sourceTask, worktreePath } : ctx.sourceTask;
-			if (effect.failureCleanup) await git.removeWorktree(ctx.project, target, { branchPolicy: "unique-kept" });
+			if (effect.failureCleanup || keepsUniqueBranch(ctx.project)) await git.removeWorktree(ctx.project, target, { branchPolicy: "unique-kept" });
 			else await git.removeWorktree(ctx.project, target);
 			await forgetWorktreeTrust(worktreePath);
 			return {};
@@ -1174,16 +1184,16 @@ export async function executeLifecycleEffect(
 			{
 				const worktreePath = ctx.sourceTask.worktreePath
 					?? (effect.allowDerivedPath ? derivedPreparationPath(ctx.project, ctx.sourceTask) : null);
-				if (!hasGitWorkflow(ctx.project)) {
+				if (!taskUsesWorktree(ctx.project, ctx.sourceTask)) {
 					// Only a managed Operations folder is ever deleted; a chosen folder or
 					// the project folder itself belongs to the user.
 					if (worktreePath?.startsWith(`${OPS_DIR}/`)) {
 						await rm(worktreePath, { recursive: true, force: true });
 					}
 				} else {
-					await git.removeWorktree(ctx.project, worktreePath
-						? { ...ctx.sourceTask, worktreePath }
-						: ctx.sourceTask);
+					const target = worktreePath ? { ...ctx.sourceTask, worktreePath } : ctx.sourceTask;
+					if (keepsUniqueBranch(ctx.project)) await git.removeWorktree(ctx.project, target, { branchPolicy: "unique-kept" });
+					else await git.removeWorktree(ctx.project, target);
 				}
 				await forgetWorktreeTrust(worktreePath);
 			}

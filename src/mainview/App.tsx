@@ -900,8 +900,9 @@ function App() {
 
 	const projectsRef = useRef(state.projects);
 	projectsRef.current = state.projects;
-	/** True when finishing this project's task keeps its folder: no git workflow, no worktree to destroy. */
-	const keepsTaskFolder = useCallback((projectId: string | undefined) => {
+	/** True when finishing this task keeps its folder: it has no worktree of its own to destroy. */
+	const keepsTaskFolder = useCallback((projectId: string | undefined, subject: TaskDialogSubject | undefined) => {
+		if (subject?.keepsFolder !== undefined) return subject.keepsFolder;
 		const project = projectId ? projectsRef.current.find((p) => p.id === projectId) : undefined;
 		return !!project && !hasGitWorkflow(project);
 	}, []);
@@ -2292,7 +2293,7 @@ function App() {
 			try {
 				approved = await confirm({
 					title: t("app.agentCompletionTitle"),
-					message: keepsTaskFolder(projectId) ? t("app.agentCompletionMessageFolder") : t("app.agentCompletionMessage"),
+					message: keepsTaskFolder(projectId, subject) ? t("app.agentCompletionMessageFolder") : t("app.agentCompletionMessage"),
 					info: taskDialogInfoFromSubject(taskTitle, subject),
 					confirmLabel: t("app.agentCompletionConfirm"),
 					cancelLabel: t("app.agentCompletionCancel"),
@@ -2405,7 +2406,7 @@ function App() {
 			let approved = false;
 			const abort = createAgentRequestAbort(requestId);
 			// Without the git workflow nothing is deleted: the folder outlives the task.
-			const copy = keepsTaskFolder(projectId) ? kind.folderCopy : kind.copy;
+			const copy = keepsTaskFolder(projectId, subject) ? kind.folderCopy : kind.copy;
 			try {
 				const unsaved = api.request.getUnsavedWork({ taskId, projectId });
 				approved = await confirm({
