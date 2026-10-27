@@ -50,6 +50,7 @@ const move = (status: string) => handleTask("move", { positional: [TASK_ID], fla
 describe("approval wording for a task in its project folder", () => {
 	it.each(["completed", "cancelled"])("never says %s destroys a worktree when the git workflow is off", async (status) => {
 		mockProject.mockReturnValue({ id: "proj-001", name: "Notes", path: "/home/me/notes", gitWorkflow: false });
+		mockTask.mockReturnValue({ id: TASK_ID });
 
 		await move(status);
 
@@ -66,6 +67,17 @@ describe("approval wording for a task in its project folder", () => {
 
 		expect(stderr).toContain("destroys its worktree");
 		expect(stderr).not.toContain("keeps every file");
+	});
+
+	it.each(["completed", "cancelled", "todo"])("keeps the worktree wording when a seq:N move of %s cannot read the task", async (status) => {
+		mockProject.mockReturnValue({ id: "proj-001", name: "Notes", path: "/home/me/notes", gitWorkflow: false });
+		mockTask.mockImplementation((_projectId, taskId) => (taskId === TASK_ID ? { id: TASK_ID, ownWorktree: true } : null));
+
+		await handleTask("move", { positional: [], flags: { task: "seq:12", status } }, SOCKET, CTX);
+
+		expect(mockTask).toHaveBeenCalledWith("proj-001", "seq:12");
+		expect(stderr).toMatch(/worktree/i);
+		expect(stderr + stdout).not.toContain("keeps every file");
 	});
 
 	it("keeps the worktree wording for a git project", async () => {

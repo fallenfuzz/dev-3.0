@@ -565,11 +565,11 @@ const FOLDER_APPROVAL_TEXT: Record<DestructiveApprovalKind, Partial<DestructiveA
 	},
 };
 
-/** The approval wording for this task: worktree or kept folder. */
+/** The approval wording for this task: worktree or kept folder. A task it cannot read gets the worktree wording. */
 function approvalSpecFor(spec: DestructiveApprovalSpec, projectId: string | undefined, taskId: string): DestructiveApprovalSpec {
 	const project = projectId ? readProjectDirect(projectId) : null;
 	const task = projectId ? readTaskDirect(projectId, taskId) as Pick<Task, "ownWorktree"> | null : null;
-	const keepsFolder = !!project && project.kind !== "virtual" && !taskUsesWorktree(project, task ?? {});
+	const keepsFolder = !!project && !!task && project.kind !== "virtual" && !taskUsesWorktree(project, task);
 	return keepsFolder ? { ...spec, ...FOLDER_APPROVAL_TEXT[spec.kind], keepsFolder } : spec;
 }
 
