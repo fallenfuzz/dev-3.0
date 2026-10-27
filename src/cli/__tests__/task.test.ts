@@ -9,6 +9,11 @@ import type { Task, CliResponse } from "../../shared/types";
 import { DRAFT_TASK_ACTIVATION_ERROR, TASK_REF_UNRESOLVED_PREFIX } from "../../shared/types";
 import { CLI_EXIT_CODE_LAUNCH_DECLINED, CLI_EXIT_CODE_RESET_DECLINED, CLI_EXIT_CODE_TASK_IS_DRAFT } from "../../shared/cli-exit-codes";
 
+vi.mock("../context", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../context")>();
+	return { ...actual, readProjectDirect: vi.fn(actual.readProjectDirect) };
+});
+
 vi.mock("../stdin", () => ({
 	readStdin: vi.fn(),
 }));
@@ -20,6 +25,7 @@ vi.mock("../socket-client", () => ({
 
 import { sendRequest } from "../socket-client";
 import { readStdin } from "../stdin";
+import { readProjectDirect } from "../context";
 const mockSend = vi.mocked(sendRequest);
 const mockReadStdin = vi.mocked(readStdin);
 
@@ -467,6 +473,16 @@ describe("task create", () => {
 				ownWorktree: true,
 			});
 			expect(stderrOutput).toContain("Runs in its own worktree");
+		});
+
+		it("does not claim an Operations board's tasks get their own worktree", async () => {
+			vi.mocked(readProjectDirect).mockReturnValueOnce({ id: "proj-001", name: "Ops", path: "/ops", kind: "virtual" });
+			mockSend.mockResolvedValue(okResp(createdTask));
+
+			await handleTask("create", args([], { project: "proj-001", title: "Notes", worktree: "true" }), SOCKET, null);
+
+			expect(stderrOutput).toContain("--worktree ignored");
+			expect(stderrOutput).not.toContain("already get their own worktree");
 		});
 
 		it("rejects a value after --worktree before contacting the app", async () => {

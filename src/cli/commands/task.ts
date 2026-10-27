@@ -343,7 +343,9 @@ async function createTask(args: ParsedArgs, socketPath: string, context: CliCont
 	if (task.ownWorktree) {
 		process.stderr.write("Runs in its own worktree, not the shared project folder.\n");
 	} else if (ownWorktree) {
-		process.stderr.write("--worktree ignored: this project's tasks already get their own worktree.\n");
+		process.stderr.write(readProjectDirect(projectId)?.kind === "virtual"
+			? "--worktree ignored: an Operations board has no repository to make a worktree from.\n"
+			: "--worktree ignored: this project's tasks already get their own worktree.\n");
 	}
 }
 
