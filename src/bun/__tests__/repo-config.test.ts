@@ -1123,6 +1123,55 @@ describe("env config cascade (per-key merge)", () => {
 	});
 });
 
+describe("resolveProjectEnv with global agentEnvDefaults", () => {
+	function writeDefaults(agentEnvDefaults?: Record<string, string>) {
+		writeFileSync(join(MOCK_DEV3_HOME, "settings.json"), JSON.stringify(agentEnvDefaults ? { agentEnvDefaults } : {}));
+	}
+	function writeLocalConfig(content: object) {
+		mkdirSync(join(TEST_DIR, ".dev3"), { recursive: true });
+		writeFileSync(join(TEST_DIR, ".dev3", "config.local.json"), JSON.stringify(content));
+	}
+
+	it("fills a key the project does not set", async () => {
+		writeDefaults({ SHARED: "1" });
+		expect(await resolveProjectEnv(makeProject())).toEqual({ SHARED: "1" });
+	});
+
+	it("never overrides a key the project config sets, even to an empty string", async () => {
+		writeDefaults({ CLAUDE_CONFIG_DIR: "/default", EMPTY: "default", EXTRA: "x" });
+		writeLocalConfig({ env: { CLAUDE_CONFIG_DIR: "/pinned", EMPTY: "" } });
+		expect(await resolveProjectEnv(makeProject())).toEqual({ CLAUDE_CONFIG_DIR: "/pinned", EMPTY: "", EXTRA: "x" });
+	});
+
+	it("never overrides a key from Project Settings", async () => {
+		writeDefaults({ A: "default" });
+		expect(await resolveProjectEnv(makeProject({ env: { A: "project" } }))).toEqual({ A: "project" });
+	});
+
+	it("expands {projectPath} and {projectName} to the project, not the worktree", async () => {
+		writeDefaults({ CLAUDE_CONFIG_DIR: "{projectPath}/.claude", TAG: "{projectName}-{projectName}", OTHER: "{unknown}" });
+		const project = makeProject();
+		expect(await resolveProjectEnv(project, join(TEST_DIR, "wt"))).toEqual({
+			CLAUDE_CONFIG_DIR: `${TEST_DIR}/.claude`,
+			TAG: "test-project-test-project",
+			OTHER: "{unknown}",
+		});
+	});
+
+	it("changes nothing when the setting is empty or absent", async () => {
+		writeLocalConfig({ env: { A: "1" } });
+		writeDefaults();
+		expect(await resolveProjectEnv(makeProject())).toEqual({ A: "1" });
+		writeFileSync(join(MOCK_DEV3_HOME, "settings.json"), JSON.stringify({ agentEnvDefaults: {} }));
+		expect(await resolveProjectEnv(makeProject())).toEqual({ A: "1" });
+	});
+
+	it("does not reach setup/dev/cleanup scripts, which read the operational config", async () => {
+		writeDefaults({ SHARED: "1" });
+		expect((await resolveOperationalProjectConfig(makeProject())).env).toBeUndefined();
+	});
+});
+
 describe("saveConfigToWinningLayer", () => {
 	const REVIEW = { "review-by-ai": { agentId: "builtin-claude", configId: "claude-auto-opus5-xhigh", prompt: "" } };
 
