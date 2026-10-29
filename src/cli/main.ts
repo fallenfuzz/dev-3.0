@@ -14,6 +14,7 @@ import { handleVents } from "./commands/vents";
 import { handleOverview } from "./commands/overview";
 import { handleKeepAlive } from "./commands/keep-alive";
 import { handleLabel } from "./commands/label";
+import { handleBoard } from "./commands/board";
 import { handleAutomations } from "./commands/automations";
 import { handleInstallHooks } from "./commands/install-hooks";
 import { handleInstallSkills } from "./commands/install-skills";
@@ -37,6 +38,7 @@ import { DEV_SERVER_LOG_SINK_VERB } from "../shared/dev-server-log";
 import { handleDevServerLogSink } from "./commands/dev-server-log-sink";
 import { handleShowImage, handleShowMedia } from "./commands/show-image";
 import { handleShowArtifact } from "./commands/show-artifact";
+import { handleLive } from "./commands/live";
 import { handleArtifactTemplate } from "./commands/artifact-template";
 import { handleInlineHtml } from "./commands/inline-html";
 import { handleStatusLine } from "./commands/statusline";
@@ -48,6 +50,7 @@ import { handleClaudePrompt } from "./commands/claude-prompt";
 import { handleClaudeTurnEnded } from "./commands/claude-turn-ended";
 import { handleClaudeClaim } from "./commands/claude-claim";
 import { handleClaudeSessionStart, handleNoteRecent } from "./commands/recent-notes";
+import { handleAgentExitedHook } from "./commands/agent-exited";
 import { handleClaudeStopFailure } from "./commands/claude-stop-failure";
 import { handleDoctor } from "./commands/doctor";
 import { handleUpdate } from "./commands/update";
@@ -98,6 +101,7 @@ Commands:
   dev3 keep-alive off [--task <id>]     Stop auto-reviving this task
   dev3 keep-alive status [--task <id>]  Show keep-alive state for a task
   dev3 keep-alive list [--all]          List kept-alive tasks (current project, or --all)
+  dev3 board export [--project <id>] [--json]  Write the board copy in .dev3/board/ now (copy must be on)
   dev3 label list                       List project labels
   dev3 label create "name" [--color "#hex"]  Create label
   dev3 label delete <id>                Delete label
@@ -106,6 +110,7 @@ Commands:
   dev3 label remove <id> [<id>...] [--task <task>]  Remove only these labels
   dev3 label set --clear [--task <id>]  Remove all labels from a task
   dev3 tasks list [--open] [--json] [--status <s>] [--label <id>] [--priority P0,P1] [--sort priority|seq] [--limit <n>] [--offset <n>]  List tasks (highest priority first, default 50)
+  dev3 tasks list --children-of seq:<N> [--project <id>] [--json]  Tasks created from inside that task, across projects
   dev3 automations list                 List project automations (scheduled agent runs)
   dev3 automations show <id>            Automation details + run history
   dev3 automations create --name "..." [--prompt "..." | --prompt -] --rrule "FREQ=DAILY;BYHOUR=9" [--template shipped-report]
@@ -131,6 +136,7 @@ Commands:
   dev3 show-image <path> [--caption "..."] [<path> ...]  Show images (screenshots/renders) in an in-app viewer bound to the task; each --caption annotates the preceding image
   dev3 show-media <video|audio> [--caption "..."] [<path> ...]  Play MP4/WebM video and MP3/M4A/WAV/OGG audio (max 300 MB each) in the same viewer as show-image; never autoplays
   dev3 show-artifact <report-dir | file.html> [--assets <file...>] [--title "..."]  Show a task-bound HTML artifact; a directory publishes with every CSS, JS, image, video and audio file under it
+  dev3 live <publish|adopt|url|status|list|get|set|patch|delete|events|ack|clear>  The task's one Live Artifact: a page replaced in place plus a store it shares with the agent (dev3 live for usage)
   dev3 artifact-template [--task <id>]   Copy this task's dev3 artifact starter into ./dev3-artifact-report — recovery when $DEV3_ARTIFACT_TEMPLATE_DIR is missing
   dev3 inline-html <index.html|dir> -o <out.html> [--json]  Fold a multi-file HTML report into one self-contained file (for a gist / preview URL); refuses on missing assets or embedded credentials
   dev3 peek [--task <id>] [--pane <N|paneId>] [--lines <N>] [--json] [--follow [--interval <s>]]  Read-only glance at a task's terminal: pane summary with output freshness + the tail of one pane; --follow re-prints only changed screens
@@ -326,6 +332,10 @@ async function main(): Promise<void> {
 			context,
 		);
 	}
+	if (command === "hook" && subcommand === "agent-exited") {
+		// Internal: the launch wrapper's report that its agent process ended.
+		return await handleAgentExitedHook(args, socketPath || context?.socketPath || null, context);
+	}
 	if (command === "hook" && subcommand === "claude-prompt") {
 		// Record the prompt and start its lifecycle observation atomically.
 		return await handleClaudePrompt(
@@ -498,6 +508,8 @@ async function main(): Promise<void> {
 					return await handleKeepAlive(subcommand, args, socketPath, context);
 			case "label":
 				return await handleLabel(subcommand, args, socketPath, context);
+			case "board":
+				return await handleBoard(subcommand, args, socketPath, context);
 			case "automations":
 				return await handleAutomations(subcommand, args, socketPath, context);
 			case "config":
@@ -526,6 +538,8 @@ async function main(): Promise<void> {
 				return await handleShowArtifact(rawArgs.slice(1), socketPath, context);
 			case "artifact-template":
 				return await handleArtifactTemplate(args, socketPath, context);
+			case "live":
+				return await handleLive(subcommand, args, socketPath, context);
 			case "peek":
 				return await handlePeek(args, socketPath, context);
 			case "pane":

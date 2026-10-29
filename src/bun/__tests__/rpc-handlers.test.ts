@@ -371,6 +371,12 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 	return { ...actual, mkdir: vi.fn(() => Promise.resolve(undefined)), rm: vi.fn(() => Promise.resolve(undefined)) };
 });
 
+// A real sidecar write is async I/O that the fake-timer hunter suites cannot await.
+vi.mock("../native-agent-attribution", () => ({
+	writeNativeAgentAttribution: vi.fn(async () => {}),
+	listNativeTaskAgents: vi.fn(async () => []),
+}));
+
 const mockSpawn = vi.fn();
 const mockSpawnSync = vi.fn();
 vi.mock("../spawn", () => ({
@@ -2570,6 +2576,14 @@ describe("handlers.createTask", () => {
 		expect(data.addTask).toHaveBeenCalledWith(project, "task", "todo", undefined);
 	});
 
+	it("records a GUI create as the user even when the request names an origin", async () => {
+		vi.mocked(data.getProject).mockResolvedValue(makeProject());
+		vi.mocked(data.addTask).mockResolvedValue(makeTask({ status: "todo" }));
+
+		await handlers.createTask({ projectId: "proj-1", description: "task", origin: { kind: "task", taskId: "x", projectId: "p" } } as never);
+		expect(vi.mocked(data.addTask).mock.calls[0][3]).toBeUndefined();
+	});
+
 	it("creates a terminal task directly without replaying completion effects", async () => {
 		const project = makeProject();
 		const task = makeTask({ status: "completed", worktreePath: null, branchName: null });
@@ -2691,7 +2705,7 @@ describe("handlers.listBranches", () => {
 describe("handlers.fetchBranches", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it("fetches origin then returns branches", async () => {
+	it("force-fetches origin (past any failure backoff) then returns branches", async () => {
 		const project = makeProject();
 		const branches = [
 			{ name: "main", isRemote: false },
@@ -2702,7 +2716,7 @@ describe("handlers.fetchBranches", () => {
 		vi.mocked(git.fetchOrigin).mockResolvedValue(true);
 
 		const result = await handlers.fetchBranches({ projectId: "proj-1" });
-		expect(git.fetchOrigin).toHaveBeenCalledWith(project.path);
+		expect(git.fetchOrigin).toHaveBeenCalledWith(project.path, undefined, undefined, { force: true });
 		expect(git.listBranches).toHaveBeenCalledWith(project.path);
 		expect(result).toEqual(branches);
 	});
@@ -4488,6 +4502,27 @@ describe("handlers.spawnVariants", () => {
 		expect(data.deleteTask).not.toHaveBeenCalled();
 	});
 
+	it("gives every new variant the source task's parent, so the group is one lineage node", async () => {
+		const project = makeProject();
+		const origin = { kind: "task", taskId: "parent-1", projectId: "proj-9" } as const;
+		const sourceTask = makeTask({ status: "todo", seq: 5, worktreePath: null, branchName: null, origin });
+		const secondVariant = makeTask({ id: "variant-2", status: "in-progress", preparing: true });
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.getTask).mockResolvedValue(sourceTask);
+		mockTransformSource(sourceTask);
+		vi.mocked(data.addTask).mockResolvedValue(secondVariant);
+		vi.mocked(git.createWorktree).mockResolvedValue({ worktreePath: "/tmp/vwt", branchName: "dev3/v" });
+		mockTaskWrites(sourceTask, secondVariant);
+
+		await handlers.spawnVariants({
+			taskId: "task-1",
+			projectId: "proj-1",
+			targetStatus: "in-progress",
+			variants: [{ agentId: "agent-1", configId: null }, { agentId: "agent-2", configId: null }],
+		});
+		expect(vi.mocked(data.addTask).mock.calls[0][3]).toEqual(expect.objectContaining({ origin }));
+	});
+
 	// The in-place transform re-checks the status under the file lock: a
 	// concurrent launch that already transformed the source must make the
 	// second call fail instead of silently double-launching.
@@ -5219,14 +5254,16 @@ describe("handlers.spawnVariants", () => {
 describe("handlers.addAttempts", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it("inherits existingBranch from the source task into added attempts", async () => {
+	it("inherits existingBranch and the parent from the source task into added attempts", async () => {
 		const project = makeProject();
+		const origin = { kind: "task", taskId: "parent-1", projectId: "proj-9" } as const;
 		const sourceTask = makeTask({
 			status: "in-progress",
 			seq: 5,
 			groupId: "group-1",
 			variantIndex: 1,
 			existingBranch: "feature/login",
+			origin,
 		});
 		const attemptTask = makeTask({
 			id: "attempt-2",
@@ -5263,6 +5300,7 @@ describe("handlers.addAttempts", () => {
 			"todo",
 			expect.objectContaining({
 				existingBranch: "feature/login",
+				origin,
 			}),
 		);
 
@@ -10182,6 +10220,24 @@ describe("handlers.destroyProjectTerminal", () => {
 // handlers.openQuickShell (replaces the removed home terminal)
 // ================================================================
 
+describe("createAutomationTask", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("records the automation as the task's origin", async () => {
+		const { createAutomationTask } = await import("../rpc-handlers/task-lifecycle");
+		const project = makeProject();
+		const created = makeTask({ status: "todo", worktreePath: null });
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.addTask).mockResolvedValue(created);
+		mockTaskWrites(created);
+
+		await createAutomationTask(project, { id: "auto-1", name: "Nightly", prompt: "Run it", agentId: null, configId: null });
+		expect(vi.mocked(data.addTask).mock.calls[0][3]).toEqual(
+			expect.objectContaining({ automationId: "auto-1", origin: { kind: "automation" } }),
+		);
+	});
+});
+
 describe("handlers.openQuickShell", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -11291,6 +11347,21 @@ describe("handlers.spawnBugHuntersInTask on a native task", () => {
 
 		const sessionStateWrites = (data.updateTask as any).mock.calls.filter((c: any[]) => c[2]?.sessionState);
 		expect(sessionStateWrites).toHaveLength(0);
+	});
+
+	it("leaves an attribution sidecar next to each hunter's launch script", async () => {
+		arrangeNativeTask();
+		arrangeNativePaneSet();
+
+		await launchHunters(2);
+
+		const { writeNativeAgentAttribution } = await import("../native-agent-attribution");
+		const scripts = (mockNativePanes.splitNativeTaskPane.mock.calls as any[][]).map((call) => call[3].launch.argv.at(-1) as string);
+		expect(scripts).toHaveLength(2);
+		for (const scriptPath of scripts) {
+			expect(scriptPath).toContain("bughunt-");
+			expect(writeNativeAgentAttribution).toHaveBeenCalledWith(scriptPath, expect.objectContaining({ agentCmd: "claude" }));
+		}
 	});
 });
 
@@ -15929,10 +16000,10 @@ describe("handlers.tmuxWindowNavigate", () => {
 	const SEP = "\t";
 	const HOST = "mybox";
 
-	// One list-windows row: window_id, index, active, panes, activity, bell, host_short, window_name, pane_title.
-	function row(id: string, active: string, name: string, title = HOST, extra: { panes?: number; activity?: number; bell?: string } = {}): string {
+	// One list-windows row: window_id, index, active, panes, activity, bell, host_short, window_name, @dev3_window_name, pane_title.
+	function row(id: string, active: string, name: string, title = HOST, extra: { panes?: number; activity?: number; bell?: string; customName?: string } = {}): string {
 		const index = id.slice(1);
-		return [id, index, active, String(extra.panes ?? 1), String(extra.activity ?? 100), extra.bell ?? "0", HOST, name, title].join(SEP);
+		return [id, index, active, String(extra.panes ?? 1), String(extra.activity ?? 100), extra.bell ?? "0", HOST, name, extra.customName ?? "", title].join(SEP);
 	}
 	const lay = (...rows: string[]) => rows.join("\n");
 
@@ -15969,6 +16040,13 @@ describe("handlers.tmuxWindowNavigate", () => {
 		mockLayouts([lay(row("@1", "1", "2.1.3", "✳ Fix auth race"), row("@2", "0", "zsh"), row("@3", "0", "build", "Dev Server"))]);
 		const res = await handlers.tmuxWindowNavigate({ taskId: TASK_ID });
 		expect(res.windows.map((w) => w.label)).toEqual(["Fix auth race", "zsh", "Dev Server"]);
+	});
+
+	it("carries a user-given window name beside the automatic label, and omits it when unset", async () => {
+		mockLayouts([lay(row("@1", "1", "claude", "✳ Fix auth", { customName: "Builder" }), row("@2", "0", "zsh"))]);
+		const res = await handlers.tmuxWindowNavigate({ taskId: TASK_ID });
+		expect(res.windows[0]).toMatchObject({ label: "Fix auth", customName: "Builder" });
+		expect(res.windows[1]).not.toHaveProperty("customName");
 	});
 
 	it("marks the window holding the last-focused agent pane as home", async () => {
