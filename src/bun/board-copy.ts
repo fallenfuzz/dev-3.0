@@ -22,6 +22,7 @@ import {
 	boardCopyTaskFileName,
 	buildBoardCopyManifest,
 	parseBoardCopyManifest,
+	parseBoardCopyTask,
 	renderTaskMessagesMarkdown,
 	renderTaskNotesMarkdown,
 	restoreTasksFromCopy,
@@ -374,11 +375,14 @@ export async function restoreBoardCopy(projectId: string, options: { now?: Date 
 			missing++;
 			continue;
 		}
+		let task: BoardCopyTask | null = null;
 		try {
-			copies.push(JSON.parse(content) as BoardCopyTask);
+			task = parseBoardCopyTask(JSON.parse(content));
 		} catch {
-			missing++;
+			// Unparseable JSON counts as missing, like a task that is not one.
 		}
+		if (task) copies.push(task);
+		else missing++;
 	}
 
 	const takenIds = new Set<string>();

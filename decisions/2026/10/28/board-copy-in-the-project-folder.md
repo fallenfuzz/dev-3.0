@@ -58,6 +58,9 @@ allowlist and restore mapping are in `src/shared/board-copy.ts`.
 - **What is not copied:** project env, scripts and accounts; task worktree and terminal handles,
   account ids, agent session state, imported session ids, keep-alive, scheduled work, PR caches and
   shared media. Agent messages only with `Project.boardCopyMessages`, and they are not restored.
+- **A copy is untrusted on the way back.** A repository can commit one (`git add -f`), so restore reads
+  every task file through the same allowlist (`parseBoardCopyTask`) and drops a file that is not a
+  task. A field such as `scheduledLaunch` would otherwise start an agent right after the restore.
 
 ## Risks
 

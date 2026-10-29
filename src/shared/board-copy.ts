@@ -8,7 +8,7 @@
 
 import type { AgentMessageLogRow } from "./agent-message-log";
 import type { CustomColumn, Label, Project, Task, TaskStatus } from "./types";
-import { ACTIVE_STATUSES, appendTaskMovement, getTaskTitle } from "./types";
+import { ACTIVE_STATUSES, ALL_STATUSES, appendTaskMovement, getTaskTitle } from "./types";
 
 /** Bumped only when an older reader could misread a newer copy. A restore refuses any other value. */
 export const BOARD_COPY_FORMAT_VERSION = 1;
@@ -78,12 +78,30 @@ export interface BoardCopyManifest {
 	taskFiles: string[];
 }
 
-export function toBoardCopyTask(task: Task): BoardCopyTask {
+export function toBoardCopyTask(task: BoardCopyTask): BoardCopyTask {
 	const out: Record<string, unknown> = {};
 	for (const field of BOARD_COPY_TASK_FIELDS) {
 		if (task[field] !== undefined) out[field] = task[field];
 	}
 	return out as BoardCopyTask;
+}
+
+const RESTORABLE_STATUSES: ReadonlySet<string> = new Set(ALL_STATUSES);
+
+/**
+ * Read one task file back, or null when it is not a task. A copy is untrusted
+ * input (a repository can commit one), so only allowlisted fields survive and
+ * a field that could launch or route an agent never comes back.
+ */
+export function parseBoardCopyTask(value: unknown): BoardCopyTask | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const raw = value as Record<string, unknown>;
+	if (typeof raw.id !== "string" || !raw.id) return null;
+	if (typeof raw.seq !== "number" || !Number.isInteger(raw.seq) || raw.seq < 1) return null;
+	if (typeof raw.title !== "string" || typeof raw.description !== "string" || typeof raw.baseBranch !== "string") return null;
+	if (typeof raw.status !== "string" || !RESTORABLE_STATUSES.has(raw.status)) return null;
+	if (raw.relations !== undefined && !Array.isArray(raw.relations)) return null;
+	return toBoardCopyTask(raw as unknown as BoardCopyTask);
 }
 
 /** Lowercase ASCII words joined by hyphens, at most 40 characters; `task` when nothing is left. */
@@ -186,7 +204,7 @@ export function restoreTasksFromCopy(
 	const idMap = new Map(copies.map((copy) => [copy.id, collides ? options.newId() : copy.id]));
 	return copies.map((copy) => {
 		const task: Task = {
-			...copy,
+			...toBoardCopyTask(copy),
 			id: idMap.get(copy.id)!,
 			projectId,
 			worktreePath: null,

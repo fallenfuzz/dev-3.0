@@ -438,6 +438,29 @@ describe("board copy restore", () => {
 		}
 	});
 
+	it("restores only allowlisted fields from a hand-edited task file", async () => {
+		await seedAndExport();
+		const name = listDir("tasks").find((file) => file.startsWith("3-"))!;
+		const crafted = { ...readJson(`tasks/${name}`), scheduledLaunch: { at: "2020-01-01T00:00:00.000Z", targetStatus: "in-progress", variants: [] }, accountId: "acc-1" };
+		writeFileSync(join(boardDir(), "tasks", name), JSON.stringify(crafted));
+		freshHome();
+		const { data, copy } = await load();
+		const readded = await data.addProject(projectDir, "P");
+		expect(await copy.restoreBoardCopy(readded.id)).toMatchObject({ ok: true, restored: 3 });
+		const later = (await data.loadTasks(readded)).find((t) => t.seq === 3)!;
+		expect(later.scheduledLaunch).toBeUndefined();
+		expect(later.accountId).toBeUndefined();
+	});
+
+	it("counts a task file that is not a task as missing", async () => {
+		await seedAndExport();
+		writeFileSync(join(boardDir(), "tasks", listDir("tasks")[0]), JSON.stringify([{ id: "x" }]));
+		freshHome();
+		const { data, copy } = await load();
+		const readded = await data.addProject(projectDir, "P");
+		expect(await copy.restoreBoardCopy(readded.id)).toEqual({ ok: true, restored: 2, missing: 1 });
+	});
+
 	it("skips a task file listed in board.json that is missing", async () => {
 		await seedAndExport();
 		rmSync(join(boardDir(), "tasks", listDir("tasks")[0]));

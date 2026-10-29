@@ -5,6 +5,7 @@ import {
 	boardCopySlug,
 	boardCopyTaskStem,
 	parseBoardCopyManifest,
+	parseBoardCopyTask,
 	restoreTasksFromCopy,
 	toBoardCopyTask,
 	type BoardCopyTask,
@@ -67,6 +68,29 @@ describe("parseBoardCopyManifest", () => {
 	});
 });
 
+describe("parseBoardCopyTask", () => {
+	it("drops fields outside the allowlist, including ones that launch an agent", () => {
+		const parsed = parseBoardCopyTask({
+			...copyTask({}),
+			scheduledLaunch: { at: "2020-01-01T00:00:00.000Z", targetStatus: "in-progress", variants: [] },
+			keepAlive: { enabled: true },
+			accountId: "acc-1",
+			importedSessionId: "sess-1",
+			opsWorkDir: "/",
+		});
+		expect(parsed).toEqual(copyTask({}));
+	});
+
+	it("rejects values that are not tasks", () => {
+		expect(parseBoardCopyTask(null)).toBeNull();
+		expect(parseBoardCopyTask([copyTask({})])).toBeNull();
+		expect(parseBoardCopyTask({ ...copyTask({}), id: "" })).toBeNull();
+		expect(parseBoardCopyTask({ ...copyTask({}), seq: "1" })).toBeNull();
+		expect(parseBoardCopyTask({ ...copyTask({}), status: "running" })).toBeNull();
+		expect(parseBoardCopyTask({ ...copyTask({}), relations: "a" })).toBeNull();
+	});
+});
+
 describe("restoreTasksFromCopy", () => {
 	const now = "2026-10-28T12:00:00.000Z";
 	let n = 0;
@@ -82,6 +106,12 @@ describe("restoreTasksFromCopy", () => {
 		expect(out[0]).toMatchObject({ projectId: "proj", status: "completed", branchName: "feat/a", worktreePath: null });
 		expect(out[1]).toMatchObject({ status: "todo", branchName: null, customColumnId: null, movedAt: now, statusEnteredAt: now });
 		expect(out[1].movements?.[out[1].movements.length - 1]).toMatchObject({ kind: "status", from: "review-by-user", to: "todo", fromColumnId: "c1" });
+	});
+
+	it("never carries a field outside the allowlist, even when the caller passes one", () => {
+		const smuggled = { ...copyTask({}), scheduledLaunch: { at: now, targetStatus: "in-progress", variants: [] } } as BoardCopyTask;
+		const [task] = restoreTasksFromCopy([smuggled], "proj", { now, takenIds: new Set(), newId });
+		expect(task.scheduledLaunch).toBeUndefined();
 	});
 
 	it("remaps all ids and their relations when one id is taken elsewhere", () => {
