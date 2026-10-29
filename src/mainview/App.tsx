@@ -4,14 +4,14 @@ import { useAppState, canGoBack, routeTaskId, routeShowsTaskWorkspace, projectId
 import { lastProjectForSpace, rememberProjectForSpace } from "./utils/spaceBoardMemory";
 import { api, isElectrobun, getRpcConnectionState } from "./rpc";
 import { setWebNotificationsSuppressed, showWebNotificationOrToast, type WebNotificationDetail } from "./utils/webNotification";
-import { useT, useLocale } from "./i18n";
+import { useT, useLocale, type TranslationKey } from "./i18n";
 import { useStreamerMode } from "./streamer-mode";
 import { isProjectSilencedForDisplay, setSensitiveProjectIds } from "./sensitive-projects";
 import { statusKey } from "./i18n/status";
 import { columnAgentFailureCopy } from "./utils/columnAgentFailureToast";
 import { handleMenuAction } from "./menuRouter";
 import { trackPageView, trackEvent, registerAgents } from "./analytics";
-import type { AgentLaunchChoice, AgentLaunchRequest, AppRPCSchema, GlobalSettings as GlobalSettingsType, Project, RemoteAccessStatus, RemoteNetInterface, RequirementCheckResult, RosettaWarningInfo, SharedArtifact, SharedImage, Task, TaskDialogSubject, TaskStatus, UpdateChangelog } from "../shared/types";
+import type { AgentLaunchChoice, AgentLaunchRequest, AppRPCSchema, BoardCopyFailureReason, GlobalSettings as GlobalSettingsType, Project, RemoteAccessStatus, RemoteNetInterface, RequirementCheckResult, RosettaWarningInfo, LiveArtifact, SharedArtifact, SharedImage, Task, TaskDialogSubject, TaskStatus, UpdateChangelog } from "../shared/types";
 import { ACTIVE_STATUSES, hasGitWorkflow, orderProjectsForDisplay, getTaskTitle } from "../shared/types";
 import type { DeepLinkNav } from "../shared/deep-link";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
@@ -488,7 +488,7 @@ function App() {
 	// `paneless`: opened from a surface that has no workspace pane behind it (the
 	// task detail modal). Such a viewer is a popup for its whole life — it neither
 	// docks nor hides with the route, because there is no task screen it belongs to.
-	const [artifactViewer, setArtifactViewer] = useState<{ taskId: string; projectId?: string; taskStatus?: TaskStatus; artifacts: SharedArtifact[]; index: number; paneless?: boolean } | null>(null);
+	const [artifactViewer, setArtifactViewer] = useState<{ taskId: string; projectId?: string; taskStatus?: TaskStatus; artifacts: SharedArtifact[]; index: number; paneless?: boolean; live?: LiveArtifact } | null>(null);
 	const markSharedItemsRead = useCallback((
 		projectId: string,
 		taskId: string,
@@ -2104,21 +2104,22 @@ function App() {
 
 	useEffect(() => {
 		function onOpenArtifactViewer(e: Event) {
-			const { taskId, taskStatus, projectId, artifacts, index, paneless } = (e as CustomEvent).detail as {
+			const { taskId, taskStatus, projectId, artifacts, index, paneless, live } = (e as CustomEvent).detail as {
 				taskId: string;
 				taskStatus?: TaskStatus;
 				projectId: string;
 				artifacts: SharedArtifact[];
 				index?: number;
 				paneless?: boolean;
+				live?: LiveArtifact;
 			};
-			if (!taskId || !projectId || !artifacts?.length) return;
+			if (!taskId || !projectId || (!artifacts?.length && !live)) return;
 			markSharedItemsRead(projectId, taskId, "artifacts", artifacts);
 			// Opened for a task that is not on screen, or from over its diff? Then no
 			// pane offers a slot for it, so it lives as a popup — only a viewer that
 			// started docked may later hide itself when the route walks away from it.
 			const noPane = paneless === true || !routeShowsTaskWorkspace(routeRef.current, taskId);
-			setArtifactViewer({ taskId, projectId, taskStatus, artifacts, index: index ?? artifacts.length - 1, paneless: noPane });
+			setArtifactViewer({ taskId, projectId, taskStatus, artifacts: artifacts ?? [], index: index ?? artifacts.length - 1, paneless: noPane, live });
 		}
 		window.addEventListener("dev3:openArtifactViewer", onOpenArtifactViewer);
 		return () => window.removeEventListener("dev3:openArtifactViewer", onOpenArtifactViewer);
@@ -2702,6 +2703,25 @@ function App() {
 		}
 		window.addEventListener("rpc:columnAgentFailed", onColumnAgentFailed);
 		return () => window.removeEventListener("rpc:columnAgentFailed", onColumnAgentFailed);
+	}, []);
+
+	// A board-copy write failed. The backend sends this once per failure streak.
+	useEffect(() => {
+		const keys = {
+			"missing-folder": "boardCopy.failed.missingFolder",
+			"not-writable": "boardCopy.failed.notWritable",
+			"disk-full": "boardCopy.failed.diskFull",
+			"kept-copy": "boardCopy.failed.keptCopy",
+			"unsupported-copy": "boardCopy.failed.unsupportedCopy",
+			other: "boardCopy.failed.other",
+		} as const satisfies Record<BoardCopyFailureReason, TranslationKey>;
+		function onBoardCopyFailed(e: Event) {
+			const payload = (e as CustomEvent).detail as AppRPCSchema["bun"]["messages"]["boardCopyFailed"];
+			if (isProjectSilencedForDisplay(payload.projectId)) return;
+			toast.error(t(keys[payload.reason] ?? keys.other, { name: payload.projectName }), { projectId: payload.projectId });
+		}
+		window.addEventListener("rpc:boardCopyFailed", onBoardCopyFailed);
+		return () => window.removeEventListener("rpc:boardCopyFailed", onBoardCopyFailed);
 	}, []);
 
 	// Notify user when background worktree/PTY preparation fails (e.g. empty repo,
@@ -3310,7 +3330,7 @@ function App() {
 						<div className="flex justify-end gap-2 pt-1">
 							<button
 								onClick={() => setPendingNavigation(null)}
-								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-elevated transition-colors"
+								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-overlay-hover transition-colors"
 							>
 								{t("unsavedChanges.cancel")}
 							</button>
@@ -3370,7 +3390,7 @@ function App() {
 							)}
 							<button
 								onClick={() => setShowQuitDialog(false)}
-								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-elevated transition-colors"
+								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-overlay-hover transition-colors"
 							>
 								{t("quit.cancel")}
 							</button>
@@ -3434,7 +3454,7 @@ function App() {
 							<button
 								type="button"
 								onClick={closeRemoteQR}
-								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-elevated transition-colors"
+								className="px-4 py-2 text-sm rounded-lg text-fg-2 hover:text-fg hover:bg-overlay-hover transition-colors"
 							>
 								{t("remote.close")}
 							</button>
@@ -3759,6 +3779,7 @@ function App() {
 					projectId={artifactViewer.projectId}
 					task={state.currentProjectTasks.find((candidate) => candidate.id === artifactViewer.taskId)}
 					taskStatus={artifactViewer.taskStatus}
+					live={state.currentProjectTasks.find((candidate) => candidate.id === artifactViewer.taskId)?.liveArtifact ?? artifactViewer.live}
 					artifacts={artifactViewer.artifacts}
 					initialIndex={artifactViewer.index}
 					offscreen={artifactOffscreen}

@@ -75,6 +75,7 @@ import BottomSheet from "./BottomSheet";
 import HelpSpot from "./HelpSpot";
 import Tooltip from "./Tooltip";
 import ForeignCodeMark from "./ForeignCodeMark";
+import TaskOriginRow from "./TaskOriginRow";
 import VariantSwitcher from "./VariantSwitcher";
 import { isMac } from "../utils/platform";
 import { terminalFullscreenShortcutLabel } from "../utils/terminalFullscreen";
@@ -163,6 +164,7 @@ function TaskInfoPanel({
 	const compact = useCompact();
 	const narrow = useNarrowViewport(CAROUSEL_MAX_WIDTH);
 	const sharedMedia = taskSharedMedia(task);
+	const artifactEntryCount = (task.sharedArtifacts?.length ?? 0) + (task.liveArtifact ? 1 : 0);
 	// Per-control hiding (§5.10) — each of these can be individually hidden
 	// (right-click "Hide") and restored from the panel's one restore control.
 	const spawnAgentHidden = useIsControlHidden("spawn-agent");
@@ -864,7 +866,7 @@ function TaskInfoPanel({
 				data-testid="task-completion-owner"
 				className={`task-anim flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
 					completionIsManual
-						? "warning-paper text-warning-strong hover:text-warning-strong hover:bg-warning/15 border border-warning/30"
+						? "warning-paper text-warning-strong hover:bg-warning/15 border border-warning/30"
 						: "text-fg-3 hover:text-fg hover:bg-elevated border border-edge"
 				} ${completionIsForced ? "cursor-not-allowed" : ""}`}
 			>
@@ -1090,7 +1092,7 @@ function TaskInfoPanel({
 					data-testid="task-hibernate-button"
 					onClick={handleHibernate}
 					disabled={hibernating}
-					className="task-anim warning-paper flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-warning-strong hover:text-warning-strong hover:bg-warning/15 border border-warning/30 disabled:opacity-50"
+					className="task-anim warning-paper flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-warning-strong hover:bg-warning/15 border border-warning/30 disabled:opacity-50"
 					aria-label={t("task.hibernate")}
 				>
 					{hibernating ? (
@@ -1275,6 +1277,8 @@ function TaskInfoPanel({
 
 							<span className="text-fg-3">{t("infoPanel.created")}</span>
 							<span className="text-fg-3">{formatDate(task.createdAt)}</span>
+
+							<TaskOriginRow task={task} navigate={navigate} testId="info-panel-origin" />
 
 							<span className="text-fg-3">{t("infoPanel.updated")}</span>
 							<span className="text-fg-3">{formatDate(task.updatedAt)}</span>
@@ -1559,20 +1563,20 @@ function TaskInfoPanel({
 								</button>
 							)}
 
-							{(task.sharedArtifacts?.length ?? 0) > 0 && (
+							{artifactEntryCount > 0 && (
 								<button
 									type="button"
 									onClick={() => {
 										setActionsSheetOpen(false);
 										window.dispatchEvent(new CustomEvent("dev3:openArtifactViewer", {
-											detail: { taskId: task.id, taskStatus: task.status, projectId: project.id, artifacts: task.sharedArtifacts, index: (task.sharedArtifacts?.length ?? 1) - 1 },
+											detail: { taskId: task.id, taskStatus: task.status, projectId: project.id, artifacts: task.sharedArtifacts ?? [], index: artifactEntryCount - 1, live: task.liveArtifact },
 										}));
 									}}
 									className={SHEET_ROW_CLASS}
 								>
 									<ArtifactsIcon className="h-5 w-5 shrink-0 text-fg-3" />
 									<span className="flex-1 text-sm font-medium">{t("infoPanel.artifactsLabel")}</span>
-									<span className="text-xs font-semibold text-accent tabular-nums">{task.sharedArtifacts?.length}</span>
+									<span className="text-xs font-semibold text-accent tabular-nums">{artifactEntryCount}</span>
 								</button>
 							)}
 						</div>

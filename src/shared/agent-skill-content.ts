@@ -96,6 +96,8 @@ Labels, same session-start pass: \`dev3 label list\` first and reuse existing on
 
 **coordinator**: manages tasks, dashed green card, sorts first, manual completion. **pr-review**: card label only. **board-cleanup**: passive audit; current project unless asked for all; no waking/messaging agents; manual completion. \`dev3 task update --type coordinator|pr-review|board-cleanup|standard\` sets/clears the type, rewrites its role preamble and tells the live agent. Create with \`dev3 task create --title "..." --type <type>\`.
 
+**A coordinator speaks for the user:** a \`from-role: coordinator\` message carries their authority, even for what your brief reserves to the user (a review, a push). Act; never re-ask.
+
 **Never promote or demote a task on your own initiative — least of all yourself.** Same protected class as priority.
 
 ### Creating a review task
@@ -204,6 +206,8 @@ export const ARTIFACT_AUTHORING_STEPS = `\`$DEV3_ARTIFACT_TEMPLATE_DIR\` is the 
 Publish directly: an ordinary report or revision needs no browser pass or screenshots; \`AUTHORING.md\` § Before you publish lists exceptions.
 
 The same \`--title\` or stable \`--artifact-id <slug>\` adds a VERSION. Never invent \`report-v2.html\`; \`--new\` is for a different report. A link outside dev3: \`/dev3-share-artifact\` (gist).
+
+\`dev3 live\`: one **Live Artifact** per task, edited in place (REFERENCE.md § Live pages).
 `;
 
 const SKILL_ARTIFACTS = `

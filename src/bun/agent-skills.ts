@@ -17,6 +17,7 @@ import {
 } from "../shared/agent-skill-content";
 import { type HookCliDialect, hookCliDialect } from "../shared/dev3-cli-path";
 import { claudeConfigLocation } from "../shared/claude-config-dir";
+import { dev3SubcommandRules, isBroadDev3Rule } from "../shared/agent-hooks";
 import { COORDINATOR_PROMPT } from "../shared/types";
 
 // Re-exported for backward-compat: agents.ts and other callers import the
@@ -958,7 +959,7 @@ Reach for these when the *word*, not the process, is the confusion.
 Point, don't dig. Name where to look and stop — deep diagnosis is \`/diagnosing-bugs\`, not this skill.
 
 - Environment or setup acting up → \`dev3 doctor\` first.
-- Disk filling up → \`dev3 doctor --worktrees\`. Per project it shows what \`~/.dev3.0/worktrees\` holds and how much is reclaimable: orphaned folders whose task record is gone, worktrees whose teardown never finished, old diffs/logs. Report-only; \`--prune-orphans\` / \`--prune-older-than 30d\` delete, and anything on an unmerged \`dev3/task-*\` branch is skipped without \`--force-unmerged\`.
+- Disk filling up → \`dev3 doctor --worktrees\`. Per project it shows what \`~/.dev3.0/worktrees\` holds and how much is reclaimable: orphaned folders whose task record is gone, worktrees whose teardown never finished, old diffs/logs. Report-only; \`--prune-orphans\` / \`--prune-older-than 30d\` delete. An unmerged \`dev3/task-*\` branch's folder is skipped by \`--prune-orphans\` and waits 60 days under \`--prune-older-than\` unless \`--force-unmerged\`. dev3 itself runs \`--prune-older-than 14d\` once a day (off: Settings → System → "Clean up old task files"). \`--gzip-diffs\` compresses old plain diff snapshots in place; the daily run does that too.
 - The task's terminal died → **Resume Agent Session** restarts the agent with its conversation intact (\`--continue\`), picking up right where it stopped.
 - Spaces, settings, agent presets, projects or the model catalog came back empty → dev3 keeps hourly copies of each, plus a last-known-good copy that rotation never evicts. Restoring is manual and always starts with quitting the app: \`docs/state-backups.md\` has the exact steps and the table of what is and is not copied (credentials deliberately are not).
 - "Why does dev3 behave this way?" → the relevant record in \`decisions/\` usually explains it.
@@ -1557,12 +1558,12 @@ function installAgentsMd(compact = false): void {
 }
 
 /**
- * Claude Code matches a `Bash(<prefix>*)` rule against the literal command text,
- * so the rule has to spell the CLI exactly the way our generated commands do —
+ * Claude Code matches a Bash rule against the literal command text, so the rules
+ * have to spell the CLI exactly the way our generated commands do —
  * `~/.dev3.0/bin/dev3` on POSIX, the absolute `dev3.exe` on Windows.
  */
-export function claudeBashPermission(dialect: HookCliDialect = hookCliDialect()): string {
-	return `Bash(${dialect.cli} *)`;
+export function claudeBashPermissions(dialect: HookCliDialect = hookCliDialect()): string[] {
+	return dev3SubcommandRules(dialect.cli);
 }
 
 /**
@@ -1582,7 +1583,7 @@ export function claudeBashPermission(dialect: HookCliDialect = hookCliDialect())
  * an older wording of the same entry is recognised and replaced.
  */
 export const DEV3_AUTO_MODE_ALLOW_ENTRY =
-	"dev3 task lifecycle: the `dev3` CLI is the dev3 app's own control plane, and `dev3 task move` — `--status completed` and `--status cancelled` included — is a request to the running app, not local destruction. The app answers it with its own approval dialog that the user clicks, and the worktree it then removes is disposable task scratch space whose work is preserved elsewhere before the move is ever requested. Applies to `dev3` however it is spelled (`~/.dev3.0/bin/dev3`, an absolute `dev3.exe`), and only to `dev3` subcommands — nothing else on the command line is cleared by this entry.";
+	"dev3 task lifecycle: the `dev3` CLI is the dev3 app's own control plane, and `dev3 task move` — `--status completed` and `--status cancelled` included — is a request to the running app, not local destruction. The app answers it with its own approval dialog that the user clicks, and the worktree it then removes is disposable task scratch space whose work is preserved elsewhere before the move is ever requested. Applies to `dev3` however it is spelled (`~/.dev3.0/bin/dev3`, an absolute `dev3.exe`), and only to `dev3` subcommands — nothing else on the command line is cleared by this entry. Commands that execute something are not control-plane requests: `dev3 pane run \"<command>\"` runs `<command>`, and `dev3 dev-server start|restart` runs the project's dev script (which the agent can edit in `.dev3/config.json`). Judge that command exactly as if the agent ran it directly; this entry clears none of it.";
 
 /**
  * Git and PR management a dev3 task does when the user asks for it. The defaults
@@ -1641,12 +1642,15 @@ const AUTO_MODE_DEFAULTS = "$defaults";
 export function applyClaudeSettings(settings: Record<string, unknown>, socketsPath: string): boolean {
 	let changed = false;
 
-	// 1. permissions.allow — auto-approve the dev3 CLI.
-	const bashPermission = claudeBashPermission();
+	// 1. permissions.allow — auto-approve the dev3 metadata subcommands, and take
+	// back the whole-CLI rule an older dev3 wrote (it covered `dev3 pane run`).
 	const permissions = (settings.permissions ?? {}) as Record<string, unknown>;
-	const allow = Array.isArray(permissions.allow) ? (permissions.allow as string[]) : [];
-	if (!allow.includes(bashPermission)) {
-		allow.push(bashPermission);
+	const existingAllow = Array.isArray(permissions.allow) ? (permissions.allow as string[]) : [];
+	const allow = existingAllow.filter((rule) => !isBroadDev3Rule(rule));
+	if (allow.length !== existingAllow.length) changed = true;
+	for (const rule of claudeBashPermissions()) {
+		if (allow.includes(rule)) continue;
+		allow.push(rule);
 		changed = true;
 	}
 	permissions.allow = allow;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import { extractRepoName, hasGitWorkflow } from "../../shared/types";
-import type { AutoConfigureKey, AutoConfigureResult, GitInitOffer, Project } from "../../shared/types";
+import type { AutoConfigureKey, AutoConfigureResult, BoardCopyOffer, GitInitOffer, Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
 import { useT, type TranslationKey } from "../i18n";
@@ -43,6 +43,8 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [autoConfigure, setAutoConfigure] = useState(false);
 	// A click before the stored value arrives wins over it.
 	const autoConfigureTouched = useRef(false);
+	// Off every time: it writes into the project folder, so each project opts in on its own.
+	const [boardCopy, setBoardCopy] = useState(false);
 	// Off: picked folders become projects whose tasks run in the folder itself.
 	const [gitWorkflow, setGitWorkflow] = useState(true);
 	const [gitUrl, setGitUrl] = useState("");
@@ -135,13 +137,14 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	 * initialize in place. `null` means the user declined and nothing changed.
 	 */
 	async function initAfterConfirm(offer: GitInitOffer, withAutoConfigure: boolean): Promise<
-		{ ok: true; project: Project; autoConfigured?: AutoConfigureResult } | { ok: false; error: string } | null
+		{ ok: true; project: Project; autoConfigured?: AutoConfigureResult; boardCopyOffer?: BoardCopyOffer } | { ok: false; error: string } | null
 	> {
 		if (!(await confirmGitInit(offer))) return null;
 		const result = await api.request.initAndAddProject({
 			path: offer.path,
 			initNonEmpty: true,
 			...(withAutoConfigure ? { autoConfigure: true } : {}),
+			...(boardCopy ? { boardCopy: true } : {}),
 		});
 		if (result.ok) {
 			const key = offer.mode === "init" ? "addProject.gitInit.success" : "addProject.gitInit.successFirstCommit";
@@ -182,6 +185,64 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		toast.success(t("addProject.autoConfigDone", { name: project.name, fields }), { source: "dashboard" });
 	}
 
+	/**
+	 * The folder already holds a board copy and the new board is empty: ask
+	 * before restoring. Declining leaves both the board and the copy untouched.
+	 */
+	async function offerBoardCopyRestore(project: Project, offer: BoardCopyOffer | undefined) {
+		if (!offer) return;
+		if (offer.status === "unsupported-version") {
+			toast.error(t("boardCopy.restoreUnsupported", { name: project.name, version: offer.version }), { source: "dashboard" });
+			return;
+		}
+		if (offer.status === "invalid") {
+			toast.error(t("boardCopy.restoreInvalid", { name: project.name }), { source: "dashboard" });
+			return;
+		}
+		const controller = new AbortController();
+		pendingConfirmRef.current = controller;
+		const ok = await confirm({
+			title: t("boardCopy.restoreTitle"),
+			message: t.plural("boardCopy.restoreMessage", offer.taskCount, {
+				name: project.name,
+				date: new Date(offer.exportedAt).toLocaleString(),
+			}),
+			confirmLabel: t("boardCopy.restoreConfirm"),
+			signal: controller.signal,
+		}).finally(() => {
+			if (pendingConfirmRef.current === controller) pendingConfirmRef.current = null;
+		});
+		if (!ok) return;
+		try {
+			const result = await api.request.restoreBoardCopy({ projectId: project.id });
+			if (!result.ok) {
+				const key = result.reason === "unsupported-version" ? "boardCopy.restoreUnsupported"
+					: result.reason === "board-not-empty" ? "boardCopy.restoreNotEmpty"
+					: "boardCopy.restoreInvalid";
+				toast.error(t(key, { name: project.name, version: result.version ?? "" }), { source: "dashboard" });
+				return;
+			}
+			const [projects, tasks] = await Promise.all([api.request.getProjects(), api.request.getTasks({ projectId: project.id })]);
+			const restoredProject = projects.find((p) => p.id === project.id);
+			if (restoredProject) dispatch({ type: "updateProject", project: restoredProject });
+			dispatch({ type: "setTasks", projectId: project.id, tasks });
+			toast.success(t.plural("boardCopy.restored", result.restored, { name: project.name }), { source: "dashboard" });
+			if (result.missing > 0) toast.error(t.plural("boardCopy.restoreMissing", result.missing), { source: "dashboard" });
+		} catch (err) {
+			toast.error(t("boardCopy.restoreFailed", { name: project.name, error: String(err) }), { source: "dashboard" });
+		}
+	}
+
+	const boardCopySwitch = (
+		<div className="flex items-center justify-between gap-4">
+			<div className="space-y-0.5">
+				<span className="block text-fg-2 text-sm font-medium">{t("boardCopy.addSwitch")}</span>
+				<span className="block text-fg-3 text-xs leading-5">{t("boardCopy.addSwitchHint")}</span>
+			</div>
+			<ToggleSwitch checked={boardCopy} ariaLabel={t("boardCopy.addSwitch")} onToggle={() => setBoardCopy((on) => !on)} />
+		</div>
+	);
+
 	// Lives inside the Local and Clone panes, so the tab strip stays put on New, which has nothing to detect.
 	const autoConfigureSwitch = (
 		<div className="flex items-center justify-between gap-4">
@@ -201,7 +262,12 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		for (const folder of folders) {
 			// The backend names the project - see the addProject RPC comment.
 			try {
-				const first = await api.request.addProject({ path: folder, ...(withGitWorkflow ? {} : { gitWorkflow: false }), ...(autoConfigure ? { autoConfigure: true } : {}) });
+				const first = await api.request.addProject({
+					path: folder,
+					...(withGitWorkflow ? {} : { gitWorkflow: false }),
+					...(autoConfigure ? { autoConfigure: true } : {}),
+					...(boardCopy ? { boardCopy: true } : {}),
+				});
 				// Declining `git init` on a plain folder still leaves the gitless offer.
 				const result = !first.ok && first.gitInit
 					? (await initAfterConfirm(first.gitInit, autoConfigure)) ?? (first.notGitRepo ? first : { ok: false as const, error: t("addProject.gitInit.declined") })
@@ -209,6 +275,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				if (result.ok) {
 					dispatch({ type: "addProject", project: result.project });
 					reportAutoConfigured(result.project, result.autoConfigured);
+					if ("boardCopyOffer" in result) await offerBoardCopyRestore(result.project, result.boardCopyOffer);
 					added.push(result.project);
 					void applyPendingSpaces(result.project.id);
 					trackEvent("project_added", { source: "local" });
@@ -289,12 +356,13 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		if (!folder) return;
 		setInitializing(true);
 		try {
-			const first = await api.request.initAndAddProject({ path: folder });
+			const first = await api.request.initAndAddProject({ path: folder, ...(boardCopy ? { boardCopy: true } : {}) });
 			const result = !first.ok && first.gitInit
 				? (await initAfterConfirm(first.gitInit, false)) ?? { ok: false as const, error: t("addProject.gitInit.declined") }
 				: first;
 			if (result.ok) {
 				dispatch({ type: "addProject", project: result.project });
+				await offerBoardCopyRestore(result.project, result.boardCopyOffer);
 				void applyPendingSpaces(result.project.id);
 				trackEvent("project_added", { source: "init" });
 				posthog.capture("project_added", { source: "init" });
@@ -345,10 +413,12 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				repoName: repoName.trim() || undefined,
 				progressId,
 				...(autoConfigure ? { autoConfigure: true } : {}),
+				...(boardCopy ? { boardCopy: true } : {}),
 			});
 			if (result.ok) {
 				dispatch({ type: "addProject", project: result.project });
 				reportAutoConfigured(result.project, result.autoConfigured);
+				await offerBoardCopyRestore(result.project, result.boardCopyOffer);
 				void applyPendingSpaces(result.project.id);
 				trackEvent("project_added", { source: "clone" });
 				posthog.capture("project_added", { source: "clone" });
@@ -514,6 +584,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 							{t(gitWorkflow ? "addProject.browseHint" : "addProject.browseHintFolder")}
 						</p>
 						{autoConfigureSwitch}
+						{boardCopySwitch}
 						<button
 							onClick={handleBrowseLocal}
 							disabled={browsing}
@@ -546,6 +617,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						<p className="text-fg-3 text-sm">
 							{t("addProject.initHint")}
 						</p>
+						{boardCopySwitch}
 						<button
 							onClick={handleInitNew}
 							disabled={initializing}
@@ -622,6 +694,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						)}
 
 						{autoConfigureSwitch}
+						{boardCopySwitch}
 
 						{/* Live clone output (last lines of `git clone --progress`) */}
 						{cloning && (
