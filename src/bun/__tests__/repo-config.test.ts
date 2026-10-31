@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 // Mock paths + git so repo-config resolves against tmp dirs and a stubbed git
 const MOCK_DEV3_HOME = join(tmpdir(), `dev3-home-test-${process.pid}`);
@@ -1148,11 +1148,17 @@ describe("resolveProjectEnv with global agentEnvDefaults", () => {
 		expect(await resolveProjectEnv(makeProject({ env: { A: "project" } }))).toEqual({ A: "project" });
 	});
 
-	it("expands {projectPath} and {projectName} to the project, not the worktree", async () => {
-		writeDefaults({ CLAUDE_CONFIG_DIR: "{projectPath}/.claude", TAG: "{projectName}-{projectName}", OTHER: "{unknown}" });
+	it("expands {home}, and {projectPath} and {projectName} to the project, not the worktree", async () => {
+		writeDefaults({
+			CLAUDE_CONFIG_DIR: "{home}/.claude-projects/{projectName}",
+			ROOT: "{projectPath}/x",
+			TAG: "{projectName}-{projectName}",
+			OTHER: "{unknown}",
+		});
 		const project = makeProject();
 		expect(await resolveProjectEnv(project, join(TEST_DIR, "wt"))).toEqual({
-			CLAUDE_CONFIG_DIR: `${TEST_DIR}/.claude`,
+			CLAUDE_CONFIG_DIR: `${homedir()}/.claude-projects/test-project`,
+			ROOT: `${TEST_DIR}/x`,
 			TAG: "test-project-test-project",
 			OTHER: "{unknown}",
 		});
@@ -1166,7 +1172,7 @@ describe("resolveProjectEnv with global agentEnvDefaults", () => {
 		expect(await resolveProjectEnv(makeProject())).toEqual({ A: "1" });
 	});
 
-	it("does not reach setup/dev/cleanup scripts, which read the operational config", async () => {
+	it("does not reach dev and cleanup scripts, which read the operational config", async () => {
 		writeDefaults({ SHARED: "1" });
 		expect((await resolveOperationalProjectConfig(makeProject())).env).toBeUndefined();
 	});

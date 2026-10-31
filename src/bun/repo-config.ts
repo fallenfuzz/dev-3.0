@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import type { Project, Dev3RepoConfig, ConfigSourceEntry, ResolvedConfigSource } from "../shared/types";
 import { DEV3_REPO_CONFIG_KEYS, remapColumnAgents, repoConfigEnabled } from "../shared/types";
 import { sanitizeEnvMap } from "../shared/env-text";
@@ -389,7 +390,7 @@ export async function resolveProjectEnv(
 	opts?: { foreignCode?: boolean },
 ): Promise<Record<string, string>> {
 	const resolved = await resolveOperationalProjectConfig(project, worktreePath ?? undefined, opts);
-	return applyAgentEnvDefaults(resolved.env ?? {}, await loadAgentEnvDefaults(), project);
+	return applyAgentEnvDefaults(resolved.env ?? {}, await loadAgentEnvDefaults(), project, homedir());
 }
 
 async function loadAgentEnvDefaults(): Promise<Record<string, string> | undefined> {

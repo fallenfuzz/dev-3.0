@@ -16,10 +16,10 @@ function renderSection(settings: Partial<GlobalSettings> = {}) {
 describe("AgentEnvDefaultsSection", () => {
 	it("saves the parsed defaults once, on blur", () => {
 		const { onChange, textarea } = renderSection();
-		fireEvent.change(textarea, { target: { value: "CLAUDE_CONFIG_DIR={projectPath}/.claude" } });
+		fireEvent.change(textarea, { target: { value: "CLAUDE_CONFIG_DIR={home}/.claude-projects/{projectName}" } });
 		expect(onChange).not.toHaveBeenCalled();
 		fireEvent.blur(textarea);
-		expect(onChange).toHaveBeenCalledExactlyOnceWith({ CLAUDE_CONFIG_DIR: "{projectPath}/.claude" });
+		expect(onChange).toHaveBeenCalledExactlyOnceWith({ CLAUDE_CONFIG_DIR: "{home}/.claude-projects/{projectName}" });
 	});
 
 	it("clears the setting when the text is emptied", () => {
@@ -35,5 +35,17 @@ describe("AgentEnvDefaultsSection", () => {
 		fireEvent.change(textarea, { target: { value: "not a line" } });
 		fireEvent.blur(textarea);
 		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it("never saves a partial value while the text has an invalid line", () => {
+		const { onChange, textarea } = renderSection({ agentEnvDefaults: { A: "1" } });
+		fireEvent.change(textarea, { target: { value: "A=1\nB=2" } });
+		fireEvent.change(textarea, { target: { value: "A=1\nB=2\noops" } });
+		fireEvent.blur(textarea);
+		expect(onChange).not.toHaveBeenCalled();
+
+		fireEvent.change(textarea, { target: { value: "A=1\nB=2" } });
+		fireEvent.blur(textarea);
+		expect(onChange).toHaveBeenCalledExactlyOnceWith({ A: "1", B: "2" });
 	});
 });

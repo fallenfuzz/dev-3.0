@@ -402,7 +402,7 @@ describe("saveSettings", () => {
 			preventSleepWhileRunning: true,
 			skipQuitDialog: true,
 			importShellEnv: false,
-			agentEnvDefaults: { CLAUDE_CONFIG_DIR: "{projectPath}/.claude" },
+			agentEnvDefaults: { CLAUDE_CONFIG_DIR: "{home}/.claude-projects/{projectName}" },
 			focusMode: true,
 			agentRateLimitTracking: false,
 			autoAccountDefault: { claude: true },
