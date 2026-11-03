@@ -312,7 +312,7 @@ export async function launchTaskPty(
 	},
 ): Promise<string | null | undefined> {
 	// First, before any trust/hook/config write: tmux would start a missing cwd in $HOME.
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 	// Only a fresh coordinator launch with no picked agent; every other task keeps the global default.
 	if (!agentId && !resume && !opts?.shellNotice && isCoordinatorTask(task)) {
 		const coordinator = coordinatorLaunchDefault(await agents.getAllAgents(), await loadSettings());
@@ -759,7 +759,7 @@ export async function launchColumnAgent(
 		log.warn("launchColumnAgent: no worktreePath, skipping", { taskId: task.id.slice(0, 8) });
 		return;
 	}
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 
 	const { agentId, configId, prompt: rawPrompt } = agentConfig;
 	const baseBranch = task.baseBranch || project.defaultBaseBranch || "main";
