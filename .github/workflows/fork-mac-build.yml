@@ -1,0 +1,69 @@
+name: Fork Mac build (x64, dev channel)
+
+# Fork-only: builds the `local` branch into an unsigned Intel Mac app. Never PR'd upstream.
+# The dev channel turns the in-app updater off, so the build never swaps itself for upstream.
+
+on:
+  push:
+    branches: [local]
+
+concurrency:
+  group: fork-mac-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Same Bun as the upstream Mac release, read from its workflow so it never drifts.
+      - name: Install Bun
+        run: |
+          BUN_VERSION=$(sed -n 's/^ *bun-version: *"\{0,1\}\([0-9.]*\).*/\1/p' .github/workflows/release-build-macos.yml | head -1)
+          curl -fsSL https://bun.sh/install | bash -s "bun-v$BUN_VERSION"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        uses: ./.github/actions/bun-install
+        with:
+          frozen-lockfile: "true"
+
+      - name: Build bundled tmux
+        run: bash scripts/build-bundled-tmux.sh
+
+      - name: Fetch pinned model proxy
+        run: |
+          if [ -f scripts/bifrost-pinned.json ]; then bun scripts/fetch-bifrost.ts; fi
+
+      - name: Build app
+        env:
+          COPYFILE_DISABLE: "1"
+          COPY_EXTENDED_ATTRIBUTES_DISABLE: "1"
+        run: |
+          rm -rf ./build ./artifacts
+          bun scripts/generate-build-info.ts
+          bun scripts/generate-changelog.ts
+          bunx vite build
+          bun run build:cli
+          bunx electrobun build --env=dev
+
+      - name: Zip app
+        run: |
+          APP=$(find ./build -maxdepth 2 -name "*.app" -type d | head -1)
+          if [ -z "$APP" ]; then echo "::error::no .app in ./build"; find ./build -maxdepth 3; exit 1; fi
+          echo "Built $APP"
+          ditto -c -k --keepParent "$APP" dev3-fork-macos-x64.zip
+
+      - name: Build CLI tarball
+        run: bash scripts/create-cli-tarball.sh macos x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev3-fork-macos-x64
+          path: |
+            dev3-fork-macos-x64.zip
+            artifacts-macos-x64/dev3-cli-macos-x64.tar.gz
+          retention-days: 14
