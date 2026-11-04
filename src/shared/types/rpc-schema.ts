@@ -30,6 +30,7 @@ import type { AgentModelAvailability, CodingAgent } from "./coding-agents";
 import type { AgentLiveModels } from "../agent-live-models";
 import type { ExternalApp, FilePreviewResult, GlobalSettings, NativeTerminalAvailability, ResolvedTerminalPath, TaskTerminalBackendInfo, TipState } from "./global-settings";
 import type { ModelCatalogView, ModelSidecarStatus, PxpipeProxyStatus } from "./model-routing";
+import type { ClaudeModStatus } from "./claude-mods";
 import type { AutoConfigureResult, BoardCopyFailureReason, BoardCopyOffer, ConfigSourceEntry, Dev3RepoConfig, GitHubCliStatus, GitInitOffer, Project, ProjectSettingsUpdate, PrResolveFailureReason, ShellAvailability, ShellPromptPreview } from "./project";
 import type { CustomColumn, Label } from "./labels-columns";
 import type { Space, SpacesFile } from "./spaces";
@@ -331,6 +332,17 @@ export type AppRPCSchema = {
 				params: void;
 				response: PxpipeProxyStatus;
 			};
+			/** Whether a Claude Code mod (`CLAUDE_MODS`) is installed and enabled. */
+			claudeModStatus: {
+				params: { modId: string };
+				response: ClaudeModStatus;
+			};
+			/** On installs the latest version (refreshing its marketplace first);
+			 *  off uninstalls it. Throws with the `claude plugin` error on failure. */
+			claudeModSetEnabled: {
+				params: { modId: string; enabled: boolean };
+				response: ClaudeModStatus;
+			};
 			/** The model catalog as the renderer may see it (no credential values). */
 			modelCatalogGet: {
 				params: void;
@@ -536,6 +548,11 @@ export type AppRPCSchema = {
 			/** `accountId: "auto"` makes the usage-balanced router the default (claude/codex). */
 			setActiveAgentAccount: {
 				params: { kind: AgentAccountKind; accountId: string | null };
+				response: void;
+			};
+			/** Keep one login (`accountId: null` = the system login) out of Auto in every project. */
+			setAutoAccountExcluded: {
+				params: { kind: AgentAccountKind; accountId: string | null; excluded: boolean };
 				response: void;
 			};
 			/** What Auto would pick for a launch right now; null for a harness Auto cannot route. */
@@ -2073,6 +2090,11 @@ export type AppRPCSchema = {
 			 * CLI-initiated in-app toast (`dev3 notify`). When `taskId`/`projectId`
 			 * are present the toast is clickable and navigates to that task.
 			 */
+			/**
+			 * A launch fell back to PATH because a custom executable saved before custom
+			 * paths became strict no longer exists. Once per agent and path per host run.
+			 */
+			staleAgentPath: { agentId: string; agentName: string; path: string; command: string };
 			cliToast: {
 				taskId: string | null;
 				projectId: string | null;
