@@ -19,6 +19,7 @@ const kanban = {
 	"kanban.launchAwsProfileMissing": "This task's AWS profile is no longer listed on its agent, so it launched on the project env. Restore the profile name in Settings to switch back.",
 	"kanban.taskPreparationFailed": "Couldn't prepare \"{taskTitle}\" — moved back to To Do: {error}",
 	"task.launchFailed": "Launch failed: {error}",
+	"task.startBranchMissing": "The branch \"{branch}\" this task starts from no longer exists. It was probably deleted after its pull request merged. Start a new task from another branch instead.",
 	"kanban.failedReorderColumns": "Failed to reorder columns: {error}",
 	"kanban.showMore": "Show more ({count})",
 	"kanban.showLess": "Show less",

@@ -18,6 +18,7 @@ const kanban = {
 	"kanban.launchAwsProfileMissing": "Профиль AWS этой задачи больше не указан у агента, поэтому она запущена с окружением проекта. Верните имя профиля в настройках, чтобы переключиться обратно.",
 	"kanban.taskPreparationFailed": "Не удалось подготовить «{taskTitle}» — задача возвращена в To Do: {error}",
 	"task.launchFailed": "Ошибка запуска: {error}",
+	"task.startBranchMissing": "Ветка «{branch}», с которой начинается эта задача, больше не существует. Скорее всего, её удалили после слияния pull request. Создайте новую задачу от другой ветки.",
 	"kanban.failedReorderColumns": "Не удалось изменить порядок колонок: {error}",
 	"kanban.showMore": "Показать ещё ({count})",
 	"kanban.showLess": "Свернуть",
