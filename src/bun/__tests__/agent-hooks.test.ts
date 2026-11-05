@@ -11,7 +11,7 @@ import {
 	writeClaudeHooks,
 	writeCodexHooks,
 } from "../agent-hooks";
-import { isDev3OwnedFolder, type MatcherGroup } from "../../shared/agent-hooks";
+import { ensureParentClaudeMdExcluded, isDev3OwnedFolder, type MatcherGroup } from "../../shared/agent-hooks";
 import { getPrimaryStopTarget, isStatusGuardBlocked, type TaskStatus } from "../../shared/types";
 import {
 	CODEX_DEV3_HOOK_COMMAND,
@@ -1643,5 +1643,33 @@ describe("Claude hooks outside a dev3-owned folder", () => {
 			expect(runGuarded("task-1", 2)).toEqual({ status: 0, ran: true });
 			expect(runGuarded("task-1", 1).status).toBe(1);
 		});
+	});
+});
+
+describe("isDev3OwnedFolder", () => {
+	const env = { DEV3_HOME: "/home/u/.dev3.0" };
+
+	it("owns home worktrees, ops folders and in-project task dirs", () => {
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/worktrees/p/abcd1234/worktree", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/ops/board/abcd1234/work", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees/abcd1234/worktree", env)).toBe(true);
+	});
+
+	it("does not own a project folder or its in-project root", () => {
+		expect(isDev3OwnedFolder("/home/u/acme", env)).toBe(false);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees", env)).toBe(false);
+	});
+});
+
+describe("ensureParentClaudeMdExcluded", () => {
+	it("adds the main checkout's memory files once and keeps the user's own entries", () => {
+		const first = ensureParentClaudeMdExcluded({ claudeMdExcludes: ["/x/CLAUDE.md"] }, "/home/u/acme");
+		expect(first.claudeMdExcludes).toEqual([
+			"/x/CLAUDE.md",
+			"/home/u/acme/CLAUDE.md",
+			"/home/u/acme/CLAUDE.local.md",
+			"/home/u/acme/.claude/CLAUDE.md",
+		]);
+		expect(ensureParentClaudeMdExcluded(first, "/home/u/acme")).toBe(first);
 	});
 });

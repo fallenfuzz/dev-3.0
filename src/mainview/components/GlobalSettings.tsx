@@ -761,6 +761,13 @@ function GlobalSettings({
 		[persistSettingChange],
 	);
 
+	const handleLeanProtocolToggle = useCallback(
+		(enabled: boolean) => {
+			persistSettingChange({ leanAgentProtocol: enabled });
+		},
+		[persistSettingChange],
+	);
+
 	const handleTelemetryToggle = useCallback(
 		(disabled: boolean) => {
 			// Silence the live channels before anything else, so the write that
@@ -1111,6 +1118,7 @@ function GlobalSettings({
 							onDefaultConfigChange={handleDefaultConfigChange}
 							onCoordinatorDefaultChange={handleCoordinatorDefaultChange}
 							onGlobalSettingsChange={setGlobalSettings}
+							onLeanProtocolToggle={handleLeanProtocolToggle}
 							focusPreset={focusPreset}
 							onFocusPresetHandled={clearFocusPreset}
 						/>

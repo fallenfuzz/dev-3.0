@@ -394,6 +394,7 @@ describe("saveSettings", () => {
 			experimentalAgentTraffic: true,
 			freezeDiagnosticsEnabled: true,
 			autoCleanupTaskHistory: false,
+			leanAgentProtocol: true,
 			agentTrafficExperiment: "1",
 			lowBatteryEnabled: true,
 			lowBatteryDisabled: true,

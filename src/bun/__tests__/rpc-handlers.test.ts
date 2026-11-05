@@ -906,6 +906,12 @@ describe("uploadFileBase64", () => {
 		(globalThis as any).Bun.write = vi.fn().mockResolvedValue(undefined);
 	});
 
+	it("stores uploads under <project>/.dev3/worktrees when the project keeps its storage in-project", async () => {
+		vi.mocked(data.getProject).mockResolvedValue(makeProject({ path: "/tmp/project-root", storageRoot: "project" }));
+		await handlers.uploadFileBase64({ projectId: "proj-1", base64: "bm90ZXM=", filename: "notes.txt", mimeType: "text/plain" });
+		expect(mkdirSync).toHaveBeenCalledWith("/tmp/project-root/.dev3/worktrees/uploads", { recursive: true });
+	});
+
 	it("stores dropped files inside the worktree uploads directory", async () => {
 		const result = await handlers.uploadFileBase64({
 			projectId: "proj-1",
@@ -3964,6 +3970,38 @@ describe("updateProjectSettings — git workflow switch", () => {
 		vi.mocked(data.loadTasks).mockResolvedValue([]);
 
 		await expect(handlers.updateProjectSettings({ projectId: project.id, gitWorkflow: true })).rejects.toThrow(/Operations boards/);
+	});
+});
+
+describe("updateProjectSettings — storage root switch refusals", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("refuses on an Operations board", async () => {
+		const project = makeProject({ kind: "virtual" });
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.loadTasks).mockResolvedValue([]);
+		await expect(handlers.updateProjectSettings({ projectId: project.id, storageRoot: "project" })).rejects.toThrow(/Operations boards/);
+		expect(data.updateProject).not.toHaveBeenCalled();
+	});
+
+	it("refuses while a task is preparing or running", async () => {
+		const project = makeProject();
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.loadTasks).mockResolvedValue([makeTask({ preparing: true })]);
+		await expect(handlers.updateProjectSettings({ projectId: project.id, storageRoot: "project" })).rejects.toThrow(/running task/);
+		expect(data.updateProject).not.toHaveBeenCalled();
+	});
+
+	it("refuses when git already tracks files under .dev3/data", async () => {
+		const project = makeProject();
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.loadTasks).mockResolvedValue([]);
+		vi.mocked(git.isGitRepo).mockResolvedValue(true);
+		mockSpawn.mockReturnValue({ stdout: new Response(".dev3/data/tasks.json\n").body, stderr: null, exited: Promise.resolve(0) });
+		await expect(handlers.updateProjectSettings({ projectId: project.id, storageRoot: "project" })).rejects.toThrow(/tracks files under .dev3\/data/);
+		expect(data.updateProject).not.toHaveBeenCalled();
 	});
 });
 
@@ -8147,6 +8185,7 @@ describe("handlers.getAppVersion", () => {
 			version: "0.3.0",
 			channel: "beta",
 			buildChannel: "dev",
+			leanProtocolForcedByEnv: process.env.DEV3_LEAN_PROTOCOL === "1",
 		});
 	});
 });

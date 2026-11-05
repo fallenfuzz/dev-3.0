@@ -360,6 +360,12 @@ export interface Task {
 	 * while the task is in To Do; ignored on every other project kind.
 	 */
 	ownWorktree?: boolean;
+	/**
+	 * `"project"` when this task's dir was created under `<project>/.dev3/worktrees/`.
+	 * Stamped once at creation from the project's `storageRoot`, never recomputed,
+	 * so flipping that setting cannot move a live task. Absent means `~/.dev3.0`.
+	 */
+	taskDirLocation?: "project";
 	/** Last-launch timestamps (ISO) per package.json script — used to sort the Scripts dropdown. */
 	scriptLastRunAt?: Record<string, string>;
 	/** Last-used placement per package.json script — pre-selects it in the placement picker. */
