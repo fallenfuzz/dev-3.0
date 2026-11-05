@@ -1,3 +1,5 @@
+> **Personal fork of [h0x91b/dev-3.0](https://github.com/h0x91b/dev-3.0).** The `local` branch merges upstream `main` with this fork's open PRs and a local build setup. For releases, issues and docs, use upstream.
+
 <p align="center">
   <img src="docs/icon.png" width="128" height="128" alt="dev-3.0">
 </p>
