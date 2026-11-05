@@ -101,6 +101,7 @@ async function spawnSingleBugHunterPane(opts: {
 		accountId: opts.accountId,
 		// Hunters audit the task's own work, so they run on its AWS account.
 		bedrockProfile: opts.task.bedrockProfile,
+		projectEnv,
 		autoRouting: await autoRoutingContext(opts.project, `${opts.task.id}:hunter:${freshSessionId}`, projectEnv),
 	};
 	let launchAccountId = opts.accountId;

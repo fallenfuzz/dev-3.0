@@ -4450,7 +4450,7 @@ describe("activateTask", () => {
 			"",
 			"/tmp/wt",
 			undefined,
-			{ resume: true },
+			{ resume: true, projectEnv: {} },
 		);
 	});
 
@@ -4521,7 +4521,7 @@ describe("activateTask", () => {
 			"builtin-claude",
 			null,
 			expect.objectContaining({ worktreePath: "/tmp/wt" }),
-			{ resume: true },
+			{ resume: true, projectEnv: {} },
 		);
 		expect(agents.resolveCommandForProject).not.toHaveBeenCalled();
 	});
