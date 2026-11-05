@@ -894,6 +894,7 @@ export async function addTask(
 		customTitle?: string | null;
 		titleEditedByUser?: boolean;
 		labelIds?: string[];
+		userLabelIds?: string[];
 		opsWorkDir?: string | null;
 		/** Own worktree in a project with the git workflow off - see Task.ownWorktree. */
 		ownWorktree?: boolean;
@@ -956,6 +957,7 @@ export async function addTask(
 			statusEnteredAt: now,
 			tmuxSocket: "dev3",
 			labelIds: extras?.labelIds ?? [],
+			userLabelIds: extras?.userLabelIds ?? [],
 			relations: extras?.relations ?? [],
 			...(extras?.existingBranch ? { existingBranch: extras.existingBranch } : {}),
 			...(extras?.preparing ? { preparing: true } : {}),
