@@ -18,6 +18,7 @@ const kanban = {
 	"kanban.launchAwsProfileMissing": "El perfil de AWS de esta tarea ya no figura en su agente, así que se inició con el entorno del proyecto. Restaura el nombre del perfil en Ajustes para volver a él.",
 	"kanban.taskPreparationFailed": "No se pudo preparar \"{taskTitle}\" — devuelta a Por hacer: {error}",
 	"task.launchFailed": "Error de inicio: {error}",
+	"task.startBranchMissing": "La rama \"{branch}\" de la que parte esta tarea ya no existe. Probablemente se eliminó al fusionar su pull request. Crea una nueva tarea a partir de otra rama.",
 	"kanban.failedReorderColumns": "No se pudo reordenar las columnas: {error}",
 	"kanban.showMore": "Mostrar más ({count})",
 	"kanban.showLess": "Mostrar menos",
