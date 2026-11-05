@@ -531,6 +531,11 @@ startRateLimitMonitor((name, payload) => {
 	pushToBrowserClients(name, payload);
 });
 
+// ── Clock-driven schedulers (automations, "Start in", "Send later", keep-alive, cleanup) ──
+// Same call as index.ts. Without it a headless box never fires any of them.
+const { startBackgroundSchedulers, stopBackgroundSchedulers } = await import("./background-schedulers");
+startBackgroundSchedulers();
+
 // ── PTY event wiring (no mainWindow.webview.rpc — just push to browser) ──
 setOnPtyDied((sessionKey) => {
 	try {
@@ -601,6 +606,7 @@ function shutdown(signal: string): void {
 	stopPortScanPoller();
 	stopResourceMonitor();
 	stopRateLimitMonitor();
+	stopBackgroundSchedulers();
 	stopSelfUpdateWatch();
 	stopSocketServer();
 	clearRemoteStateIfOwnedBy(process.pid);
