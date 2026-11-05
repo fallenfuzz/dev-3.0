@@ -7,7 +7,7 @@ import * as git from "../../git";
 import * as pty from "../../pty-server";
 import * as agents from "../../agents";
 import { codexAccountIdForHome } from "../../agent-accounts";
-import { autoRoutingContext, releaseAccountReservation } from "../../account-router";
+import { autoRoutingContext, projectPinsClaudeConfig, releaseAccountReservation } from "../../account-router";
 import { getAgentAdapter } from "../../../shared/agent-adapters/registry";
 import { agentKey } from "../../../shared/agent-adapters/families";
 import { evaluateCodexModelSupport } from "../../../shared/agent-model-cli-requirements";
@@ -410,7 +410,12 @@ export async function launchTaskPty(
 	try {
 		// Recovery carries the pane's account alongside its session id. Older pane
 		// snapshots fall back to the task selection; undefined uses the default.
-		const cmdOptions: agents.CommandOptions = { accountId, accountFromStore: typeof accountId === "string" ? true : undefined, bedrockProfile };
+		const cmdOptions: agents.CommandOptions = {
+			accountId,
+			accountFromStore: typeof accountId === "string" ? true : undefined,
+			bedrockProfile,
+			claudeConfigPinned: projectPinsClaudeConfig(project, projectEnv) || undefined,
+		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
 			cmdOptions.autoRouting = await autoRoutingContext(project, reservationKey, projectEnv);

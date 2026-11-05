@@ -256,6 +256,7 @@ vi.mock("../agent-launch-availability", () => ({
 vi.mock("../account-router", () => ({
 	autoLaunchDeferral: vi.fn(async () => null),
 	autoRoutingContext: vi.fn(async () => ({ exclusions: [], claudeConfigPinned: false, reservationKey: "k" })),
+	projectPinsClaudeConfig: vi.fn(() => false),
 	releaseAccountReservation: vi.fn(),
 	previewAutoAccount: vi.fn(async () => null),
 }));

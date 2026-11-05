@@ -8,6 +8,7 @@ import { chooseTaskCodexConversations } from "../../codex-task-selection";
 import { getAgentAdapter } from "../../../shared/agent-adapters/registry";
 import { agentKey } from "../../../shared/agent-adapters/families";
 import * as repoConfig from "../../repo-config";
+import { projectPinsClaudeConfig } from "../../account-router";
 import { resolveResumableSessionIds } from "../../agent-transcripts";
 import { DEFAULT_TMUX_SOCKET, taskSessionName, tmux } from "../../tmux";
 import { dev3TaskTempPath } from "../../temp-paths";
@@ -340,6 +341,10 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 				projectPath: project.path,
 				worktreePath: task.worktreePath,
 			};
+			const claudeConfigPinned = projectPinsClaudeConfig(
+				resolvedProject,
+				await repoConfig.resolveProjectEnv(resolvedProject, task.worktreePath, { foreignCode: task.foreignCode }),
+			);
 			const paneIdUpdates: Array<{ index: number; paneId: string; accountId: string | null | undefined; sessionId: string | null }> = [];
 			for (let i = 1; i < panes.length; i++) {
 				const pane = panes[i];
@@ -354,6 +359,7 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 						? { sessionId: freshSessionId, accountId, accountFromStore: true }
 						: { resume: true, accountId, accountFromStore: true };
 					cmdOpts.bedrockProfile = pane.bedrockProfile !== undefined ? pane.bedrockProfile : task.bedrockProfile;
+					if (claudeConfigPinned) cmdOpts.claudeConfigPinned = true;
 					if (paneResume) cmdOpts.sessionId = paneResume;
 					let resumeCmd: string;
 					let resumeBaseCmd = pane.agentCmd;
