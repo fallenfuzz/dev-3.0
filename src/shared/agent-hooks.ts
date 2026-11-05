@@ -522,6 +522,16 @@ function withTaskEnvGuard(command: string, dialect: HookCliDialect): string {
 	return `[ -z "$${CODEX_HOOK_SESSION_ENV}" ] || ${command}`;
 }
 
+/**
+ * The adapter exits 0 on every runtime failure, so `||` reaches the plain move only
+ * when the installed CLI predates the subcommand and rejects it as unknown. Windows
+ * has no tmux, so no mailbox to drain, and no shell for `||`: it keeps the plain move.
+ */
+function claudePostToolCommand(workingCmd: string, dialect: HookCliDialect): string {
+	if (!dialect.posixShell) return workingCmd;
+	return `${dialect.cli} ${CLAUDE_POST_TOOL_HOOK_SUBCOMMAND} || ${workingCmd}`;
+}
+
 export function buildClaudeHooks(
 	options?: { stopTarget?: TaskStatus; dialect?: HookCliDialect; requireTaskEnv?: boolean; fileLeases?: boolean },
 ): HookMap {
@@ -583,7 +593,7 @@ function buildUnguardedClaudeHooks(
 				: []),
 		],
 		PostToolUse: [
-			{ hooks: [{ type: "command", command: `${dialect.cli} ${CLAUDE_POST_TOOL_HOOK_SUBCOMMAND}`, timeout: 5 }] },
+			{ hooks: [{ type: "command", command: claudePostToolCommand(workingCmd, dialect) }] },
 		],
 		PermissionRequest: [
 			{ hooks: [{ type: "command", command: move("user-questions") }] },
