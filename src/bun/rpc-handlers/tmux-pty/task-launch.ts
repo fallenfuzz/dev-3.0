@@ -108,6 +108,23 @@ export function resetStaleAccountNoticesForTests(): void {
 
 /** Tell the user a stored Claude account was removed and the launch used the default one.
  *  Once per task per window: a resume relaunches every pane, and each may carry the same id. */
+const awsProfileNoticeAt = new Map<string, number>();
+
+/** Tell the user a launch ran without its picked AWS profile (once per window per task). */
+export async function notifyBedrockProfileMissing(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
+	const last = awsProfileNoticeAt.get(task.id);
+	if (last !== undefined && now - last < STALE_ACCOUNT_NOTICE_WINDOW_MS) return;
+	awsProfileNoticeAt.set(task.id, now);
+	const { pushCliToast } = await import("../shared");
+	pushCliToast({
+		taskId: task.id,
+		projectId: task.projectId,
+		level: "info",
+		message: "This task's AWS profile is no longer listed on its agent, so it launched on the project env. Restore the profile name in Settings to switch back.",
+		messageKey: "kanban.launchAwsProfileMissing",
+	});
+}
+
 export async function notifyStaleAccountDropped(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
 	const last = staleAccountNoticeAt.get(task.id);
 	if (last !== undefined && now - last < STALE_ACCOUNT_NOTICE_WINDOW_MS) return;
@@ -313,6 +330,8 @@ export async function launchTaskPty(
 		skipSessionPersist?: boolean;
 		branchName?: string;
 		accountId?: string | null;
+		/** AWS profile pick (see LaunchVariant); absent → the task's stored one. */
+		bedrockProfile?: string | null;
 		codexHome?: string;
 		/** Open a plain shell headed by this line instead of the agent, parking the stored panes
 		 *  for a later resume: a Codex reopen that cannot pick a conversation, or a wake with a plain shell. */
@@ -333,6 +352,7 @@ export async function launchTaskPty(
 	const accountId = opts?.codexHome
 		? codexAccountIdForHome(opts.codexHome) ?? null
 		: opts?.accountId !== undefined ? opts.accountId : task.accountId;
+	const bedrockProfile = opts?.bedrockProfile !== undefined ? opts.bedrockProfile : task.bedrockProfile;
 	const skipSessionPersist = opts?.skipSessionPersist ?? false;
 	const artifactTemplateEnv = ensureArtifactTemplateEnv(project, task, worktreePath);
 	log.info("launchTaskPty START", {
@@ -385,11 +405,12 @@ export async function launchTaskPty(
 	let accountPick: agents.ResolvedAgentCommand["accountPick"];
 	let staleAccountDropped = false;
 	let freshLaunchSessionId: string | null = null;
+	let launchBedrockProfile: string | null | undefined;
 
 	try {
 		// Recovery carries the pane's account alongside its session id. Older pane
 		// snapshots fall back to the task selection; undefined uses the default.
-		const cmdOptions: agents.CommandOptions = { accountId, accountFromStore: typeof accountId === "string" ? true : undefined };
+		const cmdOptions: agents.CommandOptions = { accountId, accountFromStore: typeof accountId === "string" ? true : undefined, bedrockProfile };
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
 			cmdOptions.autoRouting = await autoRoutingContext(project, reservationKey, projectEnv);
@@ -426,6 +447,8 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
+			launchBedrockProfile = resolved.resolvedBedrockProfile;
+			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		} else {
 			log.info("Resolving command for project", { projectName: project.name });
 			const resolved = await agents.resolveCommandForProject(
@@ -445,6 +468,8 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
+			launchBedrockProfile = resolved.resolvedBedrockProfile;
+			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		}
 		if (staleAccountDropped) await notifyStaleAccountDropped(task);
 
@@ -472,6 +497,7 @@ export async function launchTaskPty(
 					? codexAccountIdForHome(extraEnv.CODEX_HOME) : undefined) ?? launchAccountId,
 				agentFamily: resolvedAgentFamily,
 				sessionOriginCwd: carriedOriginCwd,
+				...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
 			};
 			mainPaneEntry = paneEntry;
 			const sessionState = { panes: [paneEntry, ...(resume ? task.sessionState?.panes.slice(1).map((pane) => ({ ...pane, paneId: null })) ?? [] : [])] };
@@ -482,6 +508,9 @@ export async function launchTaskPty(
 				// A removed stored account is cleared on the task, so the notice does not repeat and the
 				// task follows the default again — `null` would pin it to the system login instead.
 				: staleAccountDropped ? { accountId: undefined } : {};
+			// Pin the resolved AWS profile so a later relaunch of this task does not
+			// drift onto a changed agent default.
+			if (launchBedrockProfile !== undefined) routedPatch.bedrockProfile = launchBedrockProfile;
 			try {
 				await data.updateTask(project, task.id, { sessionState, ...routedPatch });
 				log.info("Persisted sessionState", { taskId: task.id.slice(0, 8), sessionId: paneEntry.sessionId });
@@ -816,6 +845,8 @@ export async function launchColumnAgent(
 		const resolved = await agents.resolveCommandForAgent(agentId, configId, ctx, {
 			skipSystemPrompt: true,
 			autoRouting: await autoRoutingContext(project, reservationKey, projectEnv),
+			// The column's own pick, else the AWS account the task itself runs on.
+			bedrockProfile: agentConfig.bedrockProfile !== undefined ? agentConfig.bedrockProfile : task.bedrockProfile,
 		});
 		tmuxCmd = resolved.command;
 		extraEnv = resolved.extraEnv;
@@ -823,6 +854,7 @@ export async function launchColumnAgent(
 		resolvedPermissionMode = resolved.config?.permissionMode;
 		resolvedAgentFamily = resolved.agentFamily;
 		launchAccountId = resolved.resolvedAccountId;
+		if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 	} catch (err) {
 		releaseAccountReservation(reservationKey);
 		log.error("launchColumnAgent: failed to resolve command", { error: String(err) });
