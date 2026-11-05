@@ -65,6 +65,7 @@ export type LifecycleTaskPatch = Partial<Pick<
 	| "agentId"
 	| "configId"
 	| "accountId"
+	| "bedrockProfile"
 	| "existingBranch"
 	| "worktreePath"
 	| "branchName"

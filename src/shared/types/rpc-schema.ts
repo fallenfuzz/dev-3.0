@@ -1166,6 +1166,11 @@ export type AppRPCSchema = {
 				params: { taskId: string; projectId: string; foreignCode: boolean };
 				response: Task;
 			};
+			/** The project's last explicit AWS profile pick; null when it never made one. */
+			getRememberedBedrockProfile: {
+				params: { projectId: string };
+				response: { profile: string | null } | null;
+			};
 			/** Persist a deferred launch on a todo task ("Start in…"). */
 			scheduleTaskLaunch: {
 				params: {
@@ -1373,6 +1378,7 @@ export type AppRPCSchema = {
 					agentId: string | null;
 					configId: string | null;
 					accountId?: string | null;
+					bedrockProfile?: string | null;
 					handoff?: boolean;
 				};
 				response: SpawnAgentResult;

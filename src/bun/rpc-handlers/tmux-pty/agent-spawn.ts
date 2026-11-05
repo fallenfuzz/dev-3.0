@@ -20,6 +20,7 @@ import type { HandoffPreview, SpawnAgentResult } from "../../../shared/conversat
 import { splitTaskPane, AuxPaneUnavailableError, type AuxPaneHandle } from "../../task-aux-panes";
 import { getPushMessage, AGENT_ENV_DEFAULTS, buildAgentEnv, buildCmdScript, generatedScriptLaunch, generatedScriptName, log, writeLaunchScript } from "../shared-pure";
 import { applyAgentHooksToCommand, applyModelVersionNotice, ensureAgentTrust } from "./task-launch";
+import { rememberVariantBedrockProfile } from "../../bedrock-profile-pref";
 
 export async function spawnAgentInTask(params: {
 	prompt?: string;
@@ -28,6 +29,8 @@ export async function spawnAgentInTask(params: {
 	agentId: string | null;
 	configId: string | null;
 	accountId?: string | null;
+	/** AWS profile pick (see LaunchVariant); absent → the task's own pick. */
+	bedrockProfile?: string | null;
 	/** Hand the new agent a retelling of this task's newest conversation. */
 	handoff?: boolean;
 }): Promise<SpawnAgentResult> {
@@ -79,9 +82,12 @@ export async function spawnAgentInTask(params: {
 	const cmdOptions: agents.CommandOptions = {
 		sessionId: freshSessionId,
 		accountId: params.accountId,
+		bedrockProfile: params.bedrockProfile !== undefined ? params.bedrockProfile : task.bedrockProfile,
 		autoRouting: await autoRoutingContext(project, reservationKey, projectEnv),
 	};
 	let launchAccountId = params.accountId;
+	let launchBedrockProfile: string | null | undefined;
+	rememberVariantBedrockProfile(project.id, [params]);
 
 	if (params.agentId) {
 		const resolved = await agents.resolveCommandForAgent(params.agentId, params.configId, ctx, cmdOptions);
@@ -91,6 +97,7 @@ export async function spawnAgentInTask(params: {
 		resolvedAgentFamily = resolved.agentFamily;
 		resolvedLaunchModel = resolved.launchModel;
 		if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+		launchBedrockProfile = resolved.resolvedBedrockProfile;
 		launchedAgentId = resolved.agent?.id ?? params.agentId;
 		launchedConfigId = resolved.config?.id ?? params.configId;
 	} else {
@@ -110,6 +117,7 @@ export async function spawnAgentInTask(params: {
 		resolvedAgentFamily = resolved.agentFamily;
 		resolvedLaunchModel = resolved.launchModel;
 		if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+		launchBedrockProfile = resolved.resolvedBedrockProfile;
 		launchedAgentId = resolved.agent?.id ?? null;
 		launchedConfigId = resolved.config?.id ?? null;
 	}
@@ -186,9 +194,10 @@ export async function spawnAgentInTask(params: {
 		configId: launchedConfigId,
 		accountId: launchAccountId,
 		agentFamily: resolvedAgentFamily,
+		...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
 	};
 	if (handle.backend === "native") {
-		const { sessionId: _sessionId, paneId: _paneId, ...attribution } = paneEntry;
+		const { sessionId: _sessionId, paneId: _paneId, bedrockProfile: _bedrockProfile, ...attribution } = paneEntry;
 		await writeNativeAgentAttribution(scriptPath, attribution);
 	}
 	const existingPanes = task.sessionState?.panes ?? [];
