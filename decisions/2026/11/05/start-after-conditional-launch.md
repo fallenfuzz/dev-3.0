@@ -16,8 +16,6 @@ Stacked work (one PR built on another, a backlog a coordinator orders by hand) n
 - Trust matches `dev3 task move --status in-progress`: armed from a terminal outside any task, it starts directly (`moveTask` with `explicitLaunch`, or `launchTaskWithAgentChoice` with `--agent`). Armed from inside a task, the start goes through `requestAgentLaunchApproval` with that task as the requester, so the user's auto-approve setting applies and a declined start stays in To Do. Arming must never become a way around the launch dialog.
 - "Merged" reads the persisted PR state. Only when the prerequisite is already Completed with a PR whose merge was never seen does the tick ask GitHub, at most once per 5 minutes per waiting task (`getPullRequestSnapshot`, which caches MERGED).
 - A cancelled or deleted prerequisite, a PR closed without merging, or a Completed prerequisite with no PR (for `merged`) clears the condition, writes the reason to `preparationError`, and lights attention. Self-references, cycles, drafts, non-To-Do tasks and tasks with a "Start in" time are refused at arm time.
-- `src/bun/headless-entry.ts` now starts every background job `index.ts` starts: the scheduled-launch, automations, scheduled-message, keep-alive and worktree-cleanup schedulers and the focus tracker. `dev3 remote` boots through that entry, not `index.ts`, so before this none of them ran headless, although each one is documented to. `background-job-wiring.test.ts` fails when either entry drops one.
-- `dev3 task show --json` gains an additive `startAfter` key (schema version unchanged).
 - UI is a read-only chip on the card. Setting it is CLI-only (`task create|update --start-after`); a UI control waits for a `/ux-principal` pass.
 
 ## Risks
