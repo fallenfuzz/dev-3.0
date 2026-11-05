@@ -536,6 +536,18 @@ startRateLimitMonitor((name, payload) => {
 const { startScheduledLaunchScheduler, stopScheduledLaunchScheduler } = await import("./scheduled-launch-scheduler");
 startScheduledLaunchScheduler();
 
+// ── The other background jobs index.ts starts; each one is documented to run headless ──
+const { startAutomationsScheduler } = await import("./automations-scheduler");
+startAutomationsScheduler();
+const { startScheduledMessageScheduler } = await import("./scheduled-message-scheduler");
+startScheduledMessageScheduler();
+const { startTaskKeepAliveScheduler } = await import("./task-keep-alive-scheduler");
+startTaskKeepAliveScheduler();
+const { startWorktreeCleanupScheduler } = await import("./worktree-cleanup-scheduler");
+startWorktreeCleanupScheduler();
+const { startFocusTracker, stopFocusTracker } = await import("./focus-tracker");
+startFocusTracker();
+
 // ── PTY event wiring (no mainWindow.webview.rpc — just push to browser) ──
 setOnPtyDied((sessionKey) => {
 	try {
@@ -607,6 +619,7 @@ function shutdown(signal: string): void {
 	stopResourceMonitor();
 	stopRateLimitMonitor();
 	stopScheduledLaunchScheduler();
+	stopFocusTracker(); // flushes the attention time it holds in memory
 	stopSelfUpdateWatch();
 	stopSocketServer();
 	clearRemoteStateIfOwnedBy(process.pid);
