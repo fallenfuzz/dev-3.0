@@ -256,6 +256,7 @@ vi.mock("../agent-launch-availability", () => ({
 vi.mock("../account-router", () => ({
 	autoLaunchDeferral: vi.fn(async () => null),
 	autoRoutingContext: vi.fn(async () => ({ exclusions: [], claudeConfigPinned: false, reservationKey: "k" })),
+	projectPinsClaudeConfig: vi.fn(() => false),
 	releaseAccountReservation: vi.fn(),
 	previewAutoAccount: vi.fn(async () => null),
 }));
@@ -4449,7 +4450,7 @@ describe("activateTask", () => {
 			"",
 			"/tmp/wt",
 			undefined,
-			{ resume: true },
+			{ resume: true, projectEnv: {} },
 		);
 	});
 
@@ -4520,7 +4521,7 @@ describe("activateTask", () => {
 			"builtin-claude",
 			null,
 			expect.objectContaining({ worktreePath: "/tmp/wt" }),
-			{ resume: true },
+			{ resume: true, projectEnv: {} },
 		);
 		expect(agents.resolveCommandForProject).not.toHaveBeenCalled();
 	});
@@ -12084,6 +12085,27 @@ describe("resumeTask gives every Claude pane its own conversation (#1950)", () =
 		expect(options[2].resume).toBeUndefined();
 		expect(options[2].sessionId).toMatch(/^[0-9a-f-]{36}$/);
 		expect([MAIN, NEWEST]).not.toContain(options[2].sessionId);
+	});
+
+	it("exports the project env in a resumed split pane, which would otherwise inherit the main pane's", async () => {
+		seedStore([NEWEST, MAIN]);
+		(data.loadProjects as any).mockResolvedValue([makeProject({ env: { ANTHROPIC_BASE_URL: "https://project.example" } } as never)]);
+		(data.getTask as any).mockResolvedValue(makeTask({
+			worktreePath: WORKTREE,
+			sessionState: { panes: [claudePane(MAIN), claudePane(NEWEST), claudePane("never-prompted")] },
+		}));
+
+		const realWrite = (globalThis as any).Bun.write;
+		const write = vi.fn().mockResolvedValue(undefined);
+		(globalThis as any).Bun.write = write;
+		try {
+			await handlers.resumeTask({ taskId: "task-1" });
+		} finally {
+			(globalThis as any).Bun.write = realWrite;
+		}
+
+		const pane = write.mock.calls.find(([path]) => String(path) === dev3TaskTempPath("task-1", "resume-pane-1.sh"));
+		expect(String(pane?.[1])).toContain("https://project.example");
 	});
 
 	it("reports a pane that started over as `fresh-session`, and resumes it for the CLI too", async () => {

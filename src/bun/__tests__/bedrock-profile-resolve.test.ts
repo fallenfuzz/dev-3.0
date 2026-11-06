@@ -34,8 +34,9 @@ const bedrockAgent: CodingAgent = {
 	},
 	configurations: [
 		{ id: "auto", name: "Auto", model: "claude-opus-5", permissionMode: "auto" },
-		{ id: "preset-env", name: "Preset env", model: "claude-opus-5", envVars: { AWS_PROFILE: "preset-profile", AWS_REGION: "eu-central-1" } },
+		{ id: "preset-env", name: "Preset env", model: "claude-opus-5", envVars: { AWS_PROFILE: "preset-profile", AWS_REGION: "eu-central-1", ANTHROPIC_DEFAULT_HAIKU_MODEL: "preset-haiku" } },
 		{ id: "via-codex", name: "Via codex", model: "gpt-5.5", baseCommandOverride: "codex" },
+		{ id: "preset-arn", name: "Preset ARN", model: "claude-opus-5", envVars: { ANTHROPIC_MODEL: "arn:aws:bedrock:us-east-1:1:application-inference-profile/abc" } },
 	],
 	defaultConfigId: "auto",
 };
@@ -53,6 +54,22 @@ describe("resolveCommandForAgent — AWS profile through the real launch path", 
 		expect(r.extraEnv).toMatchObject({ AWS_PROFILE: "og-aws-claude-code", AWS_REGION: "us-west-2", CLAUDE_CODE_USE_BEDROCK: "1" });
 		expect(r.resolvedBedrockProfile).toBe("og");
 		expect(r.bedrockProfileMissing).toBeUndefined();
+	});
+
+	it("pins the alias slots on the real launch path, and a preset's own slot value wins", async () => {
+		const plain = await resolveCommandForAgent("claude-bedrock", "auto", ctx, { bedrockProfile: "og" });
+		expect(plain.extraEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("global.anthropic.claude-haiku-5-5");
+		expect(plain.extraEnv.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe(plain.extraEnv.ANTHROPIC_MODEL);
+		const preset = await resolveCommandForAgent("claude-bedrock", "preset-env", ctx, { bedrockProfile: "og" });
+		expect(preset.extraEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("preset-haiku");
+	});
+
+	it("a preset's own ANTHROPIC_MODEL keeps driving the launch slot", async () => {
+		const r = await resolveCommandForAgent("claude-bedrock", "preset-arn", ctx, { bedrockProfile: "og" });
+		const arn = "arn:aws:bedrock:us-east-1:1:application-inference-profile/abc";
+		expect(r.extraEnv.ANTHROPIC_MODEL).toBe(arn);
+		expect(r.extraEnv.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe(arn);
+		expect(r.command).not.toContain("global.anthropic.claude-opus-5");
 	});
 
 	it("the picked profile wins over the preset's own envVars", async () => {
