@@ -49,7 +49,9 @@ import { handleCopilotHook } from "./commands/copilot-hook";
 import { handleCursorUsage } from "./commands/cursor-usage";
 import { handleExtensionHook } from "./commands/extension-hook";
 import { handleClaudePrompt } from "./commands/claude-prompt";
+import { handleClaudePostTool } from "./commands/claude-post-tool";
 import { handleClaudeTurnEnded } from "./commands/claude-turn-ended";
+import { handleClaudeClaim } from "./commands/claude-claim";
 import { handleClaudeSessionStart, handleNoteRecent } from "./commands/recent-notes";
 import { handleAgentExitedHook } from "./commands/agent-exited";
 import { handleClaudeStopFailure } from "./commands/claude-stop-failure";
@@ -79,8 +81,8 @@ Commands:
   dev3 task terminal-backend [--task <id>] [--to tmux|native]  Inspect/switch this task's terminal backend
   dev3 task hibernate [<id>|--task <id>] [--json]  Park a task: stop agent, terminal, dev server; keep the worktree
   dev3 task wake [<id>|--task <id>] --resume|--shell [--json]  Wake a hibernated task (resume the agent, or a plain shell)
-  dev3 task update [--task <id>] --title "..." [--description "..." | --description -] [--manual-completion on|off] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic]  Update task fields
-  dev3 task create --title "..." [--description "..." | --description -] [--pr <n> | --branch <ref>] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic]  Create a new task (To Do)
+  dev3 task update [--task <id>] --title "..." [--description "..." | --description -] [--manual-completion on|off] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic] [--start-after <id> [--until completed|merged] | --no-start-after]  Update task fields
+  dev3 task create --title "..." [--description "..." | --description -] [--pr <n> | --branch <ref>] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic] [--start-after <id> [--until completed|merged]]  Create a new task (To Do)
                                          (--pr <n> starts the worktree on that pull request's branch and implies --type pr-review)
   dev3 note add "..." [--content "..."] [--task <id>] [--source user]  Add note to a task
   dev3 note list [--task <id>]          List notes
@@ -356,8 +358,21 @@ async function main(): Promise<void> {
 			context,
 		);
 	}
+	if (command === "hook" && subcommand === "claude-post-tool") {
+		// Status move plus the hook mailbox, in one request per tool call.
+		return await handleClaudePostTool(await Bun.stdin.text(), socketPath || context?.socketPath || null, context);
+	}
 	if (command === "hook" && subcommand === "claude-turn-ended") {
 		return await handleClaudeTurnEnded(await Bun.stdin.text(), socketPath || context?.socketPath || null, context);
+	}
+	if (command === "hook" && subcommand === "claude-claim") {
+		// Internal: Claude Code's PreToolUse on its edit tools in a shared folder.
+		// Denies the edit only when another live task holds the file.
+		return await handleClaudeClaim(
+			await Bun.stdin.text(),
+			socketPath || context?.socketPath || null,
+			context,
+		);
 	}
 	if (command === "hook" && subcommand === "claude-stop-failure") {
 		// Internal: Claude Code fires StopFailure instead of Stop when an API error

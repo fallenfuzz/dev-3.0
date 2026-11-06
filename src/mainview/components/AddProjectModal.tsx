@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import { extractRepoName } from "../../shared/types";
+import { extractRepoName, hasGitWorkflow } from "../../shared/types";
 import type { AutoConfigureKey, AutoConfigureResult, BoardCopyOffer, GitInitOffer, Project } from "../../shared/types";
 import type { AppAction } from "../state";
 import { api } from "../rpc";
@@ -43,8 +43,13 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [autoConfigure, setAutoConfigure] = useState(false);
 	// A click before the stored value arrives wins over it.
 	const autoConfigureTouched = useRef(false);
+	// Remembered like auto-configure; the backend applies it to every project it creates.
+	const [storeInProject, setStoreInProject] = useState(false);
+	const storeInProjectTouched = useRef(false);
 	// Off every time: it writes into the project folder, so each project opts in on its own.
 	const [boardCopy, setBoardCopy] = useState(false);
+	// Off: picked folders become projects whose tasks run in the folder itself.
+	const [gitWorkflow, setGitWorkflow] = useState(true);
 	const [gitUrl, setGitUrl] = useState("");
 	const [repoName, setRepoName] = useState("");
 	const [cloneBaseDir, setCloneBaseDir] = useState<string | null>(null);
@@ -52,6 +57,9 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 	const [browsing, setBrowsing] = useState(false);
 	const [initializing, setInitializing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Picked folders that are not git repositories, offered as gitless projects.
+	const [plainFolders, setPlainFolders] = useState<string[]>([]);
+	const [addingPlain, setAddingPlain] = useState(false);
 	const [cloneOutput, setCloneOutput] = useState<string[]>([]);
 	const [pendingSpaces, setPendingSpaces] = useState<DeferredSpaces>({
 		spaceIds: initialSpaceIds ?? [],
@@ -87,6 +95,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				setCloneBaseDir(settings.cloneBaseDirectory);
 			}
 			if (!autoConfigureTouched.current) setAutoConfigure(settings.autoConfigureNewProjects === true);
+			if (!storeInProjectTouched.current) setStoreInProject(settings.newProjectsStoreInProject === true);
 		}).catch(() => {});
 	}, []);
 
@@ -155,6 +164,18 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		try {
 			const settings = await api.request.getGlobalSettings();
 			await api.request.saveGlobalSettings({ ...settings, autoConfigureNewProjects: next || undefined });
+		} catch {
+			// Remembering the choice is best-effort
+		}
+	}
+
+	async function toggleStoreInProject() {
+		storeInProjectTouched.current = true;
+		const next = !storeInProject;
+		setStoreInProject(next);
+		try {
+			const settings = await api.request.getGlobalSettings();
+			await api.request.saveGlobalSettings({ ...settings, newProjectsStoreInProject: next || undefined });
 		} catch {
 			// Remembering the choice is best-effort
 		}
@@ -238,6 +259,16 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		</div>
 	);
 
+	const storeInProjectSwitch = (
+		<div className="flex items-center justify-between gap-4">
+			<div className="space-y-0.5">
+				<span className="block text-fg-2 text-sm font-medium">{t("addProject.storeInProject")}</span>
+				<span className="block text-fg-3 text-xs leading-5">{t("addProject.storeInProjectHint")}</span>
+			</div>
+			<ToggleSwitch checked={storeInProject} ariaLabel={t("addProject.storeInProject")} onToggle={() => void toggleStoreInProject()} />
+		</div>
+	);
+
 	// Lives inside the Local and Clone panes, so the tab strip stays put on New, which has nothing to detect.
 	const autoConfigureSwitch = (
 		<div className="flex items-center justify-between gap-4">
@@ -249,52 +280,81 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 		</div>
 	);
 
+	// Adds each folder in turn; the caller decides what the dialog does next.
+	async function addFolders(folders: string[], withGitWorkflow: boolean) {
+		const added: Project[] = [];
+		const plain: string[] = [];
+		const errors: string[] = [];
+		for (const folder of folders) {
+			// The backend names the project - see the addProject RPC comment.
+			try {
+				const first = await api.request.addProject({
+					path: folder,
+					...(withGitWorkflow ? {} : { gitWorkflow: false }),
+					...(autoConfigure ? { autoConfigure: true } : {}),
+					...(boardCopy ? { boardCopy: true } : {}),
+				});
+				// Declining `git init` on a plain folder still leaves the gitless offer.
+				const result = !first.ok && first.gitInit
+					? (await initAfterConfirm(first.gitInit, autoConfigure)) ?? (first.notGitRepo ? first : { ok: false as const, error: t("addProject.gitInit.declined") })
+					: first;
+				if (result.ok) {
+					dispatch({ type: "addProject", project: result.project });
+					reportAutoConfigured(result.project, result.autoConfigured);
+					if ("boardCopyOffer" in result) await offerBoardCopyRestore(result.project, result.boardCopyOffer);
+					added.push(result.project);
+					void applyPendingSpaces(result.project.id);
+					trackEvent("project_added", { source: "local" });
+					posthog.capture("project_added", { source: "local" });
+				} else if ("notGitRepo" in result && result.notGitRepo) {
+					plain.push(folder);
+				} else {
+					errors.push(`${folder}: ${result.error}`);
+				}
+			} catch (err) {
+				errors.push(`${folder}: ${String(err)}`);
+			}
+		}
+		return { added, plain, errors };
+	}
+
+	async function handleAddPlainFolders() {
+		if (addingPlain) return;
+		setAddingPlain(true);
+		setError(null);
+		const { errors } = await addFolders(plainFolders, false);
+		setAddingPlain(false);
+		if (errors.length === 0) onClose();
+		else setError(errors.join("\n"));
+	}
+
 	async function handleBrowseLocal() {
 		if (browsing) return;
 		setError(null);
+		setPlainFolders([]);
 		setBrowsing(true);
 		try {
 			const folders = await openFolderPickerMulti();
 			if (!folders || folders.length === 0) return;
 
-			const errors: string[] = [];
-			const added: Project[] = [];
-			let anySucceeded = false;
-			for (const folder of folders) {
-				// The backend names the project — see the addProject RPC comment.
-				const name = folder;
-				try {
-					const first = await api.request.addProject({
-						path: folder,
-						...(autoConfigure ? { autoConfigure: true } : {}),
-						...(boardCopy ? { boardCopy: true } : {}),
-					});
-					const result = !first.ok && first.gitInit
-						? (await initAfterConfirm(first.gitInit, autoConfigure)) ?? { ok: false as const, error: t("addProject.gitInit.declined") }
-						: first;
-					if (result.ok) {
-						dispatch({ type: "addProject", project: result.project });
-						reportAutoConfigured(result.project, result.autoConfigured);
-						await offerBoardCopyRestore(result.project, result.boardCopyOffer);
-						added.push(result.project);
-						void applyPendingSpaces(result.project.id);
-						trackEvent("project_added", { source: "local" });
-						posthog.capture("project_added", { source: "local" });
-						anySucceeded = true;
-					} else {
-						errors.push(`${name}: ${result.error}`);
-					}
-				} catch (err) {
-					errors.push(`${name}: ${String(err)}`);
-				}
-			}
+			const { added, plain, errors } = await addFolders(folders, gitWorkflow);
+			// Conversation import needs a worktree, so only git-workflow projects get the offer.
+			const reportAdded = () => {
+				const gitAdded = added.filter(hasGitWorkflow);
+				if (gitAdded.length > 0) onGitProjectsAdded?.(gitAdded);
+			};
 
-			if (errors.length === 0) {
+			if (plain.length > 0) {
+				// Stay open: the plain folders still wait on the user's answer.
+				setPlainFolders(plain);
+				reportAdded();
+				for (const err of errors) toast.error(err, { source: "dashboard" });
+			} else if (errors.length === 0) {
 				onClose();
-				if (added.length > 0) onGitProjectsAdded?.(added);
-			} else if (anySucceeded) {
+				reportAdded();
+			} else if (added.length > 0) {
 				onClose();
-				if (added.length > 0) onGitProjectsAdded?.(added);
+				reportAdded();
 				for (const err of errors) toast.error(err, { source: "dashboard" });
 			} else {
 				setError(errors.join("\n"));
@@ -488,12 +548,27 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 				{/* Blast-radius copy (bible §10): standing, not dismissible — over half the
 				    userbase point this at a work monorepo and ask what it writes first.
 				    Two lines, deliberately. Longer copy is its own way of scaring people off. */}
+				<div className="flex items-center justify-between gap-4">
+					<span className="text-fg-2 text-sm font-medium">{t("addProject.gitWorkflow")}</span>
+					<ToggleSwitch
+						checked={gitWorkflow}
+						ariaLabel={t("addProject.gitWorkflow")}
+						onToggle={() => {
+							setGitWorkflow(!gitWorkflow);
+							// Clone and New make git repositories, so a folder without git is picked locally.
+							setActiveTab("local");
+							setPlainFolders([]);
+							setError(null);
+						}}
+					/>
+				</div>
 				<div className="bg-raised border border-edge rounded-xl px-3 py-2.5 space-y-1.5 text-fg-3 text-xs leading-5">
-					<p>{t("addProject.safetyBase")}</p>
-					<p>{t("addProject.safetyBranch")}</p>
+					<p>{t(gitWorkflow ? "addProject.safetyBase" : "addProject.safetyFolder")}</p>
+					<p>{t(!gitWorkflow ? "addProject.safetyShared" : storeInProject ? "addProject.safetyBranchInProject" : "addProject.safetyBranch")}</p>
 				</div>
 
 				{/* Tabs */}
+				{gitWorkflow && (
 				<div className="flex gap-1 p-1 bg-raised rounded-xl">
 					<button
 						onClick={() => { setActiveTab("local"); setError(null); }}
@@ -526,14 +601,16 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						{t("addProject.tabInit")}
 					</button>
 				</div>
+				)}
 
 				{/* Tab content */}
 				{activeTab === "local" ? (
 					<div className="space-y-3">
 						<p className="text-fg-3 text-sm">
-							{t("addProject.browseHint")}
+							{t(gitWorkflow ? "addProject.browseHint" : "addProject.browseHintFolder")}
 						</p>
 						{autoConfigureSwitch}
+						{storeInProjectSwitch}
 						{boardCopySwitch}
 						<button
 							onClick={handleBrowseLocal}
@@ -542,12 +619,32 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						>
 							{browsing ? t("addProject.adding") : t("addProject.browseBtn")}
 						</button>
+						{plainFolders.length > 0 && (
+							<div className="bg-raised border border-edge rounded-xl px-3 py-2.5 space-y-2" role="status">
+								<p className="text-fg-2 text-sm">{t.plural("addProject.notGitRepo", plainFolders.length)}</p>
+								<ul className="space-y-0.5">
+									{plainFolders.map((folder) => (
+										<li key={folder} className="text-fg text-xs font-mono truncate streamer-private" title={folder}>{folder}</li>
+									))}
+								</ul>
+								<p className="text-fg-3 text-xs">{t("addProject.notGitRepoHint")}</p>
+								<button
+									type="button"
+									onClick={() => void handleAddPlainFolders()}
+									disabled={addingPlain}
+									className="px-3 py-1.5 bg-raised border border-edge rounded-xl text-fg-2 text-sm hover:border-edge-active hover:text-fg transition-colors disabled:opacity-40"
+								>
+									{addingPlain ? t("addProject.adding") : t("addProject.addWithoutGit")}
+								</button>
+							</div>
+						)}
 					</div>
 				) : activeTab === "init" ? (
 					<div className="space-y-3">
 						<p className="text-fg-3 text-sm">
 							{t("addProject.initHint")}
 						</p>
+						{storeInProjectSwitch}
 						{boardCopySwitch}
 						<button
 							onClick={handleInitNew}
@@ -625,6 +722,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 						)}
 
 						{autoConfigureSwitch}
+						{storeInProjectSwitch}
 						{boardCopySwitch}
 
 						{/* Live clone output (last lines of `git clone --progress`) */}
@@ -665,7 +763,7 @@ function AddProjectModal({ dispatch, onClose, initialSpaceIds, onGitProjectsAdde
 					>
 						{t("addProject.cancel")}
 					</button>
-					{kind === "git" && activeTab === "clone" && (
+					{kind === "git" && gitWorkflow && activeTab === "clone" && (
 						<button
 							onClick={handleClone}
 							disabled={!canClone}

@@ -56,7 +56,7 @@ import { retireLowBattery } from "./low-battery";
 import { managedCliWriteAllowed } from "./managed-cli-guard";
 import { ensureCodexConfigFile } from "./codex-config";
 import { ensureWindowsShortcuts } from "./windows-shortcuts";
-import { makeTitle } from "./app-utils";
+import { buildSourceLabel, makeTitle } from "./app-utils";
 import { buildApplicationMenu, getMenuContext, MENU_ACTIONS, onMenuContextChange, type MenuContext } from "../shared/application-menu";
 import { openLogsDirectory } from "./menu-actions";
 import { startLoopMonitor } from "./loop-monitor";
@@ -69,7 +69,7 @@ import { createAppWindow, focusFocusedWindow, getFocusedWindow, getWindowCount, 
 import type { WindowState } from "./window-state";
 import { pushEverywhere } from "./push-targets";
 import electrobunConfig, { cliBinaryName } from "../../electrobun.config";
-import { BUILD_TIME } from "../shared/build-info.generated";
+import { BUILD_BRANCH, BUILD_COMMIT, BUILD_TIME, UPDATES_DISABLED } from "../shared/build-info.generated";
 import { existsSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { rehydrateTaskLifecycles } from "./lifecycle/rehydrate";
@@ -504,7 +504,12 @@ async function openMainWindow(restore?: WindowState, activate = true) {
 	return createAppWindow({
 		restore,
 		activate,
-		title: makeTitle(APP_VERSION, lastBuildTime, buildChannel),
+		title: makeTitle(
+			APP_VERSION,
+			lastBuildTime,
+			buildChannel,
+			buildSourceLabel(BUILD_BRANCH, BUILD_COMMIT, UPDATES_DISABLED || buildChannel === "dev"),
+		),
 		url,
 		handlers: handlers as unknown as Record<string, (...args: unknown[]) => unknown>,
 		// The telemetry verdict and, when telemetry may run, the install's identity —
@@ -742,38 +747,10 @@ startRateLimitMonitor((name, payload) => {
 	}
 });
 
-// Start the Automations scheduler (scheduled agent runs). The first tick also
-// detects occurrences missed while the app was offline and surfaces them.
-// Runs in headless (`dev3 remote`) too — same main process.
-const { startAutomationsScheduler } = await import("./automations-scheduler");
-startAutomationsScheduler();
-
-// Start the scheduled-launch scheduler ("Start in…" deferred task launches).
-// One-shot fires; the first tick catches up launches that came due offline.
-const { startScheduledLaunchScheduler } = await import("./scheduled-launch-scheduler");
-startScheduledLaunchScheduler();
-
-// Start the scheduled-message scheduler ("Send later" — deliver a queued prompt
-// into a task's live agent). One-shot; the first tick catches up messages that
-// came due while the app was offline (fires late + notifies).
-const { startScheduledMessageScheduler } = await import("./scheduled-message-scheduler");
-startScheduledMessageScheduler();
-
-// Start the keep-alive watchdog — auto-revives tasks the user opted into when
-// their agent conversation dies (exit / rate limit / network). Runs headless too.
-const { startTaskKeepAliveScheduler } = await import("./task-keep-alive-scheduler");
-startTaskKeepAliveScheduler();
-
-// Daily `doctor --worktrees --prune-older-than 14d` — first check an hour after
-// launch, never at startup; the last run is persisted so restarts do not repeat it.
-const { startWorktreeCleanupScheduler } = await import("./worktree-cleanup-scheduler");
-startWorktreeCleanupScheduler();
-
-// Start the focus tracker — accumulates real UI attention time per task (the
-// "your time" metric on the Productivity dashboard) from the foreground +
-// idle + active-context signals the renderer already reports. Runs headless too.
-const { startFocusTracker, stopFocusTracker } = await import("./focus-tracker");
-startFocusTracker();
+// Every clock-driven background job (automations, "Start in", "Send later", keep-alive,
+// worktree cleanup, focus tracking). headless-entry.ts starts the same set the same way.
+const { startBackgroundSchedulers, stopBackgroundSchedulers } = await import("./background-schedulers");
+startBackgroundSchedulers();
 
 // Wire PTY death notifications. This is what replaces a dead terminal with the
 // "session ended" screen, so it has to reach an attached browser too — without it
@@ -881,7 +858,7 @@ function runGlobalQuitCleanup(): void {
 	// Snapshot window geometry so an update restart reopens on the same screen.
 	try { flushWindowState(); } catch (err) { log.warn("flushWindowState failed", { error: String(err) }); }
 	try { stopPortScanPoller(); } catch (err) { log.warn("stopPortScanPoller failed", { error: String(err) }); }
-	try { stopFocusTracker(); } catch (err) { log.warn("stopFocusTracker failed", { error: String(err) }); }
+	try { stopBackgroundSchedulers(); } catch (err) { log.warn("stopBackgroundSchedulers failed", { error: String(err) }); }
 	try { stopResourceMonitor(); } catch (err) { log.warn("stopResourceMonitor failed", { error: String(err) }); }
 	try { stopRateLimitMonitor(); } catch (err) { log.warn("stopRateLimitMonitor failed", { error: String(err) }); }
 	try { stopSocketServer(); } catch (err) { log.warn("stopSocketServer failed", { error: String(err) }); }

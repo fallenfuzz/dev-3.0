@@ -2,10 +2,11 @@ import type { ResumeDialogPane } from "../agent-resume";
 import type { AgentSessionAction } from "../task-hibernate";
 import type { ExternalSenderRequester } from "../external-senders";
 import type { TaskStatus } from "./task-status";
+import type { AgentMessageSource } from "./scheduled-messages";
 import { DEFAULT_PRIORITY, type TaskPriority } from "./task-priority";
 import type { Task } from "./task";
 import type { GlobalSettings } from "./global-settings";
-import type { Project } from "./project";
+import { taskUsesWorktree, type Project } from "./project";
 import type { Label } from "./labels-columns";
 import { getTaskOverview, taskSeqLabel } from "./task-display";
 
@@ -17,6 +18,9 @@ export interface LaunchVariant {
 	agentId: string | null;
 	configId: string | null;
 	accountId?: string | null;
+	/** Per-launch AWS profile pick for a Bedrock agent: `undefined` → the agent's
+	 *  default; `null` → none; a name → that `ProviderSettings.profiles` entry. */
+	bedrockProfile?: string | null;
 }
 
 /**
@@ -41,6 +45,33 @@ export interface ScheduledLaunch {
 	variants: LaunchVariant[];
 }
 
+/** What a "start after" launch waits for on its prerequisite task. */
+export type LaunchAfterUntil = "completed" | "merged";
+export const LAUNCH_AFTER_UNTIL: readonly LaunchAfterUntil[] = ["completed", "merged"];
+
+/**
+ * A conditional launch persisted on a `todo` task: it starts when another task
+ * of the same project completes, or when that task's PR merges. Kept apart
+ * from {@link ScheduledLaunch} so an older build that does not know it ignores
+ * it instead of firing early. See {@link Task.launchAfter}.
+ */
+export interface LaunchAfter {
+	/** Prerequisite task id, same project. */
+	taskId: string;
+	/** Prerequisite seq at arm time, for the card chip and CLI output. */
+	seq: number;
+	until: LaunchAfterUntil;
+	/** `--agent`/`--config` given at arm time; absent means the default agent. */
+	variant?: LaunchVariant | null;
+	/**
+	 * The agent that armed it. Absent means a person at a terminal, whose launch
+	 * fires directly; an agent's launch goes through the launch approval dialog.
+	 */
+	armedBy?: AgentMessageSource | null;
+	/** ISO timestamp of arming. */
+	armedAt: string;
+}
+
 /**
  * Read-only task context rendered in the completion-approval and branch-merged
  * confirm dialogs so the user can recognize *which* project/task a
@@ -60,6 +91,8 @@ export interface TaskDialogSubject {
 	labels: Label[];
 	/** Effective overview (user override → agent), or null when neither is set. */
 	overview: string | null;
+	/** Finishing the task keeps its folder: it shares a gitless project's folder, so no worktree is removed. */
+	keepsFolder?: boolean;
 }
 
 /**
@@ -215,5 +248,6 @@ export function buildTaskDialogSubject(task: Task, project: Project): TaskDialog
 		priority: task.priority ?? DEFAULT_PRIORITY,
 		labels,
 		overview: getTaskOverview(task),
+		keepsFolder: !taskUsesWorktree(project, task),
 	};
 }

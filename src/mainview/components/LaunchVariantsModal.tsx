@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type Dispatch } from "react";
 import type { AgentCheckResult, CodingAgent, GlobalSettings, Project, Task, TaskStatus } from "../../shared/types";
-import { getTaskTitle, isCoordinatorTask } from "../../shared/types";
+import { getTaskTitle, hasGitWorkflow, isCoordinatorTask } from "../../shared/types";
 import { coordinatorLaunchDefault } from "../../shared/coordinator-launch";
 import type { ScheduleMode } from "../../shared/schedule";
 import { launchFailureHintKey } from "../../shared/launch-failure";
@@ -35,6 +35,8 @@ interface VariantRow {
 	/** Per-launch managed account: `undefined` → default; `null` → system login;
 	 *  string → that account. Seeded from the source task on retry. */
 	accountId?: string | null;
+	/** AWS profile pick for a Bedrock agent; seeded from the source task on retry. */
+	bedrockProfile?: string | null;
 }
 
 type LaunchMode = "spawn" | "addAttempts";
@@ -110,7 +112,7 @@ function LaunchVariantsModal({
 		const configId = sandboxBypass?.id ?? normalConfigId;
 		// On retry (addAttempts) seed the source task's account so the attempt
 		// re-runs under the same one; a fresh todo has none → the default preselect.
-		return { agentId, configId, accountId: task.accountId };
+		return { agentId, configId, accountId: task.accountId, bedrockProfile: task.bedrockProfile };
 	}
 
 	const [variants, setVariants] = useState<VariantRow[]>(() => [makeDefaultVariant()]);
@@ -445,6 +447,8 @@ function LaunchVariantsModal({
 									onChange={(next) => updateVariant(index, next)}
 									accountId={variant.accountId}
 									onAccountChange={(accountId) => updateVariant(index, { accountId })}
+									bedrockProfile={variant.bedrockProfile}
+									onBedrockProfileChange={(bedrockProfile) => updateVariant(index, { bedrockProfile })}
 								onAddAccount={() => leaveLaunchForAccountSettings(onClose, t("launch.accountAddLeaving"))}
 									showLabels={false}
 									pxpipeProxyEnabled={globalSettings.pxpipeProxyEnabled ?? false}
@@ -521,15 +525,16 @@ function LaunchVariantsModal({
 				{/* Footer — wraps on a phone-width viewport instead of squeezing the
 				    labels into one-word-per-line columns. */}
 				<div className="px-6 py-4 border-t border-edge flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-					{/* Available on every board kind, virtual included: a variant is its
-					    own task, and `git.virtualWorkDir` keys the operation folder on
-					    the task id, so parallel operations cannot collide. */}
-					<button
-						onClick={addVariant}
-						className={`text-accent hover:text-accent-emphasis text-sm font-medium whitespace-nowrap ${pressClass}`}
-					>
-						{t("launch.addVariant")}
-					</button>
+					{/* Virtual boards keep variants: `git.virtualWorkDir` keys each folder on
+					    the task id. A gitless project would run them all in its one folder. */}
+					{project.kind === "virtual" || hasGitWorkflow(project) ? (
+						<button
+							onClick={addVariant}
+							className={`text-accent hover:text-accent-emphasis text-sm font-medium whitespace-nowrap ${pressClass}`}
+						>
+							{t("launch.addVariant")}
+						</button>
+					) : <span />}
 
 					<div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
 						<button

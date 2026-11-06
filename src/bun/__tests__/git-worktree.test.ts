@@ -19,6 +19,10 @@ vi.mock("../paths", () => ({
 	DEV3_HOME: TEST_HOME,
 }));
 
+vi.mock("../backup-exclusion", () => ({
+	excludeFromBackups: vi.fn(async () => {}),
+}));
+
 vi.mock("../spawn", async () => {
 	const { createSpawnMock } = await import("./git-test-helpers");
 	return createSpawnMock();
@@ -39,6 +43,7 @@ import {
 	run,
 } from "../git";
 import { createTestRepo, cleanup, makeTaskCommits, g, spawnedCommands, type TestRepo } from "./git-test-helpers";
+import { startBranchMissingMessage } from "../../shared/preparation-failure";
 
 // ─── Shared factories ────────────────────────────────────────────────────────
 
@@ -93,6 +98,18 @@ describe("removeWorktree", () => {
 		const project = makeProject(repo.local);
 		const task = makeTask({ worktreePath: null });
 		await removeWorktree(project, task);
+	});
+
+	it("never removes the project folder itself, nor the branch it has checked out", async () => {
+		g("git checkout -b dev3/task-aaaaaaaa", repo.local);
+		const project = makeProject(repo.local);
+		const task = makeTask({ worktreePath: repo.local, branchName: "dev3/task-aaaaaaaa" });
+
+		const outcome = await removeWorktree(project, task);
+
+		expect(outcome).toEqual({ deleted: [], kept: [] });
+		expect(existsSync(repo.local)).toBe(true);
+		expect(g("git branch --show-current", repo.local).trim()).toBe("dev3/task-aaaaaaaa");
 	});
 
 	it("removes worktree and deletes branch with original name", async () => {
@@ -369,6 +386,48 @@ describe("recoverStaleInitializingWorktrees", () => {
 	});
 });
 
+describe("in-project task dirs", () => {
+	let repo: TestRepo;
+
+	beforeEach(() => {
+		repo = createTestRepo();
+	});
+
+	afterEach(() => {
+		cleanup(repo);
+	});
+
+	it("puts a stamped task's dir under <project>/.dev3/worktrees and keeps it out of git", async () => {
+		const project = { ...makeProject(repo.local), storageRoot: "project" as const };
+		const task = makeTask({ taskDirLocation: "project" });
+
+		const { worktreePath } = await createWorktree(project, task);
+
+		expect(worktreePath).toBe(`${repo.local}/.dev3/worktrees/aaaaaaaa/worktree`);
+		expect(existsSync(worktreePath)).toBe(true);
+		expect(readFileSync(`${repo.local}/.dev3/worktrees/.gitignore`, "utf-8")).toBe("*\n");
+		expect(readFileSync(`${repo.local}/.dev3/data/.gitignore`, "utf-8")).toBe("*\n");
+		expect(g("git status --porcelain", repo.local)).toBe("");
+	});
+
+	it("keeps an unstamped task in the home root even when the project stores in its folder", () => {
+		const project = { ...makeProject(repo.local), storageRoot: "project" as const };
+		expect(taskDir(project, makeTask())).toBe(`${TEST_HOME}/worktrees/${repo.local.replace(/^\//, "").replaceAll("/", "-")}/aaaaaaaa`);
+	});
+
+	it("recovers a stale initializing worktree under the in-project root", async () => {
+		const project = makeProject(repo.local);
+		const staleTask = makeTask({ id: "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee", taskDirLocation: "project" });
+		const stalePath = join(taskDir(project, staleTask), "worktree");
+		mkdirSync(join(stalePath, ".."), { recursive: true });
+		g(`git worktree add --lock --reason initializing -b dev3/task-bbbbbbbb "${stalePath}" main`, repo.local);
+		const registered = realpathSync(stalePath);
+		rmSync(stalePath, { recursive: true, force: true });
+
+		expect(await recoverStaleInitializingWorktrees(project, new Set())).toEqual([registered]);
+	});
+});
+
 // ─── createWorktree ──────────────────────────────────────────────────────────
 
 describe("createWorktree", () => {
@@ -493,6 +552,24 @@ describe("createWorktree", () => {
 		expect(result.branchName).toBe("feature/remote-only");
 
 		g(`git worktree remove --force "${result.worktreePath}"`, repo.local);
+	});
+
+	it.each([
+		["local name", "feature/merged-away"],
+		["remote ref", "origin/feature/merged-away"],
+	])("names the start branch when it was deleted after its PR merged (%s)", async (_label, startRef) => {
+		g("git checkout -b feature/merged-away", repo.local);
+		makeTaskCommits(repo.local);
+		g("git push origin feature/merged-away", repo.local);
+		g("git checkout main", repo.local);
+		g("git branch -D feature/merged-away", repo.local);
+		g("git push origin --delete feature/merged-away", repo.local);
+		g("git fetch --prune origin", repo.local);
+
+		const project = makeProject(repo.local);
+		const task = makeTask({ existingBranch: startRef });
+
+		await expect(createWorktree(project, task, startRef)).rejects.toThrow(startBranchMissingMessage(startRef));
 	});
 
 	it("re-runs a task on a remote branch whose worktree and local branch survived", async () => {
@@ -803,7 +880,7 @@ describe("createWorktree", () => {
 			const task = makeTask({ id: "efefefef-cdcd-efef-0101-232323232323" });
 			const before = spawnedCommands.length;
 
-			await expect(createWorktree(project, task, "no-such-branch")).rejects.toThrow(/invalid reference|not a valid/);
+			await expect(createWorktree(project, task, "no-such-branch")).rejects.toThrow(startBranchMissingMessage("no-such-branch"));
 			expect(addsSince(before)).toHaveLength(1);
 		});
 

@@ -1,7 +1,7 @@
 /**
  * Append-only, per-project log of every message delivered into a task's agent.
  *
- * Layout: `~/.dev3.0/data/<projectSlug>/messages/YYYY-MM-DD.jsonl` — a NEW
+ * Layout: `<project data dir>/messages/YYYY-MM-DD.jsonl` — a NEW
  * directory beside the existing `tasks.json`, which is the only shape the on-disk
  * invariants in AGENTS.md allow. Nothing existing is renamed, nothing is migrated,
  * and an older app version simply never opens this directory.
@@ -24,18 +24,21 @@
  * the question it exists for.
  */
 
+import { projectDataDir } from "../shared/project-storage";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import type { Project } from "../shared/types";
 import {
 	AGENT_MESSAGE_LOG_RETENTION_DAYS,
 	type AgentMessageLogInput,
 	type AgentMessageLogPage,
+	type AgentMessageLogReceipt,
 	type AgentMessageLogRow,
+	parseAgentMessageLogReceipt,
 	parseAgentMessageLogRow,
+	serializeAgentMessageLogReceipt,
 	serializeAgentMessageLogRow,
 } from "../shared/agent-message-log";
 import { DEV3_HOME } from "./paths";
-import { projectSlug } from "./git";
 import { createLogger } from "./logger";
 import { getPushMessage } from "./rpc-handlers/shared-pure";
 import { noteLocalMessageLogAppend } from "./agent-message-log-watch";
@@ -52,7 +55,7 @@ function dayStamp(at: Date): string {
 
 /** The per-project directory holding the day-files. */
 export function messageLogDir(project: Project): string {
-	return `${DEV3_HOME}/data/${projectSlug(project.path)}/messages`;
+	return `${projectDataDir(DEV3_HOME, project)}/messages`;
 }
 
 function dayFile(project: Project, at: Date): string {
@@ -114,7 +117,15 @@ export function resetAgentMessageLogPruneState(): void {
  * as failed because a log write lost a race with a disk error.
  */
 export function appendAgentMessageLog(project: Project, input: AgentMessageLogInput, now: Date = new Date()): void {
-	const line = serializeAgentMessageLogRow(input);
+	appendLogLine(project, serializeAgentMessageLogRow(input), now);
+}
+
+/** Append a delivery receipt, which the reader folds into the row of the message it confirms. Never throws. */
+export function appendAgentMessageLogReceipt(project: Project, input: Omit<AgentMessageLogReceipt, "v">, now: Date = new Date()): void {
+	appendLogLine(project, serializeAgentMessageLogReceipt(input), now);
+}
+
+function appendLogLine(project: Project, line: string, now: Date): void {
 	const file = dayFile(project, now);
 	try {
 		mkdirSync(messageLogDir(project), { recursive: true });
@@ -132,9 +143,17 @@ export function appendAgentMessageLog(project: Project, input: AgentMessageLogIn
 	}
 }
 
+/** The message's row with its delivery receipt applied, when one was written. */
+function withReceipt(row: AgentMessageLogRow, receipts: ReadonlyMap<string, AgentMessageLogReceipt>): AgentMessageLogRow {
+	const receipt = row.messageId ? receipts.get(row.messageId) : undefined;
+	if (!receipt) return row;
+	return { ...row, status: receipt.status, deliveredVia: receipt.deliveredVia, deliveredAt: receipt.at };
+}
+
 /**
- * Read recent history, newest first. Torn and unparseable lines are skipped —
- * losing one row beats losing the day it lives in.
+ * Read recent history, newest first. Torn and unparseable lines are skipped:
+ * losing one row beats losing the day it lives in. A receipt is folded into the row
+ * of the message it confirms and is not returned on its own.
  */
 export function readAgentMessageLog(project: Project, limit = 500): AgentMessageLogPage {
 	const dir = messageLogDir(project);
@@ -146,6 +165,8 @@ export function readAgentMessageLog(project: Project, limit = 500): AgentMessage
 	}
 	const oldestDay = days[0] ? days[0].slice(0, -".jsonl".length) : null;
 	const rows: AgentMessageLogRow[] = [];
+	// Newest first, so a receipt is always met before the message it confirms.
+	const receipts = new Map<string, AgentMessageLogReceipt>();
 	let hasMore = false;
 	for (const name of [...days].reverse()) {
 		if (rows.length >= limit) {
@@ -158,18 +179,22 @@ export function readAgentMessageLog(project: Project, limit = 500): AgentMessage
 		} catch {
 			continue;
 		}
-		const dayRows: AgentMessageLogRow[] = [];
+		const dayRows: Array<AgentMessageLogRow | AgentMessageLogReceipt> = [];
 		for (const line of content.split("\n")) {
-			const row = parseAgentMessageLogRow(line);
+			const row = parseAgentMessageLogRow(line) ?? (line.includes('"receiptFor"') ? parseAgentMessageLogReceipt(line) : null);
 			if (row) dayRows.push(row);
 		}
 		dayRows.reverse();
 		for (const row of dayRows) {
+			if ("receiptFor" in row) {
+				receipts.set(row.receiptFor, row);
+				continue;
+			}
 			if (rows.length >= limit) {
 				hasMore = true;
 				break;
 			}
-			rows.push(row);
+			rows.push(withReceipt(row, receipts));
 		}
 	}
 	return { rows, oldestDay, retentionDays: AGENT_MESSAGE_LOG_RETENTION_DAYS, hasMore };

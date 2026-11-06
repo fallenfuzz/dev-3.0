@@ -29,6 +29,8 @@ vi.mock("../data", () => ({
 	updateProjectWith: vi.fn(),
 }));
 
+vi.mock("../task-sessions", () => ({ rememberTaskSession: vi.fn() }));
+
 vi.mock("../git", () => ({
 	createWorktree: vi.fn(),
 	removeWorktree: vi.fn(),
@@ -108,6 +110,7 @@ vi.mock("../rpc-handlers", () => {
 		isActive: vi.fn((status: string) => ACTIVE.includes(status)),
 		activateTask: vi.fn(),
 		createTask: vi.fn(),
+		deleteTask: vi.fn(),
 		moveTask: vi.fn(),
 		runCleanupScript: vi.fn(),
 		emitTaskSound: vi.fn(),
@@ -274,8 +277,9 @@ vi.mock("node:fs", () => ({
 
 import * as data from "../data";
 import * as git from "../git";
+import { rememberTaskSession } from "../task-sessions";
 import * as pty from "../pty-server";
-import { activateTask, createTask, moveTask, runCleanupScript, emitTaskSound, getPushMessage, notifyFromCliDesktop, isAppForeground, getActiveContext, isNotificationSuppressed, activeNotificationSuppression, isProjectSilenced, pushCliAttention, dropQueuedAttention, pushCliToast, pushCliShowImage, pushCliShowArtifact, setFocusMode, clearMergeNotification } from "../rpc-handlers";
+import { activateTask, createTask, deleteTask, moveTask, runCleanupScript, emitTaskSound, getPushMessage, notifyFromCliDesktop, isAppForeground, getActiveContext, isNotificationSuppressed, activeNotificationSuppression, isProjectSilenced, pushCliAttention, dropQueuedAttention, pushCliToast, pushCliShowImage, pushCliShowArtifact, setFocusMode, clearMergeNotification } from "../rpc-handlers";
 import { appendNotificationLog } from "../notification-log";
 import { loadSettings } from "../settings";
 import { deliverAgentPrompt } from "../agent-prompt-delivery";
@@ -1002,6 +1006,25 @@ describe("task.agentHook", () => {
 		expect((response.data as Task).status).toBe("review-by-ai");
 	});
 
+	it("remembers the reported session id, so a shared folder can tell this task's transcripts apart", async () => {
+		const project = makeProject({ autoReviewEnabled: false });
+		const task = makeTask({ status: "in-progress" });
+		mockAtomicHookUpdate(project, task);
+
+		await handleRequest(makeRequest("task.agentHook", {
+			taskId: task.id,
+			projectId: project.id,
+			event: "PostToolUse",
+			sessionId: "11111111-1111-4111-8111-111111111111",
+		}));
+
+		expect(rememberTaskSession).toHaveBeenCalledWith(
+			expect.objectContaining({ id: project.id }),
+			expect.objectContaining({ id: task.id }),
+			"11111111-1111-4111-8111-111111111111",
+		);
+	});
+
 	it("moves a normal Stop directly to review-by-user", async () => {
 		const project = makeProject({ autoReviewEnabled: false });
 		const task = makeTask({ status: "in-progress" });
@@ -1485,6 +1508,78 @@ describe("task.update — priority", () => {
 		);
 		expect(resp.ok).toBe(false);
 		expect(resp.error).toContain("Nothing to update");
+	});
+});
+
+describe("task.update / task.create: start after", () => {
+	const project = makeProject();
+	const prereq = makeTask({ id: "prereq-11111111", seq: 12, status: "in-progress" });
+	const waiting = makeTask({ id: "waiting-22222222", seq: 13, status: "todo", worktreePath: null, branchName: null });
+
+	beforeEach(() => {
+		vi.mocked(data.getProject).mockResolvedValue(project);
+		vi.mocked(data.updateTask).mockImplementation(async (_p, _id, updates) => ({ ...waiting, ...updates }) as Task);
+		vi.mocked(getPushMessage).mockReturnValue(vi.fn());
+	});
+
+	it("arms the condition from a person at a terminal, with no agent recorded", async () => {
+		vi.mocked(data.loadTasks).mockResolvedValue([prereq, waiting]);
+		const resp = await handleRequest(makeRequest("task.update", { taskId: "seq:13", projectId: "proj-1", startAfter: "seq:12", until: "merged" }));
+		expect(resp.ok).toBe(true);
+		const patch = vi.mocked(data.updateTask).mock.calls[0]![2] as Partial<Task>;
+		expect(patch.launchAfter).toMatchObject({ taskId: prereq.id, seq: 12, until: "merged" });
+		expect(patch.launchAfter?.armedBy).toBeUndefined();
+	});
+
+	it("records the arming agent when run from inside another task", async () => {
+		const coordinator = makeTask({ id: "coord-33333333", seq: 5, status: "in-progress" });
+		vi.mocked(data.loadTasks).mockResolvedValue([prereq, waiting, coordinator]);
+		vi.mocked(data.loadProjects).mockResolvedValue([project]);
+		const resp = await handleRequest(makeRequest("task.update", { taskId: "seq:13", projectId: "proj-1", startAfter: "seq:12", sourceTaskId: coordinator.id }));
+		expect(resp.ok).toBe(true);
+		const patch = vi.mocked(data.updateTask).mock.calls[0]![2] as Partial<Task>;
+		expect(patch.launchAfter).toMatchObject({ until: "completed", armedBy: { taskId: coordinator.id, seq: 5 } });
+	});
+
+	it("refuses a cycle and writes nothing", async () => {
+		const prereqWaits = { ...prereq, status: "todo" as const, launchAfter: { taskId: waiting.id, seq: 13, until: "completed" as const, armedAt: "x" } };
+		vi.mocked(data.loadTasks).mockResolvedValue([prereqWaits, waiting]);
+		const resp = await handleRequest(makeRequest("task.update", { taskId: "seq:13", projectId: "proj-1", startAfter: "seq:12" }));
+		expect(resp.ok).toBe(false);
+		expect(resp.error).toContain("never start");
+		expect(data.updateTask).not.toHaveBeenCalled();
+	});
+
+	it("rejects an unknown --until", async () => {
+		vi.mocked(data.loadTasks).mockResolvedValue([prereq, waiting]);
+		const resp = await handleRequest(makeRequest("task.update", { taskId: "seq:13", projectId: "proj-1", startAfter: "seq:12", until: "soon" }));
+		expect(resp.ok).toBe(false);
+		expect(resp.error).toContain("--until must be one of completed, merged");
+	});
+
+	it("clears it with noStartAfter", async () => {
+		const armed = { ...waiting, launchAfter: { taskId: prereq.id, seq: 12, until: "completed" as const, armedAt: "x" } };
+		vi.mocked(data.loadTasks).mockResolvedValue([prereq, armed]);
+		const resp = await handleRequest(makeRequest("task.update", { taskId: "seq:13", projectId: "proj-1", noStartAfter: true }));
+		expect(resp.ok).toBe(true);
+		expect(data.updateTask).toHaveBeenCalledWith(project, armed.id, { launchAfter: null });
+	});
+
+	it("task.create with a missing prerequisite creates nothing", async () => {
+		vi.mocked(data.loadTasks).mockResolvedValue([waiting]);
+		const resp = await handleRequest(makeRequest("task.create", { projectId: "proj-1", title: "Next", startAfter: "seq:99" }));
+		expect(resp.ok).toBe(false);
+		expect(createTask).not.toHaveBeenCalled();
+	});
+
+	it("task.create deletes the new task when the condition is refused", async () => {
+		const cancelled = { ...prereq, status: "cancelled" as const };
+		vi.mocked(data.loadTasks).mockResolvedValue([cancelled, waiting]);
+		vi.mocked(createTask).mockResolvedValue(waiting);
+		const resp = await handleRequest(makeRequest("task.create", { projectId: "proj-1", title: "Next", startAfter: "seq:12" }));
+		expect(resp.ok).toBe(false);
+		expect(resp.error).toContain("cancelled");
+		expect(deleteTask).toHaveBeenCalledWith({ taskId: waiting.id, projectId: "proj-1" });
 	});
 });
 
@@ -2261,7 +2356,7 @@ describe("task.create", () => {
 			}));
 
 			expect(resp.ok).toBe(true);
-			expect(resolveTaskStartRef).toHaveBeenCalledWith({ project, pr: "1512", branch: undefined });
+			expect(resolveTaskStartRef).toHaveBeenCalledWith({ project, pr: "1512", branch: undefined, ownWorktree: false });
 			expect(vi.mocked(createTask).mock.calls[0]![0]).toMatchObject({
 				existingBranch: "arditti/fix/ctrl-o",
 				taskType: "pr-review",
@@ -2374,7 +2469,7 @@ describe("ui.show-image", () => {
 
 		expect(resp.ok).toBe(true);
 		expect(resp.data).toMatchObject({ delivered: true, stored: 1 });
-		expect(videoSpy).toHaveBeenCalledWith(project.path, [{ path: "/tmp/demo.mp4", caption: "play me" }]);
+		expect(videoSpy).toHaveBeenCalledWith(project, [{ path: "/tmp/demo.mp4", caption: "play me" }]);
 		expect(imageSpy).not.toHaveBeenCalled();
 		const cliPush = pushFn.mock.calls.find((c) => c[0] === "cliShowImage");
 		expect(cliPush?.[1]).toMatchObject({ newKind: "video", newCount: 1 });
@@ -2464,8 +2559,8 @@ describe("ui.show-image", () => {
 
 		expect(resp.ok).toBe(true);
 		expect(resp.data).toMatchObject({ delivered: true, stored: 2 });
-		expect(saveSpy).toHaveBeenCalledWith(project.path, "/tmp/a.png", "before");
-		expect(saveSpy).toHaveBeenCalledWith(project.path, "/tmp/b.png", "after");
+		expect(saveSpy).toHaveBeenCalledWith(project, "/tmp/a.png", "before");
+		expect(saveSpy).toHaveBeenCalledWith(project, "/tmp/b.png", "after");
 		const cliPush = pushFn.mock.calls.find((c) => c[0] === "cliShowImage");
 		expect(cliPush?.[1].images).toEqual(
 			expect.arrayContaining([
@@ -2574,7 +2669,7 @@ describe("ui.show-artifact", () => {
 
 		expect(response.ok).toBe(true);
 		expect(saveSharedArtifact).toHaveBeenCalledWith(
-			project.path,
+			project,
 			"/tmp/report.html",
 			["/tmp/app.css", "/tmp/app.js", "/tmp/chart.png"],
 			"Metrics",
@@ -2706,7 +2801,7 @@ describe("ui.show-artifact", () => {
 		}));
 
 		expect(saveSharedArtifact).toHaveBeenCalledWith(
-			project.path,
+			project,
 			"/tmp/report.html",
 			[],
 			"Metrics",

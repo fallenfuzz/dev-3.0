@@ -1,7 +1,8 @@
 import type { ReviewedPullRequest, AgentCancellationRequest, AgentCompletionRequest, AgentLaunchChoice, LaunchVariant, NativeTerminalAvailability, Project, Task, TaskOrigin, TaskPriority, TaskResetConsent, TaskResetResult, TaskStatus, TaskTerminalBackendInfo, TaskType } from "../../shared/types";
+import { rememberVariantBedrockProfile } from "../bedrock-profile-pref";
 import type { TerminalBackendIdentity } from "../../shared/terminal-backend-identity";
 import { isTaskSoundEnabled } from "../../shared/task-sound-statuses";
-import { ACTIVE_STATUSES, BUILTIN_OPS_BOARD_NAME, DRAFT_TASK_ACTIVATION_ERROR, normalizeTaskType, reviewTaskTitle } from "../../shared/types";
+import { ACTIVE_STATUSES, BUILTIN_OPS_BOARD_NAME, DRAFT_TASK_ACTIVATION_ERROR, hasGitWorkflow, normalizeTaskType, OWN_WORKTREE_NOT_A_REPO_ERROR, reviewTaskTitle, taskUsesWorktree } from "../../shared/types";
 import * as data from "../data";
 import { loadTaskLineage } from "../task-lineage";
 import { epicForNewTask } from "../task-epics";
@@ -195,7 +196,18 @@ async function getAllProjectTasks(): Promise<{ projectId: string; tasks: Task[];
  * too — a second creation path is how `foreignCode` came to be set in the GUI
  * and nowhere else.
  */
-export async function createTask(params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType; origin?: TaskOrigin; epicId?: string }): Promise<Task> {
+/**
+ * Whether a task of this project may take {@link Task.ownWorktree}: only a git
+ * project with the git workflow off, and only when its folder is a repository.
+ * Throws when the caller asked for one the folder cannot give.
+ */
+async function resolveOwnWorktree(project: Project, requested: boolean | undefined): Promise<boolean> {
+	if (requested !== true || project.kind === "virtual" || hasGitWorkflow(project)) return false;
+	if (!(await git.isGitRepo(project.path))) throw new Error(OWN_WORKTREE_NOT_A_REPO_ERROR);
+	return true;
+}
+
+export async function createTask(params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType; origin?: TaskOrigin; epicId?: string; ownWorktree?: boolean }): Promise<Task> {
 	log.info("→ createTask", {
 		projectId: params.projectId,
 		requestedStatus: params.status ?? "todo",
@@ -204,6 +216,7 @@ export async function createTask(params: { projectId: string; description: strin
 		descriptionLength: params.description.length,
 		hasExistingBranch: Boolean(params.existingBranch),
 		hasOpsWorkDir: Boolean(params.opsWorkDir),
+		ownWorktree: params.ownWorktree === true,
 		priority: params.priority,
 		taskType: params.taskType,
 		origin: params.origin?.kind ?? "user",
@@ -230,14 +243,16 @@ export async function createTask(params: { projectId: string; description: strin
 	// not run that branch's own config (see Task.foreignCode). Asked now rather than at
 	// each launch because a merged pull request's branch disappears upstream, and a
 	// later check would silently promote the task back to "my own work".
-	const foreignCode = project.kind === "virtual"
+	const ownWorktree = await resolveOwnWorktree(project, params.ownWorktree);
+	const usesWorktree = taskUsesWorktree(project, { ownWorktree });
+	const foreignCode = !usesWorktree
 		? false
 		: await git.isForeignBranchRef(project.path, params.existingBranch);
 	// A review task's draft identity beats a title derived from the description: the
 	// description leads with the review preamble, so every review card otherwise
 	// reads the same. A title the USER typed still wins — the modal sends that as
 	// `customTitle` after creation, which getTaskTitle prefers over this one.
-	const reviewIdentity = params.taskType === "pr-review" && params.existingBranch && project.kind !== "virtual" && !isScratch
+	const reviewIdentity = params.taskType === "pr-review" && params.existingBranch && usesWorktree && !isScratch
 		? await reviewIdentityForBranch(project, params.existingBranch)
 		: null;
 	const reviewTitle = reviewIdentity?.title ?? "";
@@ -254,6 +269,7 @@ export async function createTask(params: { projectId: string; description: strin
 			? { title: reviewTitle }
 			: !isScratch && params.title?.trim() ? { title: params.title.trim() } : {}),
 		...(params.opsWorkDir ? { opsWorkDir: params.opsWorkDir } : {}),
+		...(ownWorktree ? { ownWorktree: true } : {}),
 		...(params.priority ? { priority: params.priority } : {}),
 		...(params.taskType ? { taskType: params.taskType } : {}),
 		...(reviewIdentity?.reviewedPr ? { reviewedPr: reviewIdentity.reviewedPr } : {}),
@@ -393,7 +409,8 @@ export async function launchTaskWithAgentChoice(params: {
 	const first = variants[0];
 	if (!first) throw new Error("At least one variant is required");
 	if (isActive(params.targetStatus)) await assertLaunchAgentsInstalled(variants);
-	const { agentId, configId, accountId } = first;
+	const { agentId, configId, accountId, bedrockProfile } = first;
+	rememberVariantBedrockProfile(params.projectId, variants);
 
 	// Priority lands before the move so the card never appears in the wrong sort
 	// band, and goes through the dedicated setter rather than `taskPatch`.
@@ -429,6 +446,7 @@ export async function launchTaskWithAgentChoice(params: {
 			agentId,
 			configId,
 			accountId,
+			bedrockProfile,
 			existingBranch,
 			worktreePath: null,
 			branchName: null,
@@ -557,6 +575,7 @@ async function spawnVariants(params: {
 	variants: LaunchVariant[];
 }): Promise<Task[]> {
 	log.info("→ spawnVariants", { taskId: params.taskId, count: params.variants.length });
+	rememberVariantBedrockProfile(params.projectId, params.variants);
 	const project = await data.getProject(params.projectId);
 	const sourceTask = await data.getTask(project, params.taskId);
 
@@ -600,6 +619,7 @@ async function spawnVariants(params: {
 			agentId: firstVariant.agentId,
 			configId: firstVariant.configId,
 			accountId: firstVariant.accountId,
+			bedrockProfile: firstVariant.bedrockProfile,
 			existingBranch: srcBranch,
 			worktreePath: null,
 			branchName: null,
@@ -640,6 +660,7 @@ async function spawnVariants(params: {
 				agentId: variant.agentId,
 				configId: variant.configId,
 				accountId: variant.accountId,
+				bedrockProfile: variant.bedrockProfile,
 				seq: sharedSeq,
 				existingBranch: srcBranch,
 				// Whose code the group is about is a property of the branch, so every
@@ -702,6 +723,7 @@ async function spawnVariants(params: {
 				agentId: variant.agentId,
 				configId: variant.configId,
 				accountId: variant.accountId,
+				bedrockProfile: variant.bedrockProfile,
 				existingBranch: srcBranch,
 				scheduledLaunch: null,
 				preparationError: null,
@@ -737,6 +759,7 @@ async function addAttempts(params: {
 	variants: LaunchVariant[];
 }): Promise<Task[]> {
 	log.info("→ addAttempts", { taskId: params.taskId, count: params.variants.length });
+	rememberVariantBedrockProfile(params.projectId, params.variants);
 	const project = await data.getProject(params.projectId);
 	const sourceTask = await data.getTask(project, params.taskId);
 	await assertLaunchAgentsInstalled(params.variants);
@@ -779,6 +802,7 @@ async function addAttempts(params: {
 				agentId: variant.agentId,
 				configId: variant.configId,
 				accountId: variant.accountId,
+				bedrockProfile: variant.bedrockProfile,
 				seq: sharedSeq,
 				existingBranch: srcBranch,
 				// Whose code the group is about is a property of the branch, so every
@@ -845,6 +869,7 @@ async function addAttempts(params: {
 				agentId: variant.agentId,
 				configId: variant.configId,
 				accountId: variant.accountId,
+				bedrockProfile: variant.bedrockProfile,
 				existingBranch: task.existingBranch ?? srcBranch,
 				preparationError: null,
 			},
@@ -882,8 +907,9 @@ async function editTask(params: {
 	existingBranch?: string | null;
 	draft?: boolean;
 	taskType?: TaskType | null;
+	ownWorktree?: boolean;
 }): Promise<Task> {
-	log.info("→ editTask", { taskId: params.taskId, draft: params.draft });
+	log.info("→ editTask", { taskId: params.taskId, draft: params.draft, ownWorktree: params.ownWorktree });
 	const project = await data.getProject(params.projectId);
 	const task = await data.getTask(project, params.taskId);
 	if (task.status !== "todo") {
@@ -901,6 +927,7 @@ async function editTask(params: {
 	if (params.taskType != null && normalizeTaskType(params.taskType) !== params.taskType) {
 		throw new Error(`Invalid task type "${params.taskType}"`);
 	}
+	const ownWorktree = params.ownWorktree === undefined ? undefined : await resolveOwnWorktree(project, params.ownWorktree);
 
 	const { task: updated, result: applied } = await data.updateTaskWith(project, task.id, (current) => {
 		// Only the UI reaches this RPC, so a typed title is a real user edit and
@@ -919,6 +946,14 @@ async function editTask(params: {
 		}
 		if (params.draft !== undefined) updates.draft = params.draft;
 		if (params.taskType !== undefined) updates.taskType = params.taskType;
+		if (ownWorktree !== undefined) {
+			updates.ownWorktree = ownWorktree || undefined;
+			// A shared-folder task has no branch to start on.
+			if (!ownWorktree && !hasGitWorkflow(project)) {
+				updates.existingBranch = null;
+				updates.baseBranch = data.deriveTaskBaseBranch(project, null);
+			}
+		}
 		const changed = withoutUnchanged(current, updates);
 		return { updates: changed, result: Object.keys(changed).length > 0 };
 	});
@@ -1382,4 +1417,8 @@ export const taskLifecycleHandlers = {
 	getNativeTerminalAvailability,
 	getNewTaskTerminalBackend,
 	setNewTaskTerminalBackend,
+	getRememberedBedrockProfile: async (params: { projectId: string }) => {
+		const profile = await data.getRememberedBedrockProfile(params.projectId);
+		return profile === undefined ? null : { profile };
+	},
 };

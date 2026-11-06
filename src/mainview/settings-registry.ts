@@ -438,6 +438,14 @@ export const SETTINGS_ENTRIES = [
 		storage: "global",
 	},
 	{
+		id: "project-claude-folder",
+		category: "agents",
+		titleKey: "settings.projectClaudeFolder",
+		descriptionKey: "settings.projectClaudeFolderDesc",
+		anchor: "project-claude-folder",
+		storage: "global",
+	},
+	{
 		id: "agent-env-defaults",
 		category: "agents",
 		titleKey: "settings.agentEnvDefaults",
@@ -558,6 +566,15 @@ export const SETTINGS_ENTRIES = [
 		descriptionKey: "settings.confirmBeforeQuitDesc",
 		anchor: "confirm-before-quit",
 		globalField: "skipQuitDialog",
+		storage: "global",
+	},
+	{
+		id: "lean-agent-protocol",
+		category: "agents",
+		titleKey: "settings.leanAgentProtocol",
+		descriptionKey: "settings.leanAgentProtocolDesc",
+		anchor: "lean-agent-protocol",
+		globalField: "leanAgentProtocol",
 		storage: "global",
 	},
 	{
@@ -700,6 +717,8 @@ export const SETTINGS_GLOBAL_FIELD_EXCLUSIONS = [
 	"shellPromptCustom",
 	// The Add Project dialog's auto-configure switch, remembered where it is flipped.
 	"autoConfigureNewProjects",
+	// The Add Project dialog's in-project storage switch, remembered where it is flipped.
+	"newProjectsStoreInProject",
 	// Edited inside the artifact-template entry, which is registered by `artifactTemplate`.
 	"artifactTemplatePath",
 ] as const satisfies readonly (keyof GlobalSettings)[];
@@ -716,6 +735,7 @@ export const GLOBAL_SETTINGS_FIELDS = [
 	"staticAccessCode",
 	"cloneBaseDirectory",
 	"autoConfigureNewProjects",
+	"newProjectsStoreInProject",
 	"customBinaryPaths",
 	"agentBinaryPaths",
 	"agentCustomBinaryPaths",
@@ -745,6 +765,7 @@ export const GLOBAL_SETTINGS_FIELDS = [
 	"preventSleepWhileRunning",
 	"skipQuitDialog",
 	"autoCleanupTaskHistory",
+	"leanAgentProtocol",
 	"importShellEnv",
 	"agentEnvDefaults",
 	"terminalShell",

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import {
 	buildClaudeHooks,
@@ -10,7 +11,7 @@ import {
 	writeClaudeHooks,
 	writeCodexHooks,
 } from "../agent-hooks";
-import type { MatcherGroup } from "../../shared/agent-hooks";
+import { ensureParentClaudeMdExcluded, isDev3OwnedFolder, type MatcherGroup } from "../../shared/agent-hooks";
 import { getPrimaryStopTarget, isStatusGuardBlocked, type TaskStatus } from "../../shared/types";
 import {
 	CODEX_DEV3_HOOK_COMMAND,
@@ -72,7 +73,7 @@ describe("buildClaudeHooks", () => {
 		expect(cmd).not.toContain("review-by-user");
 	});
 
-	it("PostToolUse resumes work after AskUserQuestion receives an answer", () => {
+	it("PostToolUse goes through the post-tool adapter, which moves the status and drains held messages", () => {
 		const hooks = buildClaudeHooks();
 
 		expect(hooks).toHaveProperty("PostToolUse");
@@ -80,6 +81,19 @@ describe("buildClaudeHooks", () => {
 		expect(cmd).toContain(DEV3_CLI);
 		expect(cmd).toContain("--status in-progress");
 		expect(cmd).toContain("--if-status-not review-by-ai");
+	});
+
+	it("PostToolUse drains held messages first and falls back to the plain move on a CLI that predates it", () => {
+		const hooks = buildClaudeHooks();
+		const entry = hooks.PostToolUse[0].hooks[0];
+		expect(entry.command).toBe(`${DEV3_CLI} hook claude-post-tool || ${hooks.PreToolUse[0].hooks[0].command}`);
+		// Same as the plain move it replaced: no hook timeout of its own.
+		expect(entry.timeout).toBeUndefined();
+	});
+
+	it("PostToolUse on Windows keeps the plain move: no tmux mailbox there and no shell for a fallback", () => {
+		const hooks = buildClaudeHooks({ dialect: { cli: '"C:/Users/dev/.dev3.0/bin/dev3.exe"', posixShell: false } });
+		expect(hooks.PostToolUse[0].hooks[0]).toEqual(hooks.PreToolUse[0].hooks[0]);
 	});
 
 	it("uses correct three-level nesting (event → matcher group → hooks)", () => {
@@ -199,7 +213,7 @@ describe("buildClaudeHooks", () => {
 				for (const entry of group.hooks) {
 					// Either "dev3 task move --status X" or a "dev3 hook <name>" adapter
 					// that reads the event from stdin — never a UUID either way.
-					expect(entry.command).toMatch(/task move --status|hook claude-stop-failure|hook claude-prompt|hook claude-session-start|hook claude-turn-ended/);
+					expect(entry.command).toMatch(/task move --status|hook claude-stop-failure|hook claude-prompt|hook claude-session-start|hook claude-turn-ended|hook claude-post-tool/);
 					expect(entry.command).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
 				}
 			}
@@ -241,10 +255,8 @@ describe("buildClaudeHooks", () => {
 	it("working hooks keep the move guard before the offline fallback", () => {
 		const hooks = buildClaudeHooks();
 
-		for (const event of ["PreToolUse", "PostToolUse"] as const) {
-			const cmd = hooks[event][0].hooks[0].command;
-			expect(cmd).toContain("--status in-progress --if-status-not review-by-ai || [ $? -eq 2 ]");
-		}
+		const cmd = hooks.PreToolUse[0].hooks[0].command;
+		expect(cmd).toContain("--status in-progress --if-status-not review-by-ai || [ $? -eq 2 ]");
 	});
 
 	it("PermissionRequest hook also tolerates app-offline", () => {
@@ -333,7 +345,7 @@ describe("mergeClaudeHooks", () => {
 
 		expect(hooks.PostToolUse).toHaveLength(2);
 		expect(hooks.PostToolUse[0].hooks[0].command).toBe("echo post");
-		expect(hooks.PostToolUse[1].hooks[0].command).toContain("--status in-progress");
+		expect(hooks.PostToolUse[1].hooks[0].command).toContain("hook claude-post-tool");
 		expect(hooks.PreToolUse).toHaveLength(1);
 		expect(hooks.PermissionRequest).toHaveLength(1);
 		expect(hooks.Stop).toHaveLength(2);
@@ -616,8 +628,7 @@ describe("writeClaudeHooks", () => {
 
 		expect(hooks.PreToolUse[0].hooks[0].command).toContain("--if-status-not review-by-ai");
 		expect(hooks.PreToolUse[0].hooks[0].command).not.toContain("review-by-user");
-		expect(hooks.PostToolUse[0].hooks[0].command).toContain("--if-status-not review-by-ai");
-		expect(hooks.PostToolUse[0].hooks[0].command).not.toContain("review-by-user");
+		expect(hooks.PostToolUse[0].hooks[0].command).toContain("hook claude-post-tool");
 		expect(hooks.UserPromptSubmit[0].hooks[0].command).toContain("hook claude-prompt");
 		expect(hooks.UserPromptSubmit[0].hooks[0].command).not.toContain("review-by-user");
 	});
@@ -942,7 +953,7 @@ describe("POSIX hook output (byte-identical contract)", () => {
 
 		expect(hooks.UserPromptSubmit[0].hooks[0].command).toBe(`${DEV3_CLI} hook claude-prompt`);
 		expect(hooks.PreToolUse[0].hooks[0].command).toBe(working);
-		expect(hooks.PostToolUse[0].hooks[0].command).toBe(working);
+		expect(hooks.PostToolUse[0].hooks[0].command).toBe(`${DEV3_CLI} hook claude-post-tool || ${working}`);
 		expect(hooks.PermissionRequest[0].hooks[0].command).toBe(
 			`${DEV3_CLI} task move --status user-questions || [ $? -eq 2 ]`,
 		);
@@ -1408,7 +1419,8 @@ describe("writeClaudeHooks with a hostile file on disk", () => {
 		writeClaudeHooks(tmp);
 
 		const content = read();
-		expect(content.hooks.PreToolUse).toHaveLength(1);
+		// The status move, plus the file claim a folder outside the dev3 home gets.
+		expect(content.hooks.PreToolUse).toHaveLength(2);
 		expect(content.enabledMcpjsonServers).toEqual(["playwright"]);
 	});
 
@@ -1557,5 +1569,150 @@ describe("claudeSessionStartHookInstalled", () => {
 			hooks: { SessionStart: [{ hooks: [{ type: "command", command: "echo hi" }] }] },
 		}));
 		expect(claudeSessionStartHookInstalled(tmp)).toBe(false);
+	});
+});
+
+describe("Claude hooks outside a dev3-owned folder", () => {
+	const posix = hookCliDialect({ platform: "darwin" });
+	let tmp: string;
+	let savedHome: string | undefined;
+
+	beforeEach(() => {
+		tmp = mkdtempSync(join(tmpdir(), "dev3-hooks-folder-"));
+		savedHome = process.env.DEV3_HOME;
+		process.env.DEV3_HOME = join(tmp, "dev3home");
+	});
+
+	afterEach(() => {
+		if (savedHome === undefined) delete process.env.DEV3_HOME;
+		else process.env.DEV3_HOME = savedHome;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+
+	function readCommands(folder: string): string[] {
+		const settings = JSON.parse(readFileSync(join(folder, ".claude", "settings.local.json"), "utf-8"));
+		return everyCommand(settings.hooks);
+	}
+
+	it("owns worktree and ops folders only, never their roots or a project folder", () => {
+		const home = process.env.DEV3_HOME!;
+		expect(isDev3OwnedFolder(`${home}/worktrees/slug/id/worktree`)).toBe(true);
+		expect(isDev3OwnedFolder(`${home}/ops/slug/id/work`)).toBe(true);
+		expect(isDev3OwnedFolder(`${home}/worktrees`)).toBe(false);
+		expect(isDev3OwnedFolder("/mnt/e/Projects/photos")).toBe(false);
+	});
+
+	it("guards every command written into a project folder", () => {
+		const folder = join(tmp, "project");
+		mkdirSync(folder);
+		writeClaudeHooks(folder);
+		const commands = readCommands(folder);
+		expect(commands.length).toBeGreaterThan(0);
+		for (const command of commands) expect(command.startsWith('[ -z "$DEV3_TASK_ID" ] || ')).toBe(true);
+	});
+
+	it("leaves worktree hooks unguarded", () => {
+		const folder = join(process.env.DEV3_HOME!, "worktrees", "slug", "id", "worktree");
+		mkdirSync(folder, { recursive: true });
+		writeClaudeHooks(folder);
+		for (const command of readCommands(folder)) expect(command).not.toContain("DEV3_TASK_ID");
+	});
+
+	it("replaces stale unguarded dev3 hooks instead of stacking guarded ones beside them", () => {
+		const folder = join(tmp, "project");
+		mkdirSync(join(folder, ".claude"), { recursive: true });
+		writeFileSync(join(folder, ".claude", "settings.local.json"), JSON.stringify({ hooks: buildClaudeHooks() }));
+		writeClaudeHooks(folder);
+		const settings = JSON.parse(readFileSync(join(folder, ".claude", "settings.local.json"), "utf-8"));
+		expect(settings.hooks).toEqual(buildClaudeHooks({ requireTaskEnv: true, fileLeases: true }));
+	});
+
+	it("keeps Windows commands bare", () => {
+		const windows = hookCliDialect({ platform: "win32" });
+		expect(buildClaudeHooks({ dialect: windows, requireTaskEnv: true })).toEqual(buildClaudeHooks({ dialect: windows }));
+	});
+
+	describe("in a real shell", () => {
+		function runGuarded(taskId: string | undefined, exitCode: number): { status: number | null; ran: boolean } {
+			const marker = join(tmp, "ran");
+			const fake = join(tmp, "dev3");
+			writeFileSync(fake, `#!/bin/sh\ntouch "${marker}"\nexit ${exitCode}\n`, { mode: 0o755 });
+			const command = buildClaudeHooks({ dialect: { ...posix, cli: fake }, requireTaskEnv: true })
+				.PermissionRequest[0].hooks[0].command;
+			const env: Record<string, string> = { PATH: process.env.PATH ?? "" };
+			if (taskId) env.DEV3_TASK_ID = taskId;
+			const result = spawnSync("sh", ["-c", command], { env });
+			return { status: result.status, ran: existsSync(marker) };
+		}
+
+		it("skips the CLI and exits 0 outside a dev3 pane", () => {
+			expect(runGuarded(undefined, 1)).toEqual({ status: 0, ran: false });
+		});
+
+		it("runs the CLI inside a pane and still tolerates only the app-offline exit", () => {
+			expect(runGuarded("task-1", 2)).toEqual({ status: 0, ran: true });
+			expect(runGuarded("task-1", 1).status).toBe(1);
+		});
+	});
+});
+
+describe("isDev3OwnedFolder", () => {
+	const env = { DEV3_HOME: "/home/u/.dev3.0" };
+
+	it("owns home worktrees, ops folders and in-project task dirs", () => {
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/worktrees/p/abcd1234/worktree", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/ops/board/abcd1234/work", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees/abcd1234/worktree", env)).toBe(true);
+	});
+
+	it("does not own a project folder or its in-project root", () => {
+		expect(isDev3OwnedFolder("/home/u/acme", env)).toBe(false);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees", env)).toBe(false);
+	});
+});
+
+describe("ensureParentClaudeMdExcluded", () => {
+	it("adds the main checkout's memory files once and keeps the user's own entries", () => {
+		const first = ensureParentClaudeMdExcluded({ claudeMdExcludes: ["/x/CLAUDE.md"] }, "/home/u/acme");
+		expect(first.claudeMdExcludes).toEqual([
+			"/x/CLAUDE.md",
+			"/home/u/acme/CLAUDE.md",
+			"/home/u/acme/CLAUDE.local.md",
+			"/home/u/acme/.claude/CLAUDE.md",
+		]);
+		expect(ensureParentClaudeMdExcluded(first, "/home/u/acme")).toBe(first);
+	});
+
+	it("keeps the parent .claude/CLAUDE.md loadable when that folder is the Claude config dir", () => {
+		const stale = { claudeMdExcludes: ["/home/u/acme/CLAUDE.md", "/home/u/acme/CLAUDE.local.md", "/home/u/acme/.claude/CLAUDE.md"] };
+		const fixed = ensureParentClaudeMdExcluded(stale, "/home/u/acme", { parentIsClaudeHome: true });
+		expect(fixed.claudeMdExcludes).toEqual(["/home/u/acme/CLAUDE.md", "/home/u/acme/CLAUDE.local.md"]);
+		expect(ensureParentClaudeMdExcluded(fixed, "/home/u/acme", { parentIsClaudeHome: true })).toBe(fixed);
+	});
+});
+
+describe("writeClaudeHooks in an in-project worktree", () => {
+	let project: string;
+	let worktree: string;
+	const excludes = () => JSON.parse(readFileSync(join(worktree, ".claude", "settings.local.json"), "utf-8")).claudeMdExcludes;
+
+	beforeEach(() => {
+		project = mkdtempSync(join(tmpdir(), "agent-hooks-inproject-"));
+		worktree = join(project, ".dev3", "worktrees", "abcd1234", "worktree");
+		mkdirSync(worktree, { recursive: true });
+		mkdirSync(join(project, ".claude"), { recursive: true });
+	});
+	afterEach(() => rmSync(project, { recursive: true, force: true }));
+
+	it("excludes the parent .claude/CLAUDE.md when the parent .claude is a plain project folder", () => {
+		writeClaudeHooks(worktree);
+		expect(excludes()).toContain(`${project}/.claude/CLAUDE.md`);
+	});
+
+	it("lets the parent .claude/CLAUDE.md load once that folder is Claude's config dir", () => {
+		writeClaudeHooks(worktree);
+		writeFileSync(join(project, ".claude", ".claude.json"), "{}");
+		writeClaudeHooks(worktree);
+		expect(excludes()).toEqual([`${project}/CLAUDE.md`, `${project}/CLAUDE.local.md`]);
 	});
 });

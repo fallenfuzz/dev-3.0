@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { projectDataDir, storesInProject } from "../shared/project-storage";
 import type { Project, Task, TaskHistoryChange, TaskHistoryEntry, TaskMovement, TaskOrigin, TaskPriority, TaskStatus, TaskType, TipState } from "../shared/types";
 import { appendTaskMovement, DEFAULT_PRIORITY, DEFAULT_REVIEW_AGENT_ID, DEFAULT_REVIEW_CONFIG_ID, getTaskOverview, getTaskTitle, isStatusGuardBlocked, remapColumnAgents, titleFromDescription } from "../shared/types";
 import {
@@ -31,7 +32,7 @@ const TASK_BACKUPS_DIR = "tasks-backups";
 const TASK_BACKUP_RETENTION_HOURS = 72;
 // `name` is display-only: `path` is deliberately absent, so a rename never moves
 // a data dir, worktree dir or slug (AGENTS.md on-disk invariants).
-type ProjectUpdates = Partial<Pick<Project, "name" | "setupScript" | "setupScriptLaunchMode" | "devScript" | "cleanupScript" | "defaultBaseBranch" | "githubAuthHost" | "githubAuthLogin" | "clonePaths" | "labels" | "customColumns" | "columnOrder" | "autoReviewEnabled" | "peerReviewEnabled" | "sparseCheckoutEnabled" | "sparseCheckoutPaths" | "builtinColumnAgents" | "customStatusLabels" | "sensitive" | "autoAccountExclusions" | "reviewModePrompt" | "coordinatorPrompt" | "artifactTemplate" | "artifactTemplatePath" | "env" | "conversationImportOfferedAt" | "boardCopy" | "boardCopyMessages">>;
+type ProjectUpdates = Partial<Pick<Project, "name" | "setupScript" | "setupScriptLaunchMode" | "devScript" | "cleanupScript" | "defaultBaseBranch" | "githubAuthHost" | "githubAuthLogin" | "clonePaths" | "labels" | "customColumns" | "columnOrder" | "autoReviewEnabled" | "peerReviewEnabled" | "sparseCheckoutEnabled" | "sparseCheckoutPaths" | "builtinColumnAgents" | "customStatusLabels" | "sensitive" | "autoAccountExclusions" | "gitWorkflow" | "reviewModePrompt" | "coordinatorPrompt" | "artifactTemplate" | "artifactTemplatePath" | "env" | "conversationImportOfferedAt" | "boardCopy" | "boardCopyMessages" | "storageRoot">>;
 
 type BoardChangeListener = (projectId: string | null) => void;
 const boardChangeListeners = new Set<BoardChangeListener>();
@@ -70,11 +71,11 @@ export class DataFileReadError extends Error {
 }
 
 function tasksFile(project: Project): string {
-	return `${DEV3_HOME}/data/${projectSlug(project.path)}/tasks.json`;
+	return `${projectDataDir(DEV3_HOME, project)}/tasks.json`;
 }
 
 function tasksBackupDir(project: Project): string {
-	return `${DEV3_HOME}/data/${projectSlug(project.path)}/${TASK_BACKUPS_DIR}`;
+	return `${projectDataDir(DEV3_HOME, project)}/${TASK_BACKUPS_DIR}`;
 }
 
 export function deriveTaskBaseBranch(project: Project, existingBranch?: string | null): string {
@@ -873,6 +874,7 @@ export async function addTask(
 		agentId?: string | null;
 		configId?: string | null;
 		accountId?: string | null;
+		bedrockProfile?: string | null;
 		seq?: number;
 		/** Overrides the title derived from the description (blank-description drafts). */
 		title?: string;
@@ -895,6 +897,8 @@ export async function addTask(
 		labelIds?: string[];
 		userLabelIds?: string[];
 		opsWorkDir?: string | null;
+		/** Own worktree in a project with the git workflow off - see Task.ownWorktree. */
+		ownWorktree?: boolean;
 		notes?: Task["notes"];
 		overview?: string | null;
 		userOverview?: string | null;
@@ -948,6 +952,7 @@ export async function addTask(
 			agentId: extras?.agentId ?? null,
 			configId: extras?.configId ?? null,
 			...(extras?.accountId !== undefined ? { accountId: extras.accountId } : {}),
+			...(extras?.bedrockProfile !== undefined ? { bedrockProfile: extras.bedrockProfile } : {}),
 			createdAt: now,
 			updatedAt: now,
 			...(status === "in-progress" ? { lifecycleStartedAt: now } : {}),
@@ -972,6 +977,8 @@ export async function addTask(
 			...(extras?.customTitle ? { customTitle: extras.customTitle } : {}),
 			...(extras?.titleEditedByUser ? { titleEditedByUser: true } : {}),
 			...(extras?.opsWorkDir ? { opsWorkDir: extras.opsWorkDir } : {}),
+			...(extras?.ownWorktree ? { ownWorktree: true } : {}),
+			...(storesInProject(project) ? { taskDirLocation: "project" as const } : {}),
 			...(extras?.notes && extras.notes.length > 0 ? { notes: extras.notes } : {}),
 			...(extras?.overview ? { overview: extras.overview } : {}),
 			...(extras?.userOverview ? { userOverview: extras.userOverview } : {}),
@@ -1193,8 +1200,9 @@ export async function getTask(
  * re-derived: `projectId` → target, `seq` → next free target seq, `baseBranch`
  * → the target project's default. Labels match by NAME (attach the target
  * project's same-name label, else drop — never auto-create). `customColumnId`,
- * `opsWorkDir`, and `scheduledLaunch` are cleared (target has different columns;
- * a deferred launch carries the old project's agent/branch config).
+ * `opsWorkDir`, `scheduledLaunch` and `launchAfter` are cleared (target has
+ * different columns; a deferred launch carries the old project's agent/branch
+ * config, and a start-after condition points at a task on the old board).
  *
  * Guards: only `status === "todo"` is movable; the target must be a different,
  * non-deleted project (cross-kind git↔virtual moves are allowed — a To Do task
@@ -1258,6 +1266,8 @@ export async function moveTaskToProject(
 				customColumnId: null,
 				opsWorkDir: null,
 				scheduledLaunch: null,
+				taskDirLocation: storesInProject(targetProject) ? "project" : undefined,
+				launchAfter: null,
 				updatedAt: now,
 			};
 
@@ -1463,6 +1473,8 @@ const PREFERENCES_FILE = `${DEV3_HOME}/preferences.json`;
 
 interface Preferences {
 	lastPickedFolder?: string;
+	/** Last AWS profile picked in a launch dialog, per project id (null = none). */
+	bedrockProfileByProject?: Record<string, string | null>;
 }
 
 async function rawLoadPreferences(): Promise<Preferences> {
@@ -1488,6 +1500,27 @@ export async function setLastPickedFolder(folder: string): Promise<void> {
 	return withFileLock(PREFERENCES_FILE, async () => {
 		const prefs = await rawLoadPreferences();
 		prefs.lastPickedFolder = folder;
+		await rawSavePreferences(prefs);
+	});
+}
+
+/** The AWS profile the launch dialogs preselect for this project; undefined
+ *  when the project never launched with an explicit pick. */
+export async function getRememberedBedrockProfile(projectId: string): Promise<string | null | undefined> {
+	const prefs = await rawLoadPreferences();
+	const byProject = prefs.bedrockProfileByProject ?? {};
+	return projectId in byProject ? byProject[projectId] : undefined;
+}
+
+/** Remember the last explicit AWS profile pick among `picks` (undefined = no pick). */
+export async function rememberBedrockProfile(projectId: string, picks: Array<string | null | undefined>): Promise<void> {
+	const explicit = picks.filter((pick): pick is string | null => pick !== undefined);
+	if (explicit.length === 0) return;
+	const pick = explicit[explicit.length - 1];
+	return withFileLock(PREFERENCES_FILE, async () => {
+		const prefs = await rawLoadPreferences();
+		if (prefs.bedrockProfileByProject?.[projectId] === pick) return;
+		prefs.bedrockProfileByProject = { ...prefs.bedrockProfileByProject, [projectId]: pick };
 		await rawSavePreferences(prefs);
 	});
 }
