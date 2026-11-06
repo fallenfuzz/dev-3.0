@@ -452,8 +452,6 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
-			// A removed account the pin replaced must not be stored again.
-			if (staleAccountDropped && resolved.resolvedAccountId === undefined) launchAccountId = undefined;
 			launchBedrockProfile = resolved.resolvedBedrockProfile;
 			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		} else {
@@ -478,6 +476,8 @@ export async function launchTaskPty(
 			launchBedrockProfile = resolved.resolvedBedrockProfile;
 			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		}
+		// A removed account the pin replaced must not be stored again.
+		if (staleAccountDropped && launchAccountId === accountId) launchAccountId = undefined;
 		if (staleAccountDropped) await notifyStaleAccountDropped(task);
 
 		if (opts?.codexHome) extraEnv.CODEX_HOME = opts.codexHome;
