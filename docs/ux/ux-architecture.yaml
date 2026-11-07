@@ -325,10 +325,10 @@ ux_architecture:
       purpose: "Inspector for the active task: git actions, dev server, scripts, notes, pane controls, open-in."
       allowed: ["object_action", "git_action", "dev_server_action", "metadata", "notes_preview", "secondary_edit"]
       forbidden: ["global_destination", "cross_project_action", "uncapped_note_list"]
-      note: "This panel is the densest surface (34K). It is the main complexity-budget risk in the app."
+      note: "Densest surface (34K): the main complexity-budget risk."
       evidence: ["src/mainview/components/TaskInfoPanel.tsx", "src/mainview/components/task-info-panel/*"]
       completion_strip:
-        rule: "Merge or agent completion offer: one card over the live terminal's top-right (inspector row if none). Never a modal, never resizes. No focus, Complete gated on unsaved work. Elsewhere: bell, toast, marker."
+        rule: "Merge, agent or own Complete: one card at the live terminal's top-right (else inspector row). No modal, no resize. Unsolicited: no focus; own: Keep open focused. Gated on unsaved work. Off task: toast, marker; own: anchored confirm."
         evidence: ["src/mainview/completion-offers.ts", "src/mainview/components/task-info-panel/TaskCompletionStrip.tsx"]
       bar_model:
         layout: "2x2"  # two rows; each row split into left|right by a flex-1 spacer
@@ -447,7 +447,7 @@ ux_architecture:
       evidence: ["src/mainview/components/*Modal.tsx", "src/mainview/confirm.tsx"]
     popover:
       purpose: "Lightweight contextual preview/hint anchored to an element."
-      allowed: ["preview", "hint", "quick_action", "remediation"]
+      allowed: ["preview", "hint", "quick_action", "remediation", "own_click_confirm"]
       forbidden: ["multi_step_flow", "primary_destination"]
       observed: ["SiblingPopover", "TerminalPreviewPopover", "StuckPreparationPopover"]
       evidence: ["src/mainview/components/*Popover.tsx"]
