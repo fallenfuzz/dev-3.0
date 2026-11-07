@@ -24,6 +24,7 @@ import { splitTaskPane, AuxPaneUnavailableError, type AuxPaneHandle } from "../.
 import { getPushMessage, AGENT_ENV_DEFAULTS, buildAgentEnv, buildCmdScript, generatedScriptLaunch, generatedScriptName, log, writeLaunchScript } from "../shared-pure";
 import { applyAgentHooksToCommand, applyModelVersionNotice, ensureAgentTrust, notifyBedrockProfileMissing } from "./task-launch";
 import { rememberVariantBedrockProfile } from "../../bedrock-profile-pref";
+import { rootProjectFor } from "../../ops-worktree";
 
 export async function spawnAgentInTask(params: {
 	prompt?: string;
@@ -66,11 +67,12 @@ export async function spawnAgentInTask(params: {
 	// and held until the pane went quiet — but the hold is deferred by ANY human
 	// keystroke in the task, and the user is invariably still typing in the pane he
 	// spawned this from, so the pointer sat there until he pressed Enter (seq 1775).
+	const rootProject = rootProjectFor(project, task);
 	const ctx: agents.TemplateContext = {
 		taskTitle: "",
 		taskDescription: handoff ? handoffPrompt(handoff, params.prompt) : (params.prompt ?? ""),
 		projectName: project.name,
-		projectPath: project.path,
+		projectPath: rootProject.path,
 		worktreePath: task.worktreePath,
 	};
 
@@ -85,7 +87,7 @@ export async function spawnAgentInTask(params: {
 	// Pre-assign a session ID for Claude so we can recover this pane later
 	const freshSessionId = crypto.randomUUID();
 	// Per-launch account for THIS extra pane (independent of the main pane's).
-	const projectEnv = await repoConfig.resolveProjectEnv(project, task.worktreePath, { foreignCode: task.foreignCode });
+	const projectEnv = await repoConfig.resolveProjectEnv(rootProject, task.worktreePath, { foreignCode: task.foreignCode });
 	const reservationKey = `${task.id}:spawn:${freshSessionId}`;
 	const cmdOptions: agents.CommandOptions = {
 		sessionId: freshSessionId,
@@ -112,7 +114,7 @@ export async function spawnAgentInTask(params: {
 		launchedConfigId = resolved.config?.id ?? params.configId;
 	} else {
 		const resolved = await agents.resolveCommandForProject(
-			project,
+			rootProject,
 			task.title,
 			// A takeover replaces the brief: the retelling already carries the original
 			// request, so re-launching on the raw description would start the work twice.
@@ -142,7 +144,7 @@ export async function spawnAgentInTask(params: {
 		...buildAgentEnv(extraEnv, task.id),
 		...ensureArtifactTemplateEnv(project, task, task.worktreePath),
 	};
-	await ensureAgentTrust(task.worktreePath, project.path, resolvedBaseCmd, launchAccountId, task.foreignCode, resolvedAgentFamily, env);
+	await ensureAgentTrust(task.worktreePath, rootProject.path, resolvedBaseCmd, launchAccountId, task.foreignCode, resolvedAgentFamily, env);
 	tmuxCmd = await applyAgentHooksToCommand(task.worktreePath, resolvedBaseCmd, tmuxCmd, {
 		stopTarget: getPrimaryStopTarget(project.autoReviewEnabled, task.taskType),
 		family: resolvedAgentFamily,

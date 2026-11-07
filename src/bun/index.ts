@@ -1,6 +1,8 @@
 import { stopAgentMessageLogWatches } from "./agent-message-log-watch";
+import { probeDevServer, resolveMainViewUrl } from "./main-view-url";
 import { startBoardCopy, stopBoardCopy } from "./board-copy";
 import { claudeSessionWatches } from "./claude-session-watch";
+import { codexTurnWatches } from "./codex-turn-watch";
 import Electrobun, {
 	ApplicationMenu,
 	PATHS,
@@ -403,28 +405,17 @@ const { startRateLimitMonitor, stopRateLimitMonitor } = await import("./rate-lim
 	});
 }
 
-const DEV_SERVER_PORT = 5173;
-const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
-
 // --- Main Window ---
 
 async function getMainViewUrl(): Promise<string> {
 	const channel = await Updater.localInfo.channel();
 	log.info("App channel", { channel });
-	if (channel === "dev") {
-		try {
-			// Bound the probe: fetch() has no default timeout, so a process that
-			// accepts the connection on 5173 but never answers would hang this
-			// await forever — and the window is opened after it, so the app would
-			// boot to nothing. A short timeout falls back to bundled assets.
-			await fetch(DEV_SERVER_URL, { method: "HEAD", signal: AbortSignal.timeout(1000) });
-			log.info(`HMR enabled: Vite dev server at ${DEV_SERVER_URL}`);
-			return DEV_SERVER_URL;
-		} catch {
-			log.warn("Vite dev server not running, falling back to bundled assets");
-		}
-	}
-	return "views://mainview/index.html";
+	return resolveMainViewUrl({
+		channel,
+		env: process.env,
+		probe: probeDevServer,
+		log: { info: (msg) => log.info(msg), warn: (msg) => log.warn(msg) },
+	});
 }
 
 const url = await getMainViewUrl();
@@ -855,10 +846,11 @@ function runGlobalQuitCleanup(): void {
 	stopAgentMessageLogWatches();
 	stopBoardCopy();
 	claudeSessionWatches.close();
+	codexTurnWatches.close();
 	// Snapshot window geometry so an update restart reopens on the same screen.
 	try { flushWindowState(); } catch (err) { log.warn("flushWindowState failed", { error: String(err) }); }
 	try { stopPortScanPoller(); } catch (err) { log.warn("stopPortScanPoller failed", { error: String(err) }); }
-	try { stopBackgroundSchedulers(); } catch (err) { log.warn("stopBackgroundSchedulers failed", { error: String(err) }); }
+	try { void stopBackgroundSchedulers(); } catch (err) { log.warn("stopBackgroundSchedulers failed", { error: String(err) }); }
 	try { stopResourceMonitor(); } catch (err) { log.warn("stopResourceMonitor failed", { error: String(err) }); }
 	try { stopRateLimitMonitor(); } catch (err) { log.warn("stopRateLimitMonitor failed", { error: String(err) }); }
 	try { stopSocketServer(); } catch (err) { log.warn("stopSocketServer failed", { error: String(err) }); }

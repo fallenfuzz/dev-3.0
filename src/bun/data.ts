@@ -899,6 +899,8 @@ export async function addTask(
 		opsWorkDir?: string | null;
 		/** Own worktree in a project with the git workflow off - see Task.ownWorktree. */
 		ownWorktree?: boolean;
+		attachedRepo?: string | null;
+		opsWorktree?: boolean;
 		notes?: Task["notes"];
 		overview?: string | null;
 		userOverview?: string | null;
@@ -979,6 +981,8 @@ export async function addTask(
 			...(extras?.opsWorkDir ? { opsWorkDir: extras.opsWorkDir } : {}),
 			...(extras?.ownWorktree ? { ownWorktree: true } : {}),
 			...(storesInProject(project) ? { taskDirLocation: "project" as const } : {}),
+			...(extras?.attachedRepo ? { attachedRepo: extras.attachedRepo } : {}),
+			...(extras?.opsWorktree ? { opsWorktree: true } : {}),
 			...(extras?.notes && extras.notes.length > 0 ? { notes: extras.notes } : {}),
 			...(extras?.overview ? { overview: extras.overview } : {}),
 			...(extras?.userOverview ? { userOverview: extras.userOverview } : {}),
@@ -1200,9 +1204,9 @@ export async function getTask(
  * re-derived: `projectId` → target, `seq` → next free target seq, `baseBranch`
  * → the target project's default. Labels match by NAME (attach the target
  * project's same-name label, else drop — never auto-create). `customColumnId`,
- * `opsWorkDir`, `scheduledLaunch` and `launchAfter` are cleared (target has
- * different columns; a deferred launch carries the old project's agent/branch
- * config, and a start-after condition points at a task on the old board).
+ * `opsWorkDir`, `attachedRepo`, `opsWorktree`, `scheduledLaunch` and `launchAfter` are
+ * cleared (target has different columns; a deferred launch carries the old project's
+ * agent/branch config, and a start-after condition points at a task on the old board).
  *
  * Guards: only `status === "todo"` is movable; the target must be a different,
  * non-deleted project (cross-kind git↔virtual moves are allowed — a To Do task
@@ -1265,6 +1269,8 @@ export async function moveTaskToProject(
 				labelIds: remappedLabelIds,
 				customColumnId: null,
 				opsWorkDir: null,
+				attachedRepo: null,
+				opsWorktree: undefined,
 				scheduledLaunch: null,
 				taskDirLocation: storesInProject(targetProject) ? "project" : undefined,
 				launchAfter: null,

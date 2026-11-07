@@ -20,6 +20,7 @@ import { nextKeepAliveState } from "../../shared/keep-alive";
 import { boardPorts } from "../board-operations/runtime";
 import { USER_ACTOR } from "../board-operations/types";
 import { getResourceUsage } from "../resource-monitor";
+import { isInsideOpsDir } from "../ops-worktree";
 import { assertLaunchAgentsInstalled, routableLaunchKind } from "../agent-launch-availability";
 import {
 	nativeTerminalAvailability,
@@ -192,6 +193,25 @@ async function getAllProjectTasks(): Promise<{ projectId: string; tasks: Task[];
 }
 
 /**
+ * The repo an Operations task's folder belongs to, shared by createTask and editTask. The
+ * default branch is detected once and stored; a worktree needs it, so that case surfaces the error.
+ */
+async function resolveOpsRepo(project: Project, opsWorkDir?: string | null, wantWorktree?: boolean): Promise<{
+	attachedRepo: string | null;
+	opsWorktree: boolean;
+	baseBranch: string | null;
+}> {
+	const found = project.kind === "virtual" && opsWorkDir ? await git.getRepoTopLevel(opsWorkDir) : null;
+	// A repo inside another task's managed dir goes with that task: keep the folder, attach nothing.
+	const attachedRepo = found && !isInsideOpsDir(found) ? found : null;
+	const opsWorktree = !!attachedRepo && wantWorktree === true;
+	const baseBranch = attachedRepo
+		? opsWorktree ? await git.getDefaultBranch(attachedRepo, { local: true }) : await git.getDefaultBranch(attachedRepo, { local: true }).catch(() => null)
+		: null;
+	return { attachedRepo, opsWorktree, baseBranch };
+}
+
+/**
  * The one place a task is born. The CLI (`dev3 task create`) routes through it
  * too — a second creation path is how `foreignCode` came to be set in the GUI
  * and nowhere else.
@@ -207,7 +227,7 @@ async function resolveOwnWorktree(project: Project, requested: boolean | undefin
 	return true;
 }
 
-export async function createTask(params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; priority?: TaskPriority; taskType?: TaskType; origin?: TaskOrigin; epicId?: string; ownWorktree?: boolean }): Promise<Task> {
+export async function createTask(params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; opsWorktree?: boolean; priority?: TaskPriority; taskType?: TaskType; origin?: TaskOrigin; epicId?: string; ownWorktree?: boolean }): Promise<Task> {
 	log.info("→ createTask", {
 		projectId: params.projectId,
 		requestedStatus: params.status ?? "todo",
@@ -256,6 +276,7 @@ export async function createTask(params: { projectId: string; description: strin
 		? await reviewIdentityForBranch(project, params.existingBranch)
 		: null;
 	const reviewTitle = reviewIdentity?.title ?? "";
+	const { attachedRepo, opsWorktree, baseBranch } = await resolveOpsRepo(project, params.opsWorkDir, params.opsWorktree);
 	const extras: Parameters<typeof data.addTask>[3] = {
 		...(params.existingBranch ? { existingBranch: params.existingBranch } : {}),
 		...(foreignCode ? { foreignCode: true } : {}),
@@ -268,8 +289,12 @@ export async function createTask(params: { projectId: string; description: strin
 		...(reviewTitle
 			? { title: reviewTitle }
 			: !isScratch && params.title?.trim() ? { title: params.title.trim() } : {}),
-		...(params.opsWorkDir ? { opsWorkDir: params.opsWorkDir } : {}),
+		...(params.opsWorkDir && !opsWorktree ? { opsWorkDir: params.opsWorkDir } : {}),
 		...(ownWorktree ? { ownWorktree: true } : {}),
+		...(attachedRepo ? { attachedRepo } : {}),
+		// The work dir of a worktree-mode task is managed, and its branch starts from the repo's default.
+		...(opsWorktree ? { opsWorktree: true } : {}),
+		...(attachedRepo && baseBranch ? { baseBranch } : {}),
 		...(params.priority ? { priority: params.priority } : {}),
 		...(params.taskType ? { taskType: params.taskType } : {}),
 		...(reviewIdentity?.reviewedPr ? { reviewedPr: reviewIdentity.reviewedPr } : {}),
@@ -324,6 +349,9 @@ function getSourceTaskBranch(task: Task, project: Project): string | undefined {
 	if (task.existingBranch) {
 		return task.existingBranch;
 	}
+
+	// An Operations task stores the repo's own base; it is never a checkout ref.
+	if (project.kind === "virtual") return undefined;
 
 	const projectBaseBranch = project.defaultBaseBranch || "main";
 	if (task.baseBranch && task.baseBranch !== projectBaseBranch) {
@@ -697,6 +725,8 @@ async function spawnVariants(params: {
 				// each variant so the worktree-less launch path targets it instead
 				// of falling back to a managed dir.
 				...(sourceTask.opsWorkDir ? { opsWorkDir: sourceTask.opsWorkDir } : {}),
+				...(sourceTask.attachedRepo ? { attachedRepo: sourceTask.attachedRepo, baseBranch: sourceTask.baseBranch } : {}),
+				...(sourceTask.opsWorktree ? { opsWorktree: true } : {}),
 			},
 		);
 
@@ -827,6 +857,9 @@ async function addAttempts(params: {
 				// Same parent as the original — an attempt is never a child of it.
 				origin: sourceTask.origin,
 				epicId: sourceTask.epicId,
+				...(sourceTask.opsWorkDir ? { opsWorkDir: sourceTask.opsWorkDir } : {}),
+				...(sourceTask.attachedRepo ? { attachedRepo: sourceTask.attachedRepo, baseBranch: sourceTask.baseBranch } : {}),
+				...(sourceTask.opsWorktree ? { opsWorktree: true } : {}),
 				// NOTE: notes/overview are intentionally NOT copied here — addAttempts
 				// keeps the source task (returns it alongside the new attempts), so its
 				// notes are not lost; copying them would duplicate them across siblings.
@@ -908,6 +941,8 @@ async function editTask(params: {
 	draft?: boolean;
 	taskType?: TaskType | null;
 	ownWorktree?: boolean;
+	opsWorkDir?: string | null;
+	opsWorktree?: boolean;
 }): Promise<Task> {
 	log.info("→ editTask", { taskId: params.taskId, draft: params.draft, ownWorktree: params.ownWorktree });
 	const project = await data.getProject(params.projectId);
@@ -929,6 +964,11 @@ async function editTask(params: {
 	}
 	const ownWorktree = params.ownWorktree === undefined ? undefined : await resolveOwnWorktree(project, params.ownWorktree);
 
+	// An Operations folder choice is resolved exactly as createTask does it.
+	const opsRepo = project.kind === "virtual" && params.opsWorkDir !== undefined
+		? await resolveOpsRepo(project, params.opsWorkDir, params.opsWorktree)
+		: null;
+
 	const { task: updated, result: applied } = await data.updateTaskWith(project, task.id, (current) => {
 		// Only the UI reaches this RPC, so a typed title is a real user edit and
 		// locks the title against future agent renames (issue #583).
@@ -942,7 +982,14 @@ async function editTask(params: {
 		if (params.labelIds !== undefined) Object.assign(updates, labelPatch(current, params.labelIds, USER_ACTOR));
 		if (params.existingBranch !== undefined) {
 			updates.existingBranch = params.existingBranch;
-			updates.baseBranch = data.deriveTaskBaseBranch(project, params.existingBranch);
+			// An Operations task's base is the attached repo's, never derived from a branch.
+			if (project.kind !== "virtual") updates.baseBranch = data.deriveTaskBaseBranch(project, params.existingBranch);
+		}
+		if (opsRepo) {
+			updates.opsWorkDir = params.opsWorkDir && !opsRepo.opsWorktree ? params.opsWorkDir : null;
+			updates.attachedRepo = opsRepo.attachedRepo;
+			updates.opsWorktree = opsRepo.opsWorktree || undefined;
+			updates.baseBranch = opsRepo.baseBranch ?? data.deriveTaskBaseBranch(project);
 		}
 		if (params.draft !== undefined) updates.draft = params.draft;
 		if (params.taskType !== undefined) updates.taskType = params.taskType;
@@ -1076,6 +1123,7 @@ async function listPendingResetRequests(): Promise<AgentCancellationRequest[]> {
 		projectId: r.projectId,
 		taskTitle: r.dialog.taskTitle,
 		subject: r.dialog.subject,
+		...(r.dialog.branchKept ? { branchKept: true } : {}),
 	}));
 }
 
