@@ -3,7 +3,7 @@ import { noteInterfaceModeChange } from "../interface-onboarding";
 import { chmodSync, existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { PATHS } from "../electrobun-platform";
-import type { AgentCheckResult, AgentModelAvailability, CodingAgent, ConfigSourceEntry, Dev3RepoConfig, GitHubCliStatus, GlobalSettings, HarnessReadinessReport, Project, ProjectSettingsUpdate, RequirementCheckResult, RosettaWarningInfo, ShellAvailability, TelemetryProfile } from "../../shared/types";
+import type { AgentCheckResult, AgentModelAvailability, CodingAgent, ConfigSourceEntry, Dev3RepoConfig, GitHubCliStatus, GlobalSettings, HarnessReadinessReport, Project, ProjectSettingsUpdate, RequirementCheckResult, RosettaWarningInfo, ShellAvailability, TelemetryProfile, TmuxServerNotice } from "../../shared/types";
 import { SHELL_FALLBACK_ORDER, type ShellFlavor, shellCandidatePaths } from "../../shared/posix-shell";
 import { getUserShell, resolveUserShell, setShellPreference } from "../shell-env";
 import * as data from "../data";
@@ -673,10 +673,19 @@ async function getRosettaWarning(): Promise<RosettaWarningInfo> {
 	return info;
 }
 
-async function getTmuxServerNotice(): Promise<{ predatesLaunchd: boolean }> {
+async function getTmuxServerNotice(): Promise<TmuxServerNotice> {
 	const predatesLaunchd = tmux.serverPredatesLaunchd();
 	if (predatesLaunchd) log.warn("tmux server predates the launchd start; task terminals can still lose folder access");
-	return { predatesLaunchd };
+	const staleBinary = tmux.serverBinaryStale();
+	if (staleBinary) log.warn("tmux server runs a tmux outside this app bundle; task terminals lose folder access once it is deleted", { staleBinary });
+	return { predatesLaunchd, staleBinary };
+}
+
+/** Stop the default tmux server; the next terminal open starts a fresh one from this bundle. */
+async function restartTmuxServer(): Promise<{ ok: true }> {
+	log.warn("Restarting the tmux server at the user's request");
+	await tmux.killServer();
+	return { ok: true };
 }
 
 async function checkGhAvailable(): Promise<{ available: boolean; notInstalled: boolean }> {
@@ -866,6 +875,7 @@ export const settingsConfigHandlers = {
 	checkSystemRequirements,
 	getRosettaWarning,
 	getTmuxServerNotice,
+	restartTmuxServer,
 	checkGhAvailable,
 	setCustomBinaryPath,
 	checkAgentAvailability,
