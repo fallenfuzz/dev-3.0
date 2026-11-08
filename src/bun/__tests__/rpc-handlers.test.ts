@@ -455,7 +455,7 @@ import * as accountRouter from "../account-router";
 import * as workspaceGuard from "../task-workspace-guard";
 import * as updater from "../updater";
 import { setupAgentHooks } from "../agent-hooks";
-import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../rate-limit-monitor";
+import { CLAUDE_MANAGED_SETTINGS_PATHS } from "../rate-limit-monitor";
 import { loadSettings, loadSettingsSync, saveSettings } from "../settings";
 import * as repoConfig from "../repo-config";
 import * as cowClone from "../cow-clone";
@@ -13743,7 +13743,7 @@ describe("launchTaskPty", () => {
 		}
 	});
 
-	it("swaps the managed --settings file for the one setupAgentHooks built", async () => {
+	it.each(CLAUDE_MANAGED_SETTINGS_PATHS)("swaps the managed --settings file %s for the one setupAgentHooks built", async (managedPath) => {
 		const project = makeProject();
 		const task = makeTask();
 		const writeSpy = vi.spyOn(Bun, "write").mockResolvedValue(undefined as never);
@@ -13753,7 +13753,7 @@ describe("launchTaskPty", () => {
 			stderr: new Uint8Array(),
 		});
 		(agents.resolveCommandForAgent as any).mockResolvedValueOnce({
-			command: `claude --settings ${CLAUDE_STATUSLINE_SETTINGS_PATH} -- 'Run the task'`,
+			command: `claude --settings ${managedPath} -- 'Run the task'`,
 			extraEnv: {},
 			agent: { baseCommand: "claude" },
 			config: {},
@@ -13763,11 +13763,11 @@ describe("launchTaskPty", () => {
 		try {
 			await launchTaskPty(project, task, "/home/me/notes", "builtin-claude", "claude-default");
 
-			expect(setupAgentHooks).toHaveBeenCalledWith("/home/me/notes", "claude", expect.objectContaining({ claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH }));
+			expect(setupAgentHooks).toHaveBeenCalledWith("/home/me/notes", "claude", expect.objectContaining({ claudeSettingsFile: managedPath }));
 			const runCall = writeSpy.mock.calls.find(([path]) => String(path).endsWith("-run.sh"));
 			const script = String(runCall?.[1] ?? "");
 			expect(script).toContain("claude --settings /home/me/.dev3.0/data/agent-hooks/claude-folder-settings-abc.json -- 'Run the task'");
-			expect(script).not.toContain(CLAUDE_STATUSLINE_SETTINGS_PATH);
+			expect(script).not.toContain(managedPath);
 		} finally {
 			writeSpy.mockRestore();
 		}
