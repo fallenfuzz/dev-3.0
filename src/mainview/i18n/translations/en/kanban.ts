@@ -176,6 +176,7 @@ const kanban = {
 	"task.editCancel": "Cancel",
 	"task.failedEdit": "Couldn’t save the change — try again. ({error})",
 	"task.editHint": "⌘Enter to save",
+	"task.renameHint": "Enter to save · Esc to cancel",
 	"task.detailTitle": "Task Details",
 	"task.descriptionLabel": "Description",
 	"task.edit": "Edit",
