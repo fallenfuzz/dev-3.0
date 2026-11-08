@@ -1,9 +1,11 @@
 import type { PosixShellResolution, ShellFlavor } from "../posix-shell";
 import type { TaskType } from "./task-type";
 import type { ColumnAgentConfig } from "./column-agents";
-import { BOARD_CLEANUP_PROMPT, COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT } from "./prompts";
+import { BOARD_CLEANUP_PROMPT, COORDINATOR_PROMPT, DEFAULT_PR_REVIEW_PROMPT, GITLESS_COORDINATOR_PROMPT } from "./prompts";
 import type { GlobalSettings } from "./global-settings";
 import type { CustomColumn, Label } from "./labels-columns";
+import type { Task } from "./task";
+import { CONFIG_KEYS, type ConfigFieldValues } from "../config-schema";
 
 /** Extract repository name from a git URL (HTTPS or SSH). */
 export function extractRepoName(url: string): string {
@@ -77,53 +79,14 @@ export interface DevServerConfig {
 	title?: string;
 }
 
-/** Fields that can be stored in .dev3/config.json (repo-level, shareable). */
-export interface Dev3RepoConfig {
-	setupScript?: string;
-	setupScriptLaunchMode?: SetupScriptLaunchMode;
-	devScript?: string;
-	/**
-	 * Additional dev servers, by name. Independent of `devScript`, which keeps
-	 * declaring the server named `dev` — declaring `dev` here while `devScript`
-	 * is set is a config error, not a merge.
-	 */
-	devServers?: Record<string, DevServerConfig>;
-	cleanupScript?: string;
-	clonePaths?: string[];
-	defaultBaseBranch?: string;
-	defaultCompareRef?: string;
-	defaultCompareRefMode?: CompareRefMode;
-	autoReviewEnabled?: boolean;
-	peerReviewEnabled?: boolean;
-	sparseCheckoutEnabled?: boolean;
-	sparseCheckoutPaths?: string[];
-	builtinColumnAgents?: Record<string, ColumnAgentConfig>;
-	/** Number of ports to allocate per task/worktree (injected as DEV3_PORT0..N). Default: 0. */
-	portCount?: number;
-	/** Env vars exported into every task session (agent terminals, setup/dev/cleanup
-	 *  scripts, column agents). Merged PER KEY across config layers (decision 179). */
-	env?: Record<string, string>;
-}
+/**
+ * Fields that can be stored in `.dev3/config.json` / `.dev3/config.local.json`.
+ * Derived from the schema in `src/shared/config-schema.ts`: add a field there.
+ */
+export type Dev3RepoConfig = ConfigFieldValues;
 
-/** Keys of Dev3RepoConfig — used for merge logic. */
-export const DEV3_REPO_CONFIG_KEYS: (keyof Dev3RepoConfig)[] = [
-	"setupScript",
-	"setupScriptLaunchMode",
-	"devScript",
-	"devServers",
-	"cleanupScript",
-	"clonePaths",
-	"defaultBaseBranch",
-	"defaultCompareRef",
-	"defaultCompareRefMode",
-	"autoReviewEnabled",
-	"peerReviewEnabled",
-	"sparseCheckoutEnabled",
-	"sparseCheckoutPaths",
-	"builtinColumnAgents",
-	"portCount",
-	"env",
-];
+/** Keys of Dev3RepoConfig, in schema order — used for merge logic. */
+export const DEV3_REPO_CONFIG_KEYS: readonly (keyof Dev3RepoConfig)[] = CONFIG_KEYS;
 
 /** The `.dev3` keys Add Project's auto-configure can write. */
 export type AutoConfigureKey = "setupScript" | "devScript";
@@ -147,13 +110,15 @@ export interface ConfigSourceEntry {
  * Wider than ConfigSource (repo/local, used for the UI badge): it attributes
  * EVERY key to exactly one origin so the CLI never falls back to a blanket
  * label that hides where a value actually came from.
- *   local   → .dev3/config.local.json
- *   repo    → .dev3/config.json
- *   project → projects.json Project object (Project Settings → Project tab)
+ *   local      → .dev3/config.local.json of the checkout being resolved
+ *   repo       → .dev3/config.json of the checkout being resolved
+ *   main-local → the project root's .dev3/config.local.json, seen from a worktree
+ *   main-repo  → the project root's .dev3/config.json, seen from a worktree
+ *   project    → projects.json Project object (Project Settings → Project tab)
  *   default → built-in DEFAULTS or a derived value (e.g. defaultCompareRef)
  *   unset   → no value at any layer (rendered "(not set)")
  */
-export type ResolvedConfigSource = "local" | "repo" | "project" | "default" | "unset";
+export type ResolvedConfigSource = "local" | "repo" | "main-local" | "main-repo" | "project" | "default" | "unset";
 
 export interface ProjectSettingsUpdate extends Dev3RepoConfig {
 	/** Display name only — the project's path (and every slug derived from it) never moves. */
@@ -165,6 +130,10 @@ export interface ProjectSettingsUpdate extends Dev3RepoConfig {
 	autoAccountExclusions?: string[];
 	/** Turns reading of this project's `.dev3/` config files on or off. */
 	useRepoConfig?: boolean;
+	/** Turns worktrees, branches, diffs, PRs and review columns on or off. */
+	gitWorkflow?: boolean;
+	/** `"project"` moves board data into the project folder, `"home"` back to `~/.dev3.0` (copies, never deletes). */
+	storageRoot?: "project" | "home";
 	/** Blank string clears the project override and falls back to global. */
 	reviewModePrompt?: string;
 	/** Blank string clears the project override and falls back to global. */
@@ -303,6 +272,84 @@ export interface Project {
 	boardCopy?: boolean;
 	/** Also copy the messages this board's agents received. Off unless set; only read while {@link boardCopy} is on. */
 	boardCopyMessages?: boolean;
+	/**
+	 * `false` runs every task of this project directly in its folder: no worktree,
+	 * branch, diff, PR or review columns, no setup or cleanup script. The folder
+	 * need not be a git repository. Absent means ON. See {@link hasGitWorkflow}.
+	 */
+	gitWorkflow?: boolean;
+	/**
+	 * `"project"` keeps this project's board data and NEW task dirs under
+	 * `<path>/.dev3/` instead of `~/.dev3.0` (see `src/shared/project-storage.ts`).
+	 * Absent means `~/.dev3.0`. Machine-local; never set on a virtual board.
+	 */
+	storageRoot?: "project";
+}
+
+/**
+ * Whether this project's tasks get the git workflow: a worktree, a branch, the
+ * diff and PR tooling, and the review columns. Off for every virtual board, and
+ * for a project whose user turned it off.
+ */
+export function hasGitWorkflow(project: Pick<Project, "kind" | "gitWorkflow">): boolean {
+	return project.kind !== "virtual" && project.gitWorkflow !== false;
+}
+
+/**
+ * Whether this task runs in a git worktree of its own. Every task of a project
+ * with the git workflow does; in a git project with the workflow off, only a
+ * task created with {@link Task.ownWorktree}. Board-level surfaces (columns,
+ * review, variants) keep asking {@link hasGitWorkflow}.
+ */
+export function taskUsesWorktree(
+	project: Pick<Project, "kind" | "gitWorkflow">,
+	task: Pick<Task, "ownWorktree">,
+): boolean {
+	return hasGitWorkflow(project) || (project.kind !== "virtual" && task.ownWorktree === true);
+}
+
+/** The refusal task creation throws when an own worktree is asked of a folder that is not a repository. */
+export const OWN_WORKTREE_NOT_A_REPO_ERROR = "The project folder is not a git repository, so a task cannot get its own worktree";
+
+/** The refusal `mergeTask` throws for a local squash in a project with the git workflow off. */
+export const LOCAL_MERGE_SHARED_FOLDER_ERROR = "Merge would commit in the project folder, which other tasks share - merge through a pull request instead";
+
+/** The refusal `updateProjectSettings` throws when the folder cannot take the git workflow. */
+export const GIT_WORKFLOW_NOT_A_REPO_ERROR = "The project folder is not a git repository, so the git workflow cannot be switched on";
+
+/**
+ * Why the git workflow cannot be switched right now, or null when it can. A task
+ * holding a worktree or the project folder would be torn down by the other mode's
+ * rules, so the switch waits until every such task is finished or back in To Do.
+ */
+export function gitWorkflowSwitchBlocker(
+	project: Pick<Project, "kind">,
+	tasks: ReadonlyArray<Pick<Task, "status" | "worktreePath" | "preparing" | "runtimeState">>,
+): { reason: "virtual" } | { reason: "live-tasks"; count: number } | null {
+	if (project.kind === "virtual") return { reason: "virtual" };
+	const count = tasks.filter((task) => (
+		task.preparing === true
+		|| (!!task.runtimeState && task.runtimeState.runtime !== "idle")
+		|| (!!task.worktreePath && task.status !== "completed" && task.status !== "cancelled")
+	)).length;
+	return count > 0 ? { reason: "live-tasks", count } : null;
+}
+
+/** The refusal `updateProjectSettings` throws when the project's `.dev3/data` or `.dev3/worktrees` holds git-tracked files. */
+export const STORAGE_TRACKED_CONFLICT_ERROR = "The project already tracks files under .dev3/data or .dev3/worktrees in git, so dev3 data cannot be kept there";
+
+/**
+ * Why per-project storage cannot be switched right now, or null when it can. A
+ * task that is preparing or has a live runtime is reading and writing the board
+ * and its task dir, so the switch waits until it is idle.
+ */
+export function storageSwitchBlocker(
+	project: Pick<Project, "kind">,
+	tasks: ReadonlyArray<Pick<Task, "preparing" | "runtimeState">>,
+): { reason: "virtual" } | { reason: "live-tasks"; count: number } | null {
+	if (project.kind === "virtual") return { reason: "virtual" };
+	const count = tasks.filter((task) => task.preparing === true || (!!task.runtimeState && task.runtimeState.runtime !== "idle")).length;
+	return count > 0 ? { reason: "live-tasks", count } : null;
 }
 
 /** Why a board-copy write failed, for the one warning a failure streak shows. */
@@ -375,13 +422,18 @@ export function resolvePresetPrompt(
  */
 export function presetPromptForTaskType(
 	type: TaskType,
-	project: Pick<Project, "coordinatorPrompt" | "reviewModePrompt">,
+	project: Pick<Project, "coordinatorPrompt" | "reviewModePrompt" | "kind" | "gitWorkflow">,
 	settings: Pick<GlobalSettings, "coordinatorPrompt" | "reviewModePrompt"> | null | undefined,
 ): string {
 	if (type === "board-cleanup") return BOARD_CLEANUP_PROMPT;
 	return type === "coordinator"
-		? resolvePresetPrompt(project.coordinatorPrompt, settings?.coordinatorPrompt, COORDINATOR_PROMPT)
+		? resolvePresetPrompt(project.coordinatorPrompt, settings?.coordinatorPrompt, builtinCoordinatorPrompt(project))
 		: resolvePresetPrompt(project.reviewModePrompt, settings?.reviewModePrompt, DEFAULT_PR_REVIEW_PROMPT);
+}
+
+/** The built-in coordinator brief for this project: the gitless one when it has no git workflow. */
+export function builtinCoordinatorPrompt(project: Pick<Project, "kind" | "gitWorkflow">): string {
+	return hasGitWorkflow(project) ? COORDINATOR_PROMPT : GITLESS_COORDINATOR_PROMPT;
 }
 
 /** Where {@link presetPromptForTaskType} took its text from, so a reader can tell an override from the default. */

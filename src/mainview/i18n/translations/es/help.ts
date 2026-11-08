@@ -81,6 +81,8 @@ const help = {
 	"help.inspector.sessionBar.title": "Sesión y agentes",
 	"help.inspector.sessionBar.body":
 		"Controla quién trabaja en la tarea: añade un segundo agente a la misma sesión, suelta un enjambre de cazadores de bugs, y divide, amplía o reorganiza los paneles de tmux.",
+	"help.task.completionStrip.title": "Lista para completar",
+	"help.task.completionStrip.body": "La rama se fusionó o el agente dice que el trabajo está hecho. Complétala cuando no quede nada; hasta entonces la franja espera aquí y no bloquea nada. El engranaje abre el ajuste que detiene las sugerencias tras una fusión.",
 	"help.inspector.gitBar.title": "Git y PR",
 	"help.inspector.gitBar.body":
 		"Todo lo relacionado con la rama: ver el diff, hacer rebase sobre la rama base, hacer push, abrir un pull request, fusionar. Las operaciones git corren en una terminal visible — siempre ves qué pasa.",
@@ -182,7 +184,7 @@ const help = {
 		"N variantes significa N agentes independientes resolviendo la misma tarea en paralelo, cada uno en su propio worktree y rama. Compara los resultados y quédate con el mejor — el resto se cancela.",
 	"help.modal.addProject.title": "Añadir un proyecto",
 	"help.modal.addProject.body":
-		"Apunta dev3 a un repo git local, clona uno remoto primero, o crea un tablero de Operaciones — un proyecto virtual cuyas tareas ejecutan agentes en carpetas gestionadas, sin git. Activa la configuración automática para guardar en .dev3/config.local.json los comandos de instalación y de desarrollo que encuentre dev3.",
+		"Apunta dev3 a un repo git local, clona uno remoto primero, o crea un tablero de Operaciones — un proyecto virtual cuyas tareas ejecutan agentes en carpetas gestionadas, sin git. Desactiva el flujo de git para añadir cualquier carpeta cuyas tareas se ejecuten directamente en ella. Activa la configuración automática para guardar en .dev3/config.local.json los comandos de instalación y de desarrollo que encuentre dev3.",
 	"help.modal.importConversations.title": "Importar conversaciones",
 	"help.modal.importConversations.body":
 		"Las conversaciones de Claude Code y Codex que se ejecutaron en la carpeta de este proyecto fuera de dev3 se convierten en tareas normales: un título, un resumen de la conversación como descripción y la etiqueta «imported». Claude titula sus propias conversaciones; una de Codex se titula con la primera petición. Lo reciente conserva un worktree; lo antiguo llega a Completado.",

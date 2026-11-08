@@ -14,7 +14,7 @@ import { preparationFailureMessage } from "./utils/preparationFailureMessage";
 import { handleMenuAction } from "./menuRouter";
 import { trackPageView, trackEvent, registerAgents } from "./analytics";
 import type { AgentLaunchChoice, AgentLaunchRequest, AppRPCSchema, BoardCopyFailureReason, GlobalSettings as GlobalSettingsType, Project, RemoteAccessStatus, RemoteNetInterface, LaunchLocationIssue, RequirementCheckResult, RosettaWarningInfo, LiveArtifact, SharedArtifact, SharedImage, Task, TaskDialogSubject, TaskStatus, UpdateChangelog } from "../shared/types";
-import { ACTIVE_STATUSES, orderProjectsForDisplay, getTaskTitle } from "../shared/types";
+import { ACTIVE_STATUSES, hasGitWorkflow, orderProjectsForDisplay, getTaskTitle } from "../shared/types";
 import type { DeepLinkNav } from "../shared/deep-link";
 import { useGlobalShortcut } from "./hooks/useGlobalShortcut";
 import { useAgents } from "./hooks/useAgents";
@@ -51,6 +51,7 @@ import ViewportLab from "./components/ViewportLab";
 import NativePaneLayoutLab from "./labs/native-pane/NativePaneLayoutLab";
 import { setToastSuppressed, taskToastContext, ToastHost, toast, type ToastEntry, type ToastOrigin } from "./toast";
 import { toastClearanceRef } from "./toast-clearance";
+import { hasCompletionOffer, isCompletionStripMounted, offerCompletion } from "./completion-offers";
 import { agentMessageToast, type AgentMessageDetail, type AgentToastEnd } from "./agent-message-toast";
 import { showStaleAgentPathToast, type StaleAgentPathDetail } from "./stale-agent-path-toast";
 import { useSpaces } from "./useSpaces";
@@ -830,6 +831,19 @@ function App() {
 		routeRef.current = state.route;
 	}, [state.route]);
 
+	// A completion offer waits on its task's strip. Where no strip is on screen
+	// (another task, the board, immersive fullscreen) the bell and a toast carry it.
+	// The toast carries its own source line and click: the resolver only knows the open project's tasks.
+	const announceCompletionOffer = (offer: {
+		taskId: string; projectId: string; taskTitle?: string; subject?: TaskDialogSubject; toastText: string; reason: string;
+	}) => {
+		const { taskId, projectId, taskTitle, subject } = offer;
+		dispatch({ type: "addBell", taskId, reason: offer.reason });
+		if (isCompletionStripMounted(taskId)) return;
+		const context = subject ? [`#${subject.seqLabel}`, subject.projectName, taskTitle].filter(Boolean).join(" · ") : taskTitle;
+		toast.info(offer.toastText, { taskId, context, onClick: () => openTaskFromNotification(taskId, projectId) });
+	};
+
 	// Drive document.title from the current route so the browser tab shows the
 	// project/task name — the only orientation cue in remote (browser) mode. The
 	// same context also goes to the host, which titles this window natively (the
@@ -968,6 +982,12 @@ function App() {
 
 	const projectsRef = useRef(state.projects);
 	projectsRef.current = state.projects;
+	/** True when finishing this task keeps its folder: it has no worktree of its own to destroy. */
+	const keepsTaskFolder = useCallback((projectId: string | undefined, subject: TaskDialogSubject | undefined) => {
+		if (subject?.keepsFolder !== undefined) return subject.keepsFolder;
+		const project = projectId ? projectsRef.current.find((p) => p.id === projectId) : undefined;
+		return !!project && !hasGitWorkflow(project);
+	}, []);
 
 	// One end of an agent-message toast, looked up at click time: the toast can
 	// outlive the task. A task that is gone says so instead of opening an empty
@@ -1379,7 +1399,7 @@ function App() {
 		const projectId = projectIdForRoute(state.route);
 		if (!projectId || offeredThisSession.current.has(projectId)) return;
 		const project = state.projects.find((p) => p.id === projectId);
-		if (!project || project.kind === "virtual" || project.conversationImportOfferedAt) return;
+		if (!project || !hasGitWorkflow(project) || project.conversationImportOfferedAt) return;
 		offeredThisSession.current.add(projectId);
 		enqueueImportOffer(project, true);
 	}, [state.route, state.projects, enqueueImportOffer]);
@@ -1952,7 +1972,7 @@ function App() {
 				taskId: string | null;
 				projectId: string | null;
 				message: string;
-				messageKey?: "kanban.launchAccountRemoved";
+				messageKey?: "kanban.launchAccountRemoved" | "kanban.launchAwsProfileMissing";
 				level: "info" | "success" | "error";
 				durationMs?: number;
 				taskSeq?: number;
@@ -2272,16 +2292,20 @@ function App() {
 	// Listen for branch merge detection — offer to complete the task
 	useEffect(() => {
 		async function onBranchMerged(e: Event) {
-			const { taskId, projectId, taskTitle, branchName, fingerprint, subject, shouldPrompt, shouldNotify } = (e as CustomEvent).detail as {
-				taskId: string;
-				projectId: string;
-				taskTitle: string;
-				branchName: string;
-				fingerprint?: string | null;
-				subject?: TaskDialogSubject;
-				shouldPrompt?: boolean;
-				shouldNotify?: boolean;
-			};
+			await offerMerged((e as CustomEvent).detail);
+		}
+
+		async function offerMerged(detail: {
+			taskId: string;
+			projectId: string;
+			taskTitle: string;
+			branchName: string;
+			fingerprint?: string | null;
+			subject?: TaskDialogSubject;
+			shouldPrompt?: boolean;
+			shouldNotify?: boolean;
+		}) {
+			const { taskId, projectId, taskTitle, branchName, fingerprint, subject, shouldPrompt, shouldNotify } = detail;
 			// Reservation + shouldPrompt/shouldNotify were decided server-side in the
 			// poller before pushing, so this path does not re-reserve. The shared
 			// primitive owns the dialog copy, context card, notify/suppress gate,
@@ -2292,7 +2316,10 @@ function App() {
 				fingerprint: fingerprint ?? null,
 				shouldPrompt,
 				shouldNotify,
-				onOpenTask: () => openTaskFromNotification(taskId, projectId),
+				onOffered: () => announceCompletionOffer({
+					taskId, projectId, taskTitle, subject,
+					toastText: t("app.completionOfferMergedToast"), reason: t("completionStrip.mergedTitle"),
+				}),
 				onComplete: () => {
 					// Sound first, exactly like `moveTaskToStatus` does for the board
 					// surfaces — this handler is a hand-rolled move and used to leave the
@@ -2339,7 +2366,23 @@ function App() {
 			});
 		}
 		window.addEventListener("rpc:branchMerged", onBranchMerged);
-		return () => window.removeEventListener("rpc:branchMerged", onBranchMerged);
+
+		// `branchMerged` is one-shot, so a reload or a reconnect asks what is still
+		// unanswered. The offer store and the once-guard drop what is already shown.
+		function replayPendingMergeOffers() {
+			api.request.listPendingMergeOffers({}).then((pending) => {
+				for (const offer of pending) void offerMerged(offer);
+			}).catch((err) => console.error("listPendingMergeOffers failed:", err));
+		}
+		replayPendingMergeOffers();
+		const onRpcStatus = (e: Event) => {
+			if ((e as CustomEvent).detail?.state === "connected") replayPendingMergeOffers();
+		};
+		window.addEventListener(RPC_STATUS_EVENT, onRpcStatus);
+		return () => {
+			window.removeEventListener("rpc:branchMerged", onBranchMerged);
+			window.removeEventListener(RPC_STATUS_EVENT, onRpcStatus);
+		};
 	}, [dispatch, navigate, openTaskFromNotification, t]);
 
 	// Agent-initiated changes are intentionally visible because they change how
@@ -2369,6 +2412,7 @@ function App() {
 
 	// Listen for agent-initiated completion requests — the CLI is blocked on a
 	// socket waiting for the user's decision, so always respond, even on cancel.
+	// The request renders inline on its task (completion-offers.ts), never as a modal.
 	useEffect(() => {
 		// One dialog per request on this client. The push and the on-connect replay
 		// can both name the same request (a reload that raced the push), and two
@@ -2377,13 +2421,8 @@ function App() {
 		// identity change — a set rebuilt per run would forget what is on screen.
 		const showing = completionDialogsShowingRef.current;
 
-		async function showCompletionDialog(request: {
-			requestId: string;
-			taskId: string;
-			taskTitle: string;
-			subject?: TaskDialogSubject;
-		}) {
-			const { requestId, taskId, taskTitle, subject } = request;
+		async function showCompletionDialog(request: { requestId: string; taskId: string; projectId: string; taskTitle?: string; subject?: TaskDialogSubject }) {
+			const { requestId, taskId, projectId, taskTitle, subject } = request;
 			if (showing.has(requestId)) return;
 			showing.add(requestId);
 			let approved = false;
@@ -2397,18 +2436,18 @@ function App() {
 				return;
 			}
 			try {
-				approved = await confirm({
-					title: t("app.agentCompletionTitle"),
-					message: t("app.agentCompletionMessage"),
-					info: taskDialogInfoFromSubject(taskTitle, subject),
-					confirmLabel: t("app.agentCompletionConfirm"),
-					cancelLabel: t("app.agentCompletionCancel"),
-					danger: true,
-					agentInitiated: true,
-					signal: abort.signal,
+				const isNew = !hasCompletionOffer(taskId, "agent");
+				const answer = offerCompletion({ taskId, projectId, kind: "agent", signal: abort.signal });
+				if (isNew) announceCompletionOffer({
+					taskId, projectId, taskTitle, subject,
+					toastText: t("app.completionOfferAgentToast"), reason: t("completionStrip.agentTitle"),
 				});
+				const result = await answer;
+				// Already on its task through another request id: that one answers the CLI.
+				if (result === null) return;
+				approved = result === true;
 			} catch (err) {
-				console.error("[App] confirm (agent-completion) failed:", err);
+				console.error("[App] agent completion offer failed:", err);
 			} finally {
 				abort.cleanup();
 				showing.delete(requestId);
@@ -2440,20 +2479,11 @@ function App() {
 		// The push above is a one-shot event, so a client that was not listening for
 		// it — starting up, or a transport that dropped and came back without a
 		// page reload — would never see that dialog. Ask what is still pending on
-		// connect and on every reconnect. `showing` dedups, so a dialog already on
-		// screen is untouched.
+		// connect and on every reconnect. `showing` dedups, so an offer already on
+		// its task is untouched.
 		function replayPending() {
-			api.request.listPendingCompletionRequests({}).then(async (pending) => {
-				if (pending.length === 0) return;
-				// `confirm()` is fail-closed, and this runs during startup: calling it
-				// before ConfirmHost has mounted would resolve `false` with no dialog on
-				// screen and answer "declined" for a user who was never asked. Rather
-				// than auto-decline, leave the request pending — the next window to
-				// connect replays it again.
-				if (!await whenConfirmHostMounted()) {
-					console.error("[App] pending completion dialogs skipped — ConfirmHost never mounted");
-					return;
-				}
+			api.request.listPendingCompletionRequests({}).then((pending) => {
+				// No host to wait for: an offer lives in a store, not in ConfirmHost.
 				for (const request of pending) void showCompletionDialog(request);
 			}).catch((err) => console.error("listPendingCompletionRequests failed:", err));
 		}
@@ -2484,6 +2514,7 @@ function App() {
 				event: "rpc:agentCancellationRequested",
 				toStatus: "cancelled" as const,
 				copy: { title: "app.agentCancellationTitle", message: "app.agentCancellationMessage", confirm: "app.agentCancellationConfirm", cancel: "app.agentCancellationCancel" } as const,
+				folderCopy: { title: "app.agentCancellationTitle", message: "app.agentCancellationMessageFolder", confirm: "app.agentCancellationConfirmFolder", cancel: "app.agentCancellationCancel" } as const,
 				listPending: () => api.request.listPendingCancellationRequests({}),
 				respond: (params: { requestId: string; approved: boolean }) => api.request.respondToAgentCancellationRequest(params),
 			},
@@ -2491,6 +2522,7 @@ function App() {
 				event: "rpc:agentResetRequested",
 				toStatus: "todo" as const,
 				copy: { title: "app.agentResetTitle", message: "app.agentResetMessage", confirm: "app.agentResetConfirm", cancel: "app.agentResetCancel" } as const,
+				folderCopy: { title: "app.agentResetTitle", message: "task.confirmResetMessageVirtual", confirm: "app.agentResetConfirm", cancel: "app.agentResetCancel" } as const,
 				listPending: () => api.request.listPendingResetRequests({}),
 				respond: (params: { requestId: string; approved: boolean }) => api.request.respondToAgentResetRequest(params),
 			},
@@ -2515,14 +2547,16 @@ function App() {
 				showing.delete(requestId);
 				return;
 			}
+			// Without the git workflow nothing is deleted: the folder outlives the task.
+			const copy = keepsTaskFolder(projectId, subject) ? kind.folderCopy : kind.copy;
 			try {
 				const unsaved = api.request.getUnsavedWork({ taskId, projectId });
 				approved = await confirm({
-					title: t(kind.copy.title),
-					message: t(branchKept && kind.toStatus === "todo" ? "app.agentResetMessageBranchKept" : kind.copy.message),
+					title: t(copy.title),
+					message: t(branchKept && copy === kind.copy && kind.toStatus === "todo" ? "app.agentResetMessageBranchKept" : copy.message),
 					info: taskDialogInfoFromSubject(taskTitle, subject),
-					confirmLabel: t(kind.copy.confirm),
-					cancelLabel: t(kind.copy.cancel),
+					confirmLabel: t(copy.confirm),
+					cancelLabel: t(copy.cancel),
 					danger: true,
 					tone: "danger",
 					agentInitiated: true,
@@ -2586,7 +2620,7 @@ function App() {
 			for (const { kind, onRequested } of listeners) window.removeEventListener(kind.event, onRequested);
 			window.removeEventListener(RPC_STATUS_EVENT, onRpcStatus);
 		};
-	}, [dispatch, navigate, t]);
+	}, [dispatch, navigate, t, keepsTaskFolder]);
 
 	// An agent wants to set another task running. Queued, never stacked: two
 	// agents can ask at once, and overlapping dialogs would make the user answer
@@ -3375,6 +3409,10 @@ function App() {
 						hasProject: Boolean(getProjectIdForRoute(state.route)),
 						hasTask: Boolean(routeTaskId(state.route)),
 						isVirtual: state.projects.find((p) => p.id === getProjectIdForRoute(state.route))?.kind === "virtual",
+						gitless: (() => {
+							const project = state.projects.find((p) => p.id === getProjectIdForRoute(state.route));
+							return !!project && !hasGitWorkflow(project);
+						})(),
 						remote: isRemote(),
 					}}
 					onRun={runCommand}
@@ -3447,6 +3485,7 @@ function App() {
 					dispatch={dispatch}
 					onClose={() => setLaunchModal(null)}
 					mode={launchModal.mode}
+					initialStartAfter={launchModal.startAfter}
 					onGlobalSettingsChange={setGlobalSettings}
 				/>
 			)}

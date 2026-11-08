@@ -19,6 +19,8 @@ import { getUserShell } from "../../shell-env";
 import { agentInstallCommand } from "../../../shared/agent-install";
 import { resolveAgentLaunchBinary } from "../../agent-launch-availability";
 import { setupAgentHooks } from "../../agent-hooks";
+import { CLAUDE_MANAGED_SETTINGS_PATHS } from "../../rate-limit-monitor";
+import { quoteIfUnsafe } from "../../../shared/agent-adapters/shell";
 import { ensureArtifactTemplateEnv } from "../../artifact-template";
 import { tmux, DEFAULT_TMUX_SOCKET, TmuxError, taskSessionName } from "../../tmux";
 import { markAgentPane } from "../../agent-prompt";
@@ -107,6 +109,23 @@ export function resetStaleAccountNoticesForTests(): void {
 
 /** Tell the user a stored Claude account was removed and the launch used the default one.
  *  Once per task per window: a resume relaunches every pane, and each may carry the same id. */
+const awsProfileNoticeAt = new Map<string, number>();
+
+/** Tell the user a launch ran without its picked AWS profile (once per window per task). */
+export async function notifyBedrockProfileMissing(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
+	const last = awsProfileNoticeAt.get(task.id);
+	if (last !== undefined && now - last < STALE_ACCOUNT_NOTICE_WINDOW_MS) return;
+	awsProfileNoticeAt.set(task.id, now);
+	const { pushCliToast } = await import("../shared");
+	pushCliToast({
+		taskId: task.id,
+		projectId: task.projectId,
+		level: "info",
+		message: "This task's AWS profile is no longer listed on its agent, so it launched on the project env. Restore the profile name in Settings to switch back.",
+		messageKey: "kanban.launchAwsProfileMissing",
+	});
+}
+
 export async function notifyStaleAccountDropped(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
 	const last = staleAccountNoticeAt.get(task.id);
 	if (last !== undefined && now - last < STALE_ACCOUNT_NOTICE_WINDOW_MS) return;
@@ -193,15 +212,26 @@ export async function applyAgentHooksToCommand(
 	},
 ): Promise<string> {
 	try {
-		const hookFlag = await setupAgentHooks(worktreePath, baseCommand, options);
-		if (!hookFlag) return command;
+		const managedPath = CLAUDE_MANAGED_SETTINGS_PATHS.find((p) => command.includes(`--settings ${quoteIfUnsafe(p)}`));
+		const managedArg = managedPath ? `--settings ${quoteIfUnsafe(managedPath)}` : "";
+		const launch = await setupAgentHooks(worktreePath, baseCommand, {
+			...options,
+			...(managedPath ? { claudeSettingsFile: managedPath } : {}),
+		});
+		let next = command;
+		if (launch?.claudeSettingsFile) {
+			const swapped = `--settings ${quoteIfUnsafe(launch.claudeSettingsFile)}`;
+			next = next.replace(managedArg, () => swapped);
+		}
+		const hookFlag = launch?.flag;
+		if (!hookFlag) return next;
 		// Codex gets a bare flag by design: its hook definitions live in the user's
 		// config.toml, because the payload that used to travel here as
 		// `-c hooks={...}` never survived the Windows command line. omp gets
 		// `--hook <path>` — one short path to the generated extension.
-		const firstSeparator = command.search(/\s/);
-		if (firstSeparator < 0) return `${command} ${hookFlag}`;
-		return `${command.slice(0, firstSeparator)} ${hookFlag}${command.slice(firstSeparator)}`;
+		const firstSeparator = next.search(/\s/);
+		if (firstSeparator < 0) return `${next} ${hookFlag}`;
+		return `${next.slice(0, firstSeparator)} ${hookFlag}${next.slice(firstSeparator)}`;
 	} catch (err) {
 		log.warn("setupAgentHooks failed (non-fatal)", {
 			worktreePath,
@@ -301,6 +331,8 @@ export async function launchTaskPty(
 		skipSessionPersist?: boolean;
 		branchName?: string;
 		accountId?: string | null;
+		/** AWS profile pick (see LaunchVariant); absent → the task's stored one. */
+		bedrockProfile?: string | null;
 		codexHome?: string;
 		/** Open a plain shell headed by this line instead of the agent, parking the stored panes
 		 *  for a later resume: a Codex reopen that cannot pick a conversation, or a wake with a plain shell. */
@@ -311,7 +343,7 @@ export async function launchTaskPty(
 	},
 ): Promise<string | null | undefined> {
 	// First, before any trust/hook/config write: tmux would start a missing cwd in $HOME.
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 	// Scripts and agent env see the repo as the project root; `project` itself keeps keying the task file.
 	const rootProject = rootProjectFor(project, task);
 	// Only a fresh coordinator launch with no picked agent; every other task keeps the global default.
@@ -323,6 +355,7 @@ export async function launchTaskPty(
 	const accountId = opts?.codexHome
 		? codexAccountIdForHome(opts.codexHome) ?? null
 		: opts?.accountId !== undefined ? opts.accountId : task.accountId;
+	const bedrockProfile = opts?.bedrockProfile !== undefined ? opts.bedrockProfile : task.bedrockProfile;
 	const skipSessionPersist = opts?.skipSessionPersist ?? false;
 	const artifactTemplateEnv = ensureArtifactTemplateEnv(project, task, worktreePath);
 	log.info("launchTaskPty START", {
@@ -375,12 +408,18 @@ export async function launchTaskPty(
 	let accountPick: agents.ResolvedAgentCommand["accountPick"];
 	let staleAccountDropped = false;
 	let freshLaunchSessionId: string | null = null;
+	let launchBedrockProfile: string | null | undefined;
 	let agentFromDefault = false;
 
 	try {
 		// Recovery carries the pane's account alongside its session id. Older pane
 		// snapshots fall back to the task selection; undefined uses the default.
-		const cmdOptions: agents.CommandOptions = { accountId, accountFromStore: typeof accountId === "string" ? true : undefined };
+		const cmdOptions: agents.CommandOptions = {
+			accountId,
+			accountFromStore: typeof accountId === "string" ? true : undefined,
+			bedrockProfile,
+			projectEnv,
+		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
 			cmdOptions.autoRouting = await autoRoutingContext(project, reservationKey, projectEnv);
@@ -417,6 +456,8 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
+			launchBedrockProfile = resolved.resolvedBedrockProfile;
+			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		} else {
 			log.info("Resolving command for project", { projectName: project.name });
 			const resolved = await agents.resolveCommandForProject(
@@ -436,6 +477,8 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
+			launchBedrockProfile = resolved.resolvedBedrockProfile;
+			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 			// No pick runs the global default. Name it on the pane only: the task keeps
 			// following the default on its next launch.
 			if (resolved.agent) {
@@ -444,6 +487,8 @@ export async function launchTaskPty(
 				agentFromDefault = true;
 			}
 		}
+		// A removed account the pin replaced must not be stored again.
+		if (staleAccountDropped && launchAccountId === accountId) launchAccountId = undefined;
 		if (staleAccountDropped) await notifyStaleAccountDropped(task);
 
 		if (opts?.codexHome) extraEnv.CODEX_HOME = opts.codexHome;
@@ -473,6 +518,7 @@ export async function launchTaskPty(
 					? codexAccountIdForHome(extraEnv.CODEX_HOME) : undefined) ?? launchAccountId,
 				agentFamily: resolvedAgentFamily,
 				sessionOriginCwd: carriedOriginCwd,
+				...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
 				agentFromDefault: agentFromDefault || carriedDefault || undefined,
 			};
 			mainPaneEntry = paneEntry;
@@ -484,6 +530,9 @@ export async function launchTaskPty(
 				// A removed stored account is cleared on the task, so the notice does not repeat and the
 				// task follows the default again — `null` would pin it to the system login instead.
 				: staleAccountDropped ? { accountId: undefined } : {};
+			// Pin the resolved AWS profile so a later relaunch of this task does not
+			// drift onto a changed agent default.
+			if (launchBedrockProfile !== undefined) routedPatch.bedrockProfile = launchBedrockProfile;
 			try {
 				await data.updateTask(project, task.id, { sessionState, ...routedPatch });
 				log.info("Persisted sessionState", { taskId: task.id.slice(0, 8), sessionId: paneEntry.sessionId });
@@ -780,7 +829,7 @@ export async function launchColumnAgent(
 		log.warn("launchColumnAgent: no worktreePath, skipping", { taskId: task.id.slice(0, 8) });
 		return;
 	}
-	assertTaskWorkspacePresent(project, worktreePath);
+	assertTaskWorkspacePresent(project, worktreePath, task);
 
 	const { agentId, configId, prompt: rawPrompt } = agentConfig;
 	const rootProject = rootProjectFor(project, task);
@@ -828,7 +877,10 @@ export async function launchColumnAgent(
 		// the default, which routes when the default is Auto.
 		const resolved = await agents.resolveCommandForAgent(agentId, configId, ctx, {
 			skipSystemPrompt: true,
+			projectEnv,
 			autoRouting: await autoRoutingContext(project, reservationKey, projectEnv),
+			// The column's own pick, else the AWS account the task itself runs on.
+			bedrockProfile: agentConfig.bedrockProfile !== undefined ? agentConfig.bedrockProfile : task.bedrockProfile,
 		});
 		tmuxCmd = resolved.command;
 		extraEnv = resolved.extraEnv;
@@ -836,6 +888,7 @@ export async function launchColumnAgent(
 		resolvedPermissionMode = resolved.config?.permissionMode;
 		resolvedAgentFamily = resolved.agentFamily;
 		launchAccountId = resolved.resolvedAccountId;
+		if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 	} catch (err) {
 		releaseAccountReservation(reservationKey);
 		log.error("launchColumnAgent: failed to resolve command", { error: String(err) });

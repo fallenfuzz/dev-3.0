@@ -91,11 +91,14 @@ Cursor's separate accounting hooks are user-level and intentionally include loca
 
 Injected into `.claude/settings.local.json`, together with dev3's Bash allowlist for its metadata subcommands (`DEV3_AUTO_APPROVED_SUBCOMMANDS` — never `pane run`, `dev-server start` or anything else that executes a command, see `decisions/2026/10/26/narrow-dev3-agent-permissions.md`) and the launch's `permissions.defaultMode`. A committed `.claude/settings.json` is never written. When `.claude/` or `settings.local.json` is a symlink that leads outside the worktree (or nowhere), dev3 writes nothing there and logs a warning: the task then gets no status hooks. Links that stay inside the worktree are fine. The same rule covers `.codex/hooks.json` and the MCP pre-approval. See `decisions/2026/10/01/worktree-agent-config-local-only-no-symlinks.md`.
 
+In a folder dev3 does not own (a project with its git workflow off), nothing is written into the folder: the hooks, Bash rules and mode are merged with dev3's managed settings into one file under `<dev3 home>/data/agent-hooks/` and passed with `--settings`, which Claude also forwards to teammates. Codex gets no `.codex/hooks.json` there either. See `decisions/2026/10/04/gitless-claude-hooks-via-settings-flag.md`.
+
 | Hook event | Status transition | Purpose |
 |------------|------------------|---------|
 | `SessionStart` (`startup\|clear\|compact`) | none | `dev3 hook claude-session-start` answers with the task's 5 newest notes as `hookSpecificOutput.additionalContext` (bounded, see `src/shared/recent-notes-context.ts`). `resume`/`fork` are skipped: that transcript already holds a block. It also sends `agent.sessionStarted` (session id + pane): Claude does not fire this event while its trust or onboarding dialog is up, so a peer-launch handoff waits for that receipt before typing (`src/bun/agent-session-receipts.ts`). Quiet and exit 0 when offline or there are no notes |
 | `UserPromptSubmit` | → `in-progress` | User sent a message, agent starts working. A **second** entry on the same event, `dev3 hook claude-prompt`, reads the payload's `prompt` and `prompt_id` and reports the submission for Agent traffic; the status-move entry above is untouched, so recording can never cost a task its board position |
 | `PreToolUse` | → `in-progress` | Agent is about to call a tool (also catches post-permission resume) |
+| `PreToolUse` (`Edit\|Write\|MultiEdit\|NotebookEdit`, shared folders only) | none | `dev3 hook claude-claim` claims the file for this task. When another live task in the same folder holds it, the edit is denied with the holder's seq, title and a ready `dev3 message` command. Allows the edit when the app is offline. See `decisions/2026/10/04/advisory-file-leases-in-shared-folders.md`. Claude only: Codex, Copilot and omp do not claim files yet |
 | `PostToolUse` | → `in-progress` | A tool finished, including answers submitted to `AskUserQuestion`. Routed through `dev3 hook claude-post-tool`: the same request also drains the pane's held `dev3 message`s (agent-to-agent only, tmux backend only) and answers them as `hookSpecificOutput.additionalContext`, plus a one-line `systemMessage` per message so the user still sees mail arrive in the pane, so a busy agent reads its mail at its next tool call instead of after the 15 s hold. A subagent's call (payload carries `agent_id`) only moves the status. Always exits 0, so the `||` fallback to the plain move runs only when the installed CLI predates the subcommand. Windows keeps the plain move. See `decisions/2026/11/05/hook-mailbox-for-busy-claude-agents.md` |
 | `PermissionRequest` | → `user-questions` | Agent needs user approval for a tool call |
 | `Stop` | → `review-by-user` | Agent finished its turn |
@@ -237,7 +240,7 @@ The dev3 skill (`SKILL.md`) is installed into each agent's skill directory. Four
 - **pi variant** — the omp body with pi named in the hook-aware status section. It reaches pi only as a file through `--append-system-prompt`; dev3 writes no pi skill directory, so a pi session started outside the dev3 launcher finds the generic (manual-status) `SKILL.md` under `~/.agents/skills/`
 - **Generic variant** — full body (for Gemini it is the only protocol channel); full manual status management instructions ("CRITICAL — NON-NEGOTIABLE"), requires agents to run `dev3 task move` at start/end of every turn
 
-With `DEV3_LEAN_PROTOCOL=1` on the server, the injected copy for Claude, Codex, omp, pi, Cursor and OpenCode is a lean body: the session-start, status, completion, overview and attention sections plus the path of the full body on disk. Copilot's hook-delivered copy stays full. See `decisions/2026/10/02/lean-protocol-opt-in.md`.
+With `DEV3_LEAN_PROTOCOL=1` on the server or the global Settings toggle (Agents, "Lean agent protocol"), the injected copy for Claude, Codex, omp, pi, Cursor and OpenCode is a lean body: the session-start, status, completion, overview and attention sections plus the path of the full body on disk. Copilot's hook-delivered copy stays full. See `decisions/2026/10/02/lean-protocol-opt-in.md`.
 
 All variants teach the same two-step dev3 bug-feedback flow: send the private anonymous vent first, then offer to create a public `h0x91b/dev-3.0` GitHub issue with the `Reported by AI` label after explicit user approval. They also treat an unqualified interactive artifact/report/dashboard request as a likely dev3 HTML artifact while preserving explicit Claude Artifact and build/package meanings. Each receives the same fixed six-file starter map, exact copy command, two-file edit boundary, and `dev3 show-artifact --assets` publish command.
 
@@ -294,14 +297,21 @@ and model table all read the registry. The toggle only appears on agents that
 have ≥1 registered backend.
 
 dev3 injects only the provider's enable flag + the pinned model (merged into the
-launch env; a config's own `envVars` still win). **Credentials, AWS
-region/profile are NOT set by dev3** — the customer configures those in their own
-global agent setup (shell env / `~/.claude/settings.json`).
+launch env; a config's own `envVars` still win). **Credentials are NOT set by
+dev3**. The customer configures those in their own global agent setup (shell env /
+`~/.claude/settings.json`). One exception: a Bedrock agent may list named **AWS
+profiles** (Settings → Coding Agents → the Bedrock section, or `dev3 agent
+aws-profiles set`). The launch dialog then shows an AWS profile dropdown, and the
+picked entry sets `AWS_PROFILE`/`AWS_REGION` over the preset `envVars` and the
+project env. See `decisions/2026/11/05/bedrock-per-launch-aws-profile.md`. A Claude
+launch with a picked profile also gets `awsAuthRefresh: "aws sso login"` in its dev3
+`--settings` file, so an expired SSO session opens the browser login
+(`decisions/2026/11/08/bedrock-sso-refresh-managed-settings.md`).
 
 | Provider | Injected env | Model id source |
 |----------|--------------|-----------------|
 | Anthropic | _(none)_ | `--model <alias>` as usual |
-| Bedrock (Claude) | `CLAUDE_CODE_USE_BEDROCK=1`, `ANTHROPIC_MODEL` | alias→`<geo>.anthropic.*` map (geo = `global`/`us`/`eu`/`jp` toggle), or the per-model override |
+| Bedrock (Claude) | `CLAUDE_CODE_USE_BEDROCK=1`, `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL` | alias→`<geo>.anthropic.*` map (geo = `global`/`us`/`eu`/`jp` toggle), or the per-model override. Each alias slot gets the launching model for its own slot and the newest built-in model the geo serves for the rest, so `/model haiku` and subagent `model:` aliases never fall back to Claude Code's built-in `us.*` ids; a preset `envVars` value still wins |
 | Bedrock (Codex) | _(none — `--model <geo>.openai.<family>` + `-c model_provider="amazon-bedrock-runtime"`)_ | same geo toggle; per-model override |
 
 Known model aliases map to provider-native ids automatically

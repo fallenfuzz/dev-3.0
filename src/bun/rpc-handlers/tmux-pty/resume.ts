@@ -20,7 +20,7 @@ import { NATIVE_AGENT_PANE_ID } from "../../agent-prompt-native";
 import type { ResumePaneMode, ResumePaneReport, ResumeUnavailableReason, TaskResumeResult } from "../../../shared/agent-resume";
 import { WAKE_SHELL_NOTICE } from "../../../shared/task-hibernate";
 import { getPushMessage, buildCmdScript, log, writeLaunchScript } from "../shared-pure";
-import { applyAgentHooksToCommand, ensureAgentTrust, launchTaskPty, notifyStaleAccountDropped } from "./task-launch";
+import { applyAgentHooksToCommand, ensureAgentTrust, launchTaskPty, notifyBedrockProfileMissing, notifyStaleAccountDropped } from "./task-launch";
 import { findTaskAcrossProjects, markTerminalAttached, wakeIfHibernated } from "./task-state";
 
 /**
@@ -203,7 +203,7 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 		if (!ACTIVE_STATUSES.includes(task.status) || task.draft || task.hibernated || task.preparing || task.shuttingDown) {
 			throw new Error("Cannot restart: the task must be active and neither preparing, shutting down nor hibernated.");
 		}
-		assertTaskWorkspacePresent(project, task.worktreePath);
+		assertTaskWorkspacePresent(project, task.worktreePath, task);
 		// A user restart must restore everything it stops; the watchdog only revives an agent that already died.
 		if (opts.restart === "always" && taskTerminalBackendIdentity(task) === "native") {
 			const live = await nativeTaskPaneCommandsStrict(task.id);
@@ -308,7 +308,7 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 		main.configId,
 		false,
 		true,
-		{ sessionId: mainResume ?? undefined, accountId: main.accountId, codexHome: codexHomes.get(0), freshSessionId: mainFreshSessionId },
+		{ sessionId: mainResume ?? undefined, accountId: main.accountId, bedrockProfile: main.bedrockProfile, codexHome: codexHomes.get(0), freshSessionId: mainFreshSessionId },
 	);
 	if (mainAccountId !== undefined) reports[0].accountId = mainAccountId;
 	reports[0].status = "resumed";
@@ -340,6 +340,7 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 				projectPath: rootProjectFor(project, task).path,
 				worktreePath: task.worktreePath,
 			};
+			const projectEnv = await repoConfig.resolveProjectEnv(resolvedProject, task.worktreePath, { foreignCode: task.foreignCode });
 			const paneIdUpdates: Array<{ index: number; paneId: string; accountId: string | null | undefined; sessionId: string | null }> = [];
 			for (let i = 1; i < panes.length; i++) {
 				const pane = panes[i];
@@ -353,6 +354,8 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 					const cmdOpts: agents.CommandOptions = freshSessionId
 						? { sessionId: freshSessionId, accountId, accountFromStore: true }
 						: { resume: true, accountId, accountFromStore: true };
+					cmdOpts.bedrockProfile = pane.bedrockProfile !== undefined ? pane.bedrockProfile : task.bedrockProfile;
+					cmdOpts.projectEnv = projectEnv;
 					if (paneResume) cmdOpts.sessionId = paneResume;
 					let resumeCmd: string;
 					let resumeBaseCmd = pane.agentCmd;
@@ -367,6 +370,7 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 						extraEnv = resolved.extraEnv;
 						resumeBaseCmd = resolved.config?.baseCommandOverride || resolved.agent?.baseCommand || pane.agentCmd;
 						resumeAgentFamily = resolved.agentFamily ?? resumeAgentFamily;
+						if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 						if (resolved.staleAccountDropped) {
 							accountId = resolved.resolvedAccountId;
 							await notifyStaleAccountDropped(task);
@@ -376,17 +380,15 @@ async function performTaskResume(taskId: string, opts: ResumeTaskOptions): Promi
 					}
 					if (codexHome) extraEnv.CODEX_HOME = codexHome;
 					// The pane inherits the session's project env, so trust follows its CLAUDE_CONFIG_DIR too.
-					const paneEnv = {
-						...(await repoConfig.resolveProjectEnv(resolvedProject, task.worktreePath, { foreignCode: task.foreignCode })),
-						...extraEnv,
-					};
+					const paneEnv = { ...projectEnv, ...extraEnv };
 					await ensureAgentTrust(task.worktreePath, rootProjectFor(project, task).path, resumeBaseCmd, accountId, task.foreignCode, resumeAgentFamily, paneEnv);
 					resumeCmd = await applyAgentHooksToCommand(task.worktreePath, resumeBaseCmd, resumeCmd, {
 						stopTarget: getPrimaryStopTarget(project.autoReviewEnabled, task.taskType),
 						family: resumeAgentFamily,
 					});
 					const scriptPath = dev3TaskTempPath(params.taskId, `resume-pane-${i}.sh`);
-					await writeLaunchScript(scriptPath, buildCmdScript(resumeCmd, extraEnv, { keepShell: true }));
+					// Export the project env too, like a fresh spawn: a split pane otherwise inherits the main pane's.
+					await writeLaunchScript(scriptPath, buildCmdScript(resumeCmd, paneEnv, { keepShell: true }));
 					const wrappedCmd = `bash "${scriptPath}"`;
 					const newPaneId = await pty.splitAndRunCommand(params.taskId, socket, wrappedCmd, task.worktreePath);
 					if (opts.restart && !newPaneId) throw new Error("The restarted agent pane was not created.");
@@ -510,7 +512,7 @@ export async function wakeTaskShell(params: { taskId: string }): Promise<string>
 	}
 	if (!task.hibernated) throw new Error(`Cannot wake: task ${params.taskId} is not hibernated`);
 	// Before the flag clears: a launch that then throws would strand the task awake with no terminal.
-	assertTaskWorkspacePresent(project, task.worktreePath);
+	assertTaskWorkspacePresent(project, task.worktreePath, task);
 	await wakeIfHibernated(project, task);
 	if (pty.hasSession(params.taskId)) {
 		await pty.destroySessionAwaited(params.taskId);

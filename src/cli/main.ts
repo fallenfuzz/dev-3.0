@@ -19,7 +19,7 @@ import { handleBoard } from "./commands/board";
 import { handleAutomations } from "./commands/automations";
 import { handleInstallHooks } from "./commands/install-hooks";
 import { handleInstallSkills } from "./commands/install-skills";
-import { handleConfig } from "./commands/config";
+import { OFFLINE_CONFIG_SUBCOMMANDS, handleConfig } from "./commands/config";
 import { handleDevServer } from "./commands/dev-server";
 import { handleRemote } from "./commands/remote";
 import { LOCAL_HELP, expandLocalAlias, localHostError } from "./commands/local";
@@ -51,6 +51,7 @@ import { handleExtensionHook } from "./commands/extension-hook";
 import { handleClaudePrompt } from "./commands/claude-prompt";
 import { handleClaudePostTool } from "./commands/claude-post-tool";
 import { handleClaudeTurnEnded } from "./commands/claude-turn-ended";
+import { handleClaudeClaim } from "./commands/claude-claim";
 import { handleClaudeSessionStart, handleNoteRecent } from "./commands/recent-notes";
 import { handleAgentExitedHook } from "./commands/agent-exited";
 import { handleClaudeStopFailure } from "./commands/claude-stop-failure";
@@ -80,8 +81,8 @@ Commands:
   dev3 task terminal-backend [--task <id>] [--to tmux|native]  Inspect/switch this task's terminal backend
   dev3 task hibernate [<id>|--task <id>] [--json]  Park a task: stop agent, terminal, dev server; keep the worktree
   dev3 task wake [<id>|--task <id>] --resume|--shell [--json]  Wake a hibernated task (resume the agent, or a plain shell)
-  dev3 task update [--task <id>] --title "..." [--description "..." | --description -] [--manual-completion on|off] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic]  Update task fields
-  dev3 task create --title "..." [--description "..." | --description -] [--pr <n> | --branch <ref>] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic]  Create a new task (To Do)
+  dev3 task update [--task <id>] --title "..." [--description "..." | --description -] [--manual-completion on|off] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic] [--start-after <id> [--until completed|merged] | --no-start-after]  Update task fields
+  dev3 task create --title "..." [--description "..." | --description -] [--pr <n> | --branch <ref>] [--type coordinator|pr-review|board-cleanup|standard] [--epic <name|id> | --no-epic] [--start-after <id> [--until completed|merged]]  Create a new task (To Do)
                                          (--pr <n> starts the worktree on that pull request's branch and implies --type pr-review)
   dev3 note add "..." [--content "..."] [--task <id>] [--source user]  Add note to a task
   dev3 note list [--task <id>]          List notes
@@ -160,7 +161,12 @@ Commands:
   dev3 pr auto-merge [<number|url>] [--strategy squash|merge|rebase] [--off]
                                          Set (or clear) auto-merge on an existing pull request —
                                          defaults to the one for the branch checked out here
-  dev3 config show                       Show effective project settings (merged)
+  dev3 config show [--json]              Effective project settings, each with the layer it came from
+  dev3 config get <key>[.<name>] [--json]  One effective value
+  dev3 config set <key>[.<name>] <value> [--local] [--main]  Validated write to .dev3/config.json (--local: config.local.json)
+  dev3 config unset <key>[.<name>] [--local] [--main]  Remove a key from that file
+  dev3 config validate [--file <path>] [--json]  Check the .dev3 config files against the schema (exit 47 on errors; no app needed)
+  dev3 config schema [<key>] [--json]    Every configurable field: type, default, example (--json: JSON Schema; no app needed)
   dev3 config export                     Export settings to .dev3/config.json
   dev3 doctor [--json]                   Check install health (app bundle, tmux shim, brew state); works without the app running
   dev3 doctor --processes [--json]       Which task owns each native terminal host/shell (seq, pane, role, pid, liveness)
@@ -359,6 +365,15 @@ async function main(): Promise<void> {
 	if (command === "hook" && subcommand === "claude-turn-ended") {
 		return await handleClaudeTurnEnded(await Bun.stdin.text(), socketPath || context?.socketPath || null, context);
 	}
+	if (command === "hook" && subcommand === "claude-claim") {
+		// Internal: Claude Code's PreToolUse on its edit tools in a shared folder.
+		// Denies the edit only when another live task holds the file.
+		return await handleClaudeClaim(
+			await Bun.stdin.text(),
+			socketPath || context?.socketPath || null,
+			context,
+		);
+	}
 	if (command === "hook" && subcommand === "claude-stop-failure") {
 		// Internal: Claude Code fires StopFailure instead of Stop when an API error
 		// ended the turn. Stays silent and successful whatever happens.
@@ -386,6 +401,11 @@ async function main(): Promise<void> {
 		// command's output to the pane and to the run's log file, and needs no socket
 		// — a run must keep printing even if the app goes away mid-build.
 		return await handlePaneExec(rawArgs.slice(1));
+	}
+	if (command === "config" && subcommand !== undefined && OFFLINE_CONFIG_SUBCOMMANDS.has(subcommand)) {
+		// Reads the schema and local files only, so CI can validate a repo's
+		// committed config with no dev3 app on the machine.
+		return await handleConfig(subcommand, args, null, context, restArgs);
 	}
 	if (command === "doctor") {
 		// Install health check — must work precisely when the app is broken
@@ -521,7 +541,7 @@ async function main(): Promise<void> {
 			case "automations":
 				return await handleAutomations(subcommand, args, socketPath, context);
 			case "config":
-				return await handleConfig(subcommand, args, socketPath, context);
+				return await handleConfig(subcommand, args, socketPath, context, restArgs);
 			case "dev-server":
 				return await handleDevServer(subcommand, args, socketPath, context);
 			case "notify":

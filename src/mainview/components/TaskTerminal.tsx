@@ -1,6 +1,7 @@
+import TaskCompletionStrip from "./task-info-panel/TaskCompletionStrip";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode } from "react";
 import type { Task, Project, TaskSessionState } from "../../shared/types";
-import { getTaskTitle } from "../../shared/types";
+import { getTaskTitle, taskUsesWorktree } from "../../shared/types";
 import { getTaskOpenMode, taskClosedHomeRoute, type AppAction, type Route } from "../state";
 import { api } from "../rpc";
 import { debugLog } from "../debug-log";
@@ -238,7 +239,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 		try {
 			// Same criterion as the launch guard, or a folder without `.git` would
 			// offer Resume, fail, and offer Resume again.
-			const state = await api.request.checkWorktreeState({ path: worktreePath, requireGit: project?.kind !== "virtual" });
+			const state = await api.request.checkWorktreeState({ path: worktreePath, requireGit: !!project && !!task && taskUsesWorktree(project, task) });
 			setError({
 				kind: state === "present" ? "session-ended" : state === "unreadable" ? "worktree-unreadable" : "worktree-gone",
 				path: worktreePath,
@@ -486,6 +487,16 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 		});
 	}
 
+	/** A restarted app has forgotten the session; ask for it again so the open view reconnects. */
+	async function reregisterTmuxSession(): Promise<boolean> {
+		const result = await api.request.getPtyUrl({ taskId });
+		if ("url" in result) return true;
+		setPtyUrl(null);
+		setRecoverable(result.sessionState);
+		setHibernated(result.hibernated === true);
+		return false;
+	}
+
 	async function handleRestart() {
 		setRestarting(true);
 		try {
@@ -724,6 +735,9 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 			/>
 		);
 	}
+
+	// The completion offer floats over the live viewport, so the terminal keeps its size.
+	const completionOverlay = task && project ? <TaskCompletionStrip task={task} project={project} variant="overlay" /> : null;
 
 	if (isPreparing && task && project) {
 		return (
@@ -1066,6 +1080,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 						/>
 					)}
 					<div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+						{completionOverlay}
 						<MobilePaneCarousel taskId={taskId}>{nativeTerminalArea}</MobilePaneCarousel>
 						{scrollToLatestFor(focusPaneId ?? "", focusedPaneHandle)}
 					</div>
@@ -1115,6 +1130,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 				{zoomedPane ? (
 					// Zoom mode: render only the focused pane.
 					<div className="relative isolate flex-1 min-h-0 overflow-hidden">
+						{completionOverlay}
 						<div
 							key={zoomedPane}
 							data-pane-id={zoomedPane}
@@ -1139,6 +1155,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 				) : panes.length > 0 ? (
 					// Tiled mode: render all panes by rect.
 					<div className="relative isolate flex-1 min-h-0 overflow-hidden">
+						{completionOverlay}
 						{panes.map((pane) => {
 							const rect = rects.get(pane.paneId) ?? { x: 0, y: 0, width: 1, height: 1 };
 							const isFocused = pane.paneId === focusPaneId;
@@ -1215,6 +1232,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 				consumePendingFocus(handle);
 			}}
 			onNativeStatus={handleNativeStatus}
+			onSessionUnknown={reregisterTmuxSession}
 			touchComposeMode={touchInput && !rawMode}
 			onScrolledIntoHistory={scrollSignalFor(TMUX_VIEW)}
 		/>
@@ -1247,6 +1265,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 			{narrow && ptyUrl ? (
 				// Narrow: a window switcher (outer) wraps the pane carousel (inner).
 				<div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+					{completionOverlay}
 					<MobileWindowCarousel taskId={taskId} taskTitle={task ? getTaskTitle(task) : undefined} onSwitch={() => setWindowEpoch((e) => e + 1)}>
 						<MobilePaneCarousel taskId={taskId} refreshKey={windowEpoch}>{terminalArea}</MobilePaneCarousel>
 					</MobileWindowCarousel>
@@ -1256,6 +1275,7 @@ function TaskTerminal({ projectId, taskId, tasks, projects, navigate, dispatch, 
 			) : (
 				<TerminalWindowNav taskId={taskId} taskStatus={task?.status} taskTitle={task ? getTaskTitle(task) : undefined} enabled={!!ptyUrl}>
 					<div className="relative isolate flex-1 min-h-0 overflow-hidden">
+						{completionOverlay}
 						{terminalArea}
 						{ptyUrl && <PaneZoomBadge taskId={taskId} />}
 						{ptyUrl && <ClosePanePicker taskId={taskId} />}

@@ -1,3 +1,4 @@
+import TaskCompletionStrip from "./task-info-panel/TaskCompletionStrip";
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, type Dispatch, type MouseEvent as ReactMouseEvent } from "react";
 import { TaskRefText } from "./TaskRefText";
 import { toast } from "../toast";
@@ -9,7 +10,7 @@ import LabelChip from "./LabelChip";
 import PriorityBadge from "./PriorityBadge";
 import OpenInMenu from "./OpenInMenu";
 import { formatDate } from "./NoteItem";
-import { ACTIVE_STATUSES, getAllowedTransitions, getTaskTitle, isCoordinatorTask, isSharedClip, resolveTaskCompareBaseBranch, taskCompletesManually, taskSharedMedia } from "../../shared/types";
+import { ACTIVE_STATUSES, getAllowedTransitions, getTaskTitle, isCoordinatorTask, isSharedClip, resolveTaskCompareBaseBranch, taskCompletesManually, taskSharedMedia, taskUsesWorktree } from "../../shared/types";
 import { earlierPullRequests, trustedPrStatusCache } from "../../shared/task-pull-requests";
 import InlineRename from "./InlineRename";
 import { getTaskOpenMode, taskClosedHomeRoute, type AppAction, type Route } from "../state";
@@ -275,8 +276,9 @@ function TaskInfoPanel({
 	);
 	const allocatedPorts = useTaskAllocatedPorts(task);
 	const isTaskActive = ACTIVE_STATUSES.includes(task.status);
-	// An Operations task gets the diff (never the write actions) once a repo is attached.
-	const hasGit = project.kind !== "virtual" || !!task.attachedRepo;
+	// An Operations task gets the diff (never the write actions) once a repo is attached;
+	// a project with the git workflow off gets none. Scripts and the dev server need neither.
+	const hasGit = taskUsesWorktree(project, task) || (project.kind === "virtual" && !!task.attachedRepo);
 	// Narrow viewport renders no TaskGitActions (the desktop git bar), which is
 	// what feeds `metadataBranchState` on desktop. Own one branch-status
 	// instance here instead: it drives the summary-bar diff badge, the merge
@@ -1115,7 +1117,7 @@ function TaskInfoPanel({
 		<ScheduledMessagesChip task={task} project={project} dispatch={dispatch} placement="down" />
 	) : null;
 
-	const bugHuntersButton = project.kind !== "virtual" && isTaskActive && task.worktreePath && !bugHuntersHidden ? (
+	const bugHuntersButton = taskUsesWorktree(project, task) && isTaskActive && task.worktreePath && !bugHuntersHidden ? (
 		<HideableControl id="bug-hunters">
 			<Tooltip content={t("bugHunters.buttonTooltip")} detail={t("ttip.infoPanel.bugHunters")}>
 				<button
@@ -1537,7 +1539,7 @@ function TaskInfoPanel({
 								</div>
 							)}
 
-							{project.kind !== "virtual" && isTaskActive && task.worktreePath && !bugHuntersHidden && (
+							{taskUsesWorktree(project, task) && isTaskActive && task.worktreePath && !bugHuntersHidden && (
 								<div className={`${SHEET_ROW_CLASS} !pr-2`}>
 									<button type="button" onClick={() => setBugHuntersOpen(true)} className="flex flex-1 min-w-0 items-center gap-3">
 										<FindBugsIcon className="h-5 w-5 shrink-0 text-danger" />
@@ -1685,6 +1687,8 @@ function TaskInfoPanel({
 									onBranchStatusChange={setMetadataBranchState}
 									onOpenInlineDiff={onOpenInlineDiff}
 								/>
+							) : !taskUsesWorktree(project, task) ? (
+								<span className="text-fg-muted text-micro italic flex-shrink-0 truncate">{t("task.gitWorkflowOff")}</span>
 							) : (
 								<TaskGitActions
 									task={task}
@@ -1771,6 +1775,8 @@ function TaskInfoPanel({
 										onBranchStatusChange={setMetadataBranchState}
 										onOpenInlineDiff={onOpenInlineDiff}
 									/>
+								) : !taskUsesWorktree(project, task) ? (
+									<span className="text-fg-muted text-micro italic flex-shrink-0 truncate">{t("task.gitWorkflowOff")}</span>
 								) : (
 									<TaskGitActions
 										task={task}
@@ -1842,4 +1848,14 @@ function TaskInfoPanel({
 	);
 }
 
-export default TaskInfoPanel;
+/** The inspector plus the task's pending completion offer, which sits right under it. */
+function TaskInfoPanelWithOffer(props: Parameters<typeof TaskInfoPanel>[0]) {
+	return (
+		<>
+			<TaskInfoPanel {...props} />
+			<TaskCompletionStrip task={props.task} project={props.project} />
+		</>
+	);
+}
+
+export default TaskInfoPanelWithOffer;

@@ -6,6 +6,7 @@ import { openFolderPicker, openFolderPickerMulti } from "../../folder-picker";
 import { I18nProvider } from "../../i18n";
 import type { Project, Task } from "../../../shared/types";
 import type { AppAction, Route } from "../../state";
+import { toast } from "../../toast";
 
 vi.mock("../../rpc", () => ({
 	api: {
@@ -794,6 +795,66 @@ describe("ProjectSettings", () => {
 		});
 	});
 
+	describe("git workflow switch", () => {
+		const toggle = () => screen.getByRole("switch", { name: "Worktrees, branches and pull requests" });
+
+		it("switches the git workflow off from the Board tab", async () => {
+			const user = userEvent.setup();
+			await renderProjectSettings(mockProject);
+			expect(toggle()).toHaveAttribute("aria-checked", "true");
+
+			await user.click(toggle());
+
+			expect(api.request.updateProjectSettings).toHaveBeenCalledWith({ projectId: mockProject.id, gitWorkflow: false });
+		});
+
+		it("refuses while a task is still running, without calling the backend", async () => {
+			const user = userEvent.setup();
+			const errorSpy = vi.spyOn(toast, "error");
+			vi.mocked(api.request.updateProjectSettings).mockClear();
+			// Preparing counts as live and loads no worktree configs.
+			await renderProjectSettings(mockProject, {}, [{ ...mockTaskWithWorktree, worktreePath: null, status: "in-progress", preparing: true }]);
+
+			await user.click(toggle());
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("1 task is still running"), expect.anything());
+			expect(api.request.updateProjectSettings).not.toHaveBeenCalled();
+			errorSpy.mockRestore();
+		});
+
+		it("tells the user to run git init when the folder is not a repository", async () => {
+			const user = userEvent.setup();
+			const errorSpy = vi.spyOn(toast, "error");
+			vi.mocked(api.request.updateProjectSettings).mockRejectedValueOnce(
+				new Error("The project folder is not a git repository, so the git workflow cannot be switched on"),
+			);
+			await renderProjectSettings({ ...mockProject, gitWorkflow: false });
+
+			await user.click(toggle());
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Run git init"), expect.anything());
+			errorSpy.mockRestore();
+		});
+
+		it("hides the Worktree tab but keeps the Project tab when the workflow is off", async () => {
+			await renderProjectSettings({ ...mockProject, gitWorkflow: false });
+			expect(toggle()).toHaveAttribute("aria-checked", "false");
+			expect(screen.getByText("Project Config")).toBeInTheDocument();
+			expect(screen.queryByText("Worktree Config")).not.toBeInTheDocument();
+		});
+
+		it("keeps the board copy but hides conversation import when the workflow is off", async () => {
+			await renderProjectSettings({ ...mockProject, gitWorkflow: false });
+			expect(screen.getByRole("switch", { name: "Keep a copy of the board in this project" })).toBeInTheDocument();
+			expect(screen.queryByText("Agent conversations")).not.toBeInTheDocument();
+		});
+
+		it("is not offered on an Operations board", async () => {
+			await renderProjectSettings({ ...mockProject, kind: "virtual" });
+			expect(screen.queryByRole("switch", { name: "Worktrees, branches and pull requests" })).not.toBeInTheDocument();
+		});
+	});
+
 	describe("virtual (Operations) board", () => {
 		const virtualProject: Project = {
 			...mockProject,
@@ -1366,5 +1427,40 @@ describe("board copy section", () => {
 
 		await user.click(screen.getByRole("switch", { name: "Include agent messages" }));
 		expect(mockSave).toHaveBeenCalledWith({ projectId: "proj-1", boardCopyMessages: true });
+	});
+});
+
+describe("project storage section", () => {
+	const label = "Keep this project's dev3 data in the project folder";
+
+	it("switches storage to the project folder and back", async () => {
+		const mockSave = api.request.updateProjectSettings as ReturnType<typeof vi.fn>;
+		mockSave.mockClear();
+		const user = userEvent.setup();
+		await renderProjectSettings();
+		expect(screen.getByRole("switch", { name: label })).toHaveAttribute("aria-checked", "false");
+		await user.click(screen.getByRole("switch", { name: label }));
+		expect(mockSave).toHaveBeenCalledWith({ projectId: "proj-1", storageRoot: "project" });
+	});
+
+	it("offers the way back when storage is already in the project", async () => {
+		const mockSave = api.request.updateProjectSettings as ReturnType<typeof vi.fn>;
+		mockSave.mockClear();
+		const user = userEvent.setup();
+		await renderProjectSettings(mockProject, { storageRoot: "project" });
+		expect(screen.getByRole("switch", { name: label })).toHaveAttribute("aria-checked", "true");
+		await user.click(screen.getByRole("switch", { name: label }));
+		expect(mockSave).toHaveBeenCalledWith({ projectId: "proj-1", storageRoot: "home" });
+	});
+
+	it("explains a live task instead of calling the backend", async () => {
+		const mockSave = api.request.updateProjectSettings as ReturnType<typeof vi.fn>;
+		mockSave.mockClear();
+		const errorSpy = vi.spyOn(toast, "error").mockImplementation(() => "" as never);
+		const user = userEvent.setup();
+		await renderProjectSettings(mockProject, {}, [{ ...mockTasks[0], preparing: true } as Task]);
+		await user.click(screen.getByRole("switch", { name: label }));
+		expect(mockSave).not.toHaveBeenCalled();
+		expect(errorSpy).toHaveBeenCalledWith("1 task is still running. Finish it, then try again.", { projectId: "proj-1" });
 	});
 });

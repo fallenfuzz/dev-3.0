@@ -87,6 +87,8 @@ const help = {
 	"help.inspector.sessionBar.title": "Session & agents",
 	"help.inspector.sessionBar.body":
 		"Drive who works on the task: drop a second agent into the same session, unleash a swarm of bug hunters, and split, zoom or rearrange tmux panes.",
+	"help.task.completionStrip.title": "Ready to complete",
+	"help.task.completionStrip.body": "The branch merged, or the agent says the work is done. Complete when nothing is left; until then the strip waits here and blocks nothing. The gear opens the setting that stops merge offers.",
 	"help.inspector.gitBar.title": "Git & PR",
 	"help.inspector.gitBar.body":
 		"Everything branch-related: view the diff, rebase onto the base branch, push, open a pull request, merge. Git operations run in a visible terminal so you always see what happens.",
@@ -188,7 +190,7 @@ const help = {
 		"N variants means N independent agents solving the same task in parallel, each in its own worktree and branch. Compare the results, keep the best one — the rest are cancelled.",
 	"help.modal.addProject.title": "Add a project",
 	"help.modal.addProject.body":
-		"Point dev3 at a local git repo, clone a remote first, or create an Operations board — a virtual project whose tasks run agents in managed folders, without git. Turn Auto-configure on to save the install and dev commands dev3 finds to .dev3/config.local.json.",
+		"Point dev3 at a local git repo, clone a remote first, or create an Operations board — a virtual project whose tasks run agents in managed folders, without git. Switch Git workflow off to add any folder whose tasks run in it directly. Turn Auto-configure on to save the install and dev commands dev3 finds to .dev3/config.local.json.",
 	"help.modal.importConversations.title": "Import conversations",
 	"help.modal.importConversations.body":
 		"Claude Code and Codex conversations that ran in this project's folder outside dev3 become ordinary tasks: a title, a retelling of the conversation as the description, and the `imported` label. Claude names its own conversations; a Codex one is named after the first request. Work from the last week keeps a worktree; older work lands in Completed.",

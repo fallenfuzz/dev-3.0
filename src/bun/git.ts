@@ -16,6 +16,8 @@ import { spawn } from "./spawn";
 import { DEV3_HOME } from "./paths";
 import { listDiffSnapshots, readDiffSnapshot, writeDiffSnapshot } from "./diff-snapshots";
 import { projectStorageKey } from "../shared/project-storage-key";
+import { allProjectWorktreesRoots, taskDirFor } from "../shared/project-storage";
+import { ensureInProjectStorageDirs } from "./in-project-storage";
 import { startBranchMissingMessage } from "../shared/preparation-failure";
 import * as github from "./github";
 
@@ -946,8 +948,9 @@ export function projectSlug(projectPath: string): string {
 	return projectStorageKey(projectPath);
 }
 
+/** `…/<shortId>` holding `worktree/` and `logs/`, in home or the project folder — see `taskDirFor`. */
 export function taskDir(project: Project, task: Task): string {
-	return `${DEV3_HOME}/worktrees/${projectSlug(project.path)}/${shortId(task.id)}`;
+	return taskDirFor(DEV3_HOME, project, task);
 }
 
 /**
@@ -1014,9 +1017,10 @@ function canonicalWorktreePath(candidate: string): string {
 }
 
 function isManagedTaskWorktreePath(project: Project, candidate: string): boolean {
-	const root = canonicalWorktreePath(`${DEV3_HOME}/worktrees/${projectSlug(project.path)}`);
-	const relative = relativePath(root, canonicalWorktreePath(candidate));
-	return /^[0-9a-f]{8}[\\/]worktree$/i.test(relative);
+	const target = canonicalWorktreePath(candidate);
+	return allProjectWorktreesRoots(DEV3_HOME, project.path).some((root) =>
+		/^[0-9a-f]{8}[\\/]worktree$/i.test(relativePath(canonicalWorktreePath(root), target)),
+	);
 }
 
 export async function recoverStaleInitializingWorktrees(
@@ -1367,6 +1371,7 @@ export async function createWorktree(
 	const wtPath = worktreePath(project, task);
 	const tDir = taskDir(project, task);
 
+	if (task.taskDirLocation === "project") await ensureInProjectStorageDirs(project.path);
 	// Create the task container directory (with logs/ subfolder). `mkdir -p` is
 	// not a Windows binary, and this runs before any worktree exists.
 	mkdirSync(`${tDir}/logs`, { recursive: true });
@@ -3545,9 +3550,10 @@ export interface RemoveWorktreeOptions {
 	 * `legacy` (default): today's completion/cancellation rule. `task-owned`: a
 	 * branch is deleted only when dev3 provably created it for THIS task (the To Do
 	 * reset), judged separately for the live and the recorded branch.
-	 * `unique-kept` (preparation-failure cleanup): the legacy rule, but a branch
-	 * holding commits reachable from it alone is kept, and the delete is a
-	 * compare-and-swap on the tip that was judged.
+	 * `unique-kept` (preparation-failure cleanup, and any teardown in a project
+	 * with the git workflow off): the legacy rule, but a branch holding commits
+	 * reachable from it alone is kept, and the delete is a compare-and-swap on the
+	 * tip that was judged.
 	 */
 	branchPolicy?: "legacy" | "task-owned" | "unique-kept";
 	/** Runs before each owned branch is deleted; a throw keeps that branch. */
@@ -3628,6 +3634,12 @@ export async function removeWorktree(
 	log.info("Removing worktree", { path: task.worktreePath, taskId: task.id });
 
 	const targetPath = task.worktreePath;
+	// The project's own checkout is never a task worktree: removing it would take
+	// the user's folder and its branch with it.
+	if (canonicalWorktreePath(targetPath) === canonicalWorktreePath(project.path)) {
+		log.warn("Refusing to remove the project folder as a worktree", { path: targetPath, taskId: task.id });
+		return none;
+	}
 	const worktreeDirPresent = existsSync(targetPath);
 	const registration = (await listWorktreeRegistrations(project.path))
 		.find((candidate) => canonicalWorktreePath(candidate.path) === canonicalWorktreePath(targetPath));

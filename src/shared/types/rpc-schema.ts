@@ -38,7 +38,7 @@ import type { Space, SpacesFile } from "./spaces";
 import type { BoardRef, BoardViewState } from "../board-view-state";
 import type { ExtensionInspection, ExtensionsOverview, InstalledExtension } from "../extensions";
 import type { Epic, EpicMember, EpicsFile } from "./epics";
-import type { AgentCancellationRequest, AgentCompletionRequest, AgentLaunchChoice, AgentLaunchRequest, LaunchVariant, TaskDialogSubject } from "./agent-launch";
+import type { AgentCancellationRequest, AgentCompletionRequest, AgentLaunchChoice, AgentLaunchRequest, LaunchAfterUntil, LaunchVariant, PendingMergeOffer, TaskDialogSubject } from "./agent-launch";
 import type { ScheduledMessageTarget } from "./scheduled-messages";
 import type { LiveArtifact, SharedArtifact, SharedImage } from "./shared-media";
 import type { ScriptPlacement, ScriptRunner, ScriptSource, WorktreeScripts } from "./package-scripts";
@@ -243,10 +243,12 @@ export type AppRPCSchema = {
 			addProject: {
 				/** `name` is optional: the backend derives it from the path, which is the
 				 *  only side that knows how to spell a path on its own platform. */
-				/** `autoConfigure` writes detected settings to `.dev3/config.local.json`; `autoConfigured` reports the outcome. */
-				params: { path: string; name?: string; autoConfigure?: boolean; boardCopy?: boolean };
-				/** `gitInit` is set when the folder could be made a repo in place (needs the user's confirmation). */
-				response: { ok: true; project: Project; autoConfigured?: AutoConfigureResult; boardCopyOffer?: BoardCopyOffer } | { ok: false; error: string; gitInit?: GitInitOffer };
+				/** `autoConfigure` writes detected settings to `.dev3/config.local.json`; `autoConfigured` reports the outcome.
+				 *  `gitWorkflow: false` adds the folder with the git workflow off, git repository or not. */
+				params: { path: string; name?: string; autoConfigure?: boolean; gitWorkflow?: boolean; boardCopy?: boolean };
+				/** `gitInit` is set when the folder could be made a repo in place (needs the user's confirmation).
+				 *  `notGitRepo` marks the refusal that `gitWorkflow: false` would lift. */
+				response: { ok: true; project: Project; autoConfigured?: AutoConfigureResult; boardCopyOffer?: BoardCopyOffer } | { ok: false; error: string; gitInit?: GitInitOffer; notGitRepo?: true };
 			};
 			cloneAndAddProject: {
 				params: { url: string; baseDir: string; repoName?: string; progressId?: string; autoConfigure?: boolean; boardCopy?: boolean };
@@ -671,7 +673,7 @@ export type AppRPCSchema = {
 				 * `renameTask`'s customTitle: this does NOT mark the title user-edited,
 				 * so an agent may still rename it.
 				 */
-				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; opsWorktree?: boolean; priority?: TaskPriority; taskType?: TaskType; epicId?: string };
+				params: { projectId: string; description: string; title?: string; status?: TaskStatus; existingBranch?: string; scratch?: boolean; draft?: boolean; opsWorkDir?: string; opsWorktree?: boolean; priority?: TaskPriority; taskType?: TaskType; epicId?: string; ownWorktree?: boolean };
 				response: Task;
 			};
 			/** Stored PR a review task reviews; looks it up once for tasks created before it was stored. */
@@ -790,6 +792,7 @@ export type AppRPCSchema = {
 					existingBranch?: string | null;
 					draft?: boolean;
 					taskType?: TaskType | null;
+					ownWorktree?: boolean;
 					/** Operations only: the folder choice, resolved like createTask; null clears it. */
 					opsWorkDir?: string | null;
 					opsWorktree?: boolean;
@@ -832,6 +835,11 @@ export type AppRPCSchema = {
 			dismissMergeCompletionPrompt: {
 				params: { taskId: string; projectId: string; fingerprint: string | null };
 				response: Task;
+			};
+			/** Unanswered merge offers, replayed on connect like `listPendingCompletionRequests`. */
+			listPendingMergeOffers: {
+				params: Record<string, never>;
+				response: PendingMergeOffer[];
 			};
 			getPtyUrl: {
 				params: { taskId: string; resume?: boolean };
@@ -1052,7 +1060,7 @@ export type AppRPCSchema = {
 			};
 			getAppVersion: {
 				params: void;
-				response: { version: string; channel: string; buildChannel: string };
+				response: { version: string; channel: string; buildChannel: string; leanProtocolForcedByEnv: boolean };
 			};
 			/** Coarse, bucketed install facts for analytics — never names, paths or titles. */
 			getTelemetryProfile: {
@@ -1245,6 +1253,11 @@ export type AppRPCSchema = {
 				params: { taskId: string; projectId: string; foreignCode: boolean };
 				response: Task;
 			};
+			/** The project's last explicit AWS profile pick; null when it never made one. */
+			getRememberedBedrockProfile: {
+				params: { projectId: string };
+				response: { profile: string | null } | null;
+			};
 			/** Persist a deferred launch on a todo task ("Start in…"). */
 			scheduleTaskLaunch: {
 				params: {
@@ -1266,6 +1279,27 @@ export type AppRPCSchema = {
 			startScheduledLaunchNow: {
 				params: { taskId: string; projectId: string };
 				response: Task[];
+			};
+			/** Arm a "start after" condition on a todo task from the launch modal. */
+			setTaskLaunchAfter: {
+				params: {
+					taskId: string;
+					projectId: string;
+					prerequisiteTaskId: string;
+					until: LaunchAfterUntil;
+					variant: LaunchVariant | null;
+				};
+				response: Task;
+			};
+			/** Remove a "start after" condition without starting the task. */
+			clearTaskLaunchAfter: {
+				params: { taskId: string; projectId: string };
+				response: Task;
+			};
+			/** Start a waiting task now with its condition's agent (chip → "Start now"). */
+			startTaskLaunchAfterNow: {
+				params: { taskId: string; projectId: string };
+				response: void;
 			};
 			/** Queue a scheduled message ("Send later") on a task with a live agent. */
 			scheduleMessage: {
@@ -1452,6 +1486,7 @@ export type AppRPCSchema = {
 					agentId: string | null;
 					configId: string | null;
 					accountId?: string | null;
+					bedrockProfile?: string | null;
 					handoff?: boolean;
 				};
 				response: SpawnAgentResult;
