@@ -798,9 +798,12 @@ export function getDefaultEnvForAgent(agent: CodingAgent, config?: AgentConfigur
 function applyStatusLineOption(
 	options: CommandOptions | undefined,
 	settings: { agentRateLimitTracking?: boolean },
+	bedrockProfile: { resolvedBedrockProfile?: string | null; bedrockProfileMissing?: string },
 ): CommandOptions | undefined {
 	const includeStatusLine = settings.agentRateLimitTracking !== false;
-	const settingsFile = ensureClaudeStatusLineSettings(includeStatusLine);
+	// Only a profile dev3 injected gets dev3's SSO refresh; otherwise the user's own awsAuthRefresh stays in charge.
+	const awsSsoRefresh = !!bedrockProfile.resolvedBedrockProfile && !bedrockProfile.bedrockProfileMissing;
+	const settingsFile = ensureClaudeStatusLineSettings(includeStatusLine, awsSsoRefresh);
 	if (!settingsFile) return options;
 	return { ...options, statuslineSettingsFile: settingsFile };
 }
@@ -1056,7 +1059,6 @@ export async function resolveCommandForAgent(
 	// Resolve the session env BEFORE building the command: an active API
 	// profile's model override must rewrite the preset's --model flag.
 	const baseCmd = config?.baseCommandOverride || agentWithPath.baseCommand;
-	const providerOpts = withProviderOptions(applyStatusLineOption(options, settings), agentWithPath, config);
 	// Order: agent-type defaults → provider env (Bedrock) → config envVars
 	// (wins last, so an explicit envVars override still applies) → managed
 	// account env (fills only keys not already set, so all of the above win).
@@ -1068,6 +1070,7 @@ export async function resolveCommandForAgent(
 		Object.assign(extraEnv, config.envVars, presetModelSlotEnv(agentProvider(agentWithPath, config), config.model, config.envVars));
 	}
 	const bedrockProfile = applyBedrockProfileEnv(agentWithPath, config, extraEnv, options);
+	const providerOpts = withProviderOptions(applyStatusLineOption(options, settings, bedrockProfile), agentWithPath, config);
 	const account = await resolveLaunchAccount(baseCmd, agentWithPath.agentFamily, extraEnv, options, ctx.projectPath);
 	await applyClaudeAccountEnv(baseCmd, extraEnv, account.accountId, agentWithPath.agentFamily, account.keepsProjectClaudeConfig);
 	if (options?.projectEnv && account.keepsProjectClaudeConfig) keepProjectClaudeEnv(extraEnv, options.projectEnv);
@@ -1225,7 +1228,6 @@ export async function resolveCommandForProject(
 		const config = findConfig(agent, resolvedConfigId);
 		// Env before command — see resolveCommandForAgent (API profile model override).
 		const baseCmd = config?.baseCommandOverride || agentWithPath.baseCommand;
-		const providerOpts = withProviderOptions(applyStatusLineOption(options, settings), agentWithPath, config);
 		// Order: agent-type defaults → provider env (Bedrock) → config envVars
 		// (via buildTaskEnv, wins last) → managed account env (fills only keys
 		// not already set, so all of the above win).
@@ -1237,6 +1239,7 @@ export async function resolveCommandForProject(
 			...presetModelSlotEnv(agentProvider(agentWithPath, config), config?.model, config?.envVars),
 		};
 		const bedrockProfile = applyBedrockProfileEnv(agentWithPath, config, extraEnv, options);
+		const providerOpts = withProviderOptions(applyStatusLineOption(options, settings, bedrockProfile), agentWithPath, config);
 		const account = await resolveLaunchAccount(baseCmd, agentWithPath.agentFamily, extraEnv, options, project.path);
 		await applyClaudeAccountEnv(baseCmd, extraEnv, account.accountId, agentWithPath.agentFamily, account.keepsProjectClaudeConfig);
 		if (options?.projectEnv && account.keepsProjectClaudeConfig) keepProjectClaudeEnv(extraEnv, options.projectEnv);

@@ -19,7 +19,7 @@ import { getUserShell } from "../../shell-env";
 import { agentInstallCommand } from "../../../shared/agent-install";
 import { resolveAgentLaunchBinary } from "../../agent-launch-availability";
 import { setupAgentHooks } from "../../agent-hooks";
-import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../../rate-limit-monitor";
+import { CLAUDE_MANAGED_SETTINGS_PATHS } from "../../rate-limit-monitor";
 import { quoteIfUnsafe } from "../../../shared/agent-adapters/shell";
 import { ensureArtifactTemplateEnv } from "../../artifact-template";
 import { tmux, DEFAULT_TMUX_SOCKET, TmuxError, taskSessionName } from "../../tmux";
@@ -212,11 +212,11 @@ export async function applyAgentHooksToCommand(
 	},
 ): Promise<string> {
 	try {
-		const managedArg = `--settings ${quoteIfUnsafe(CLAUDE_STATUSLINE_SETTINGS_PATH)}`;
-		const passesManaged = command.includes(managedArg);
+		const managedPath = CLAUDE_MANAGED_SETTINGS_PATHS.find((p) => command.includes(`--settings ${quoteIfUnsafe(p)}`));
+		const managedArg = managedPath ? `--settings ${quoteIfUnsafe(managedPath)}` : "";
 		const launch = await setupAgentHooks(worktreePath, baseCommand, {
 			...options,
-			...(passesManaged ? { claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH } : {}),
+			...(managedPath ? { claudeSettingsFile: managedPath } : {}),
 		});
 		let next = command;
 		if (launch?.claudeSettingsFile) {
