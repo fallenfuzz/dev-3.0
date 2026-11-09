@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
+import { DEFAULT_COMPLETION_OFFER_STYLE, type CompletionOfferStyle } from "../shared/types";
 
 /**
  * Completion offers the user has not answered yet: "the branch merged", "the
  * agent asks to complete" and the user's own Complete/Cancel on the open task.
- * They render inline on the task (strip in the task view, marker on its card)
- * instead of a modal, so an offer never blocks the board.
- * See `decisions/2026/11/07/completion-offers-render-inline-not-modal.md`.
+ * The `completionOfferStyle` setting picks where merge and agent offers ask: the
+ * app-level dialog (`CompletionOfferDialogHost`) or the bar on the task. The user's
+ * own ask always stays on the task. Markers on the card and sidebar show in both.
+ * See `decisions/2026/11/09/completion-offer-style-setting.md`.
  */
 export type CompletionOfferKind = "merge" | "agent" | "user";
 
@@ -23,6 +25,8 @@ export interface CompletionOffer {
 	status?: "completed" | "cancelled";
 	/** User offers only: what had focus when the user asked, to hand it back after. */
 	returnFocus?: HTMLElement | null;
+	/** When this client raised it (epoch ms), so a waiting list can show how long it has waited. */
+	offeredAt: number;
 	answer: (answer: CompletionOfferAnswer) => void;
 }
 
@@ -40,6 +44,7 @@ export interface OfferCompletionParams {
 let offers: CompletionOffer[] = [];
 const listeners = new Set<() => void>();
 let nextId = 0;
+let style: CompletionOfferStyle = DEFAULT_COMPLETION_OFFER_STYLE;
 
 function emit() {
 	for (const listener of listeners) listener();
@@ -84,10 +89,27 @@ export function offerCompletion(params: OfferCompletionParams): Promise<Completi
 			branchName: params.branchName,
 			status: params.status,
 			returnFocus: params.returnFocus,
+			offeredAt: Date.now(),
 			answer: settle,
 		}];
 		emit();
 	});
+}
+
+/** Set by App from the global setting; every surface re-reads it, so a switch moves waiting offers. */
+export function setCompletionOfferStyle(next: CompletionOfferStyle): void {
+	if (next === style) return;
+	style = next;
+	emit();
+}
+
+export function getCompletionOfferStyle(): CompletionOfferStyle {
+	return style;
+}
+
+/** Whether the offer asks in the app-level dialog rather than on its task. */
+export function offerAsksInDialog(offer: Pick<CompletionOffer, "kind">, current: CompletionOfferStyle = style): boolean {
+	return current === "dialog" && offer.kind !== "user";
 }
 
 export function hasCompletionOffer(taskId: string, kind: CompletionOfferKind): boolean {
@@ -119,6 +141,21 @@ export function useCompletionOffer(taskId: string, unsolicitedOnly = false): Com
 
 export function useCompletionOffers(): readonly CompletionOffer[] {
 	return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+function styleSnapshot() {
+	return style;
+}
+
+export function useCompletionOfferStyle(): CompletionOfferStyle {
+	return useSyncExternalStore(subscribe, styleSnapshot, styleSnapshot);
+}
+
+/** The offer the task's own strip shows: whatever is not asking in the dialog. */
+export function useTaskStripOffer(taskId: string): CompletionOffer | null {
+	const all = useCompletionOffers();
+	const current = useCompletionOfferStyle();
+	return pickCompletionOffer(all.filter((o) => !offerAsksInDialog(o, current)), taskId);
 }
 
 const mountedStrips = new Map<string, number>();
@@ -164,8 +201,23 @@ export function isCompletionStripMounted(taskId: string): boolean {
 	return mountedStrips.has(taskId);
 }
 
+let waitingLists = 0;
+
+/** Counts mounted lists of every waiting ask (the dashboard section). */
+export function registerWaitingOffersList(): () => void {
+	waitingLists += 1;
+	return () => { waitingLists -= 1; };
+}
+
+/** Whether an unsolicited ask on this task is already on screen, so no toast needs to tell about it. */
+export function isCompletionOfferOnScreen(taskId: string): boolean {
+	return mountedStrips.has(taskId) || waitingLists > 0;
+}
+
 export function _resetCompletionOffersForTests(): void {
 	offers = [];
+	style = DEFAULT_COMPLETION_OFFER_STYLE;
+	waitingLists = 0;
 	mountedStrips.clear();
 	overlayHosts.clear();
 	emit();

@@ -6,8 +6,9 @@ import { I18nProvider } from "../../../i18n";
 vi.mock("../../../rpc", () => ({ api: { request: { getUnsavedWork: vi.fn() } } }));
 
 import { api } from "../../../rpc";
-import { _resetCompletionOffersForTests, isCompletionStripMounted, offerCompletion, type CompletionOfferAnswer } from "../../../completion-offers";
-import TaskCompletionStrip, { COMPLETION_STRIP_ARM_MS } from "../TaskCompletionStrip";
+import { _resetCompletionOffersForTests, isCompletionStripMounted, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
+import TaskCompletionStrip, { COMPLETION_STRIP_ARM_MS, agentPaneInsets } from "../TaskCompletionStrip";
+import type { TaskPaneInfo, TaskPaneState } from "../../../../shared/task-panes";
 import { clearanceNodes } from "../../../toast-clearance";
 
 const project = { id: "p1", name: "Alpha", path: "/a" } as Project;
@@ -31,6 +32,7 @@ async function arm() {
 
 beforeEach(() => {
 	vi.useFakeTimers();
+	setCompletionOfferStyle("inline");
 	vi.mocked(api.request.getUnsavedWork).mockResolvedValue(clean);
 });
 afterEach(() => {
@@ -153,16 +155,49 @@ describe("TaskCompletionStrip", () => {
 		expect(strips[0]!.className).toContain("absolute");
 	});
 
-	it("drops below the tmux ZOOMED badge, which holds the same corner", async () => {
+	it("sits at the terminal's bottom-right as a one-line bar, next to the agent's prompt", async () => {
+		render(
+			<I18nProvider>
+				<TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" />
+			</I18nProvider>,
+		);
+		await offer("agent");
+		const strip = screen.getByTestId("task-completion-strip");
+		expect(strip.className).toContain("bottom-1");
+		expect(strip.className).not.toContain("top-2");
+		// On a wide terminal it stays near the prompt instead of the far corner.
+		expect(strip.className).toContain("right-[max(0.75rem,calc(100%-72rem))]");
+		// Opening the note grows the bar upward; its buttons stay on the bottom line.
+		expect(strip.className).toContain("items-end");
+		// The note opens on hover or focus, so the bar covers only the bottom rows.
+		expect(screen.getByTestId("task-completion-strip-note").className).toContain("hidden");
+		// A bottom bar never collides with the toast stack at the top.
+		expect(clearanceNodes.has(strip)).toBe(false);
+	});
+
+	it("keeps the user's own ask at the top-right, under the ✓ they clicked, and below the ZOOMED badge", async () => {
 		render(
 			<I18nProvider>
 				<TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" belowZoomBadge />
 			</I18nProvider>,
 		);
-		await offer("merge");
+		await act(async () => { void offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "completed" }); });
 		const strip = screen.getByTestId("task-completion-strip");
 		expect(strip.className).toContain("top-11");
-		expect(strip.className).not.toContain("top-2");
+		expect(strip.className).not.toContain("bottom-1");
+	});
+
+	it("shows nothing while the dialog style asks for merge and agent offers", async () => {
+		setCompletionOfferStyle("dialog");
+		render(
+			<I18nProvider>
+				<TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" />
+			</I18nProvider>,
+		);
+		await offer("agent");
+		expect(screen.queryByTestId("task-completion-strip")).not.toBeInTheDocument();
+		act(() => setCompletionOfferStyle("inline"));
+		expect(screen.getByTestId("task-completion-strip")).toBeInTheDocument();
 	});
 
 	it("keeps toasts below it, so a toast never covers its buttons", async () => {
@@ -260,5 +295,22 @@ describe("TaskCompletionStrip", () => {
 			expect(float.className).toContain("h-0");
 			expect(float).toContainElement(screen.getByTestId("task-completion-strip"));
 		});
+	});
+});
+
+describe("agentPaneInsets", () => {
+	const pane = (index: number, x: number, width: number): TaskPaneInfo =>
+		({ paneId: `%${index}`, index, label: "", active: false, zoomed: false, rect: { x, y: 0, width, height: 1 } });
+	const state = (panes: TaskPaneInfo[], zoomedPaneId: string | null = null) =>
+		({ backend: "tmux", panes, activePaneId: null, zoomedPaneId, layout: null, layoutPreset: null, capabilities: [] }) as TaskPaneState;
+
+	it("frames the first pane, where the agent runs, when the task is split", () => {
+		expect(agentPaneInsets(state([pane(2, 0.6, 0.4), pane(1, 0, 0.6)]))).toEqual({ left: "0%", right: "40%", top: "0%", bottom: "0%" });
+	});
+
+	it("uses the whole terminal for one pane, a zoomed pane, or no state yet", () => {
+		expect(agentPaneInsets(null)).toBeNull();
+		expect(agentPaneInsets(state([pane(1, 0, 1)]))).toBeNull();
+		expect(agentPaneInsets(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%2"))).toBeNull();
 	});
 });
