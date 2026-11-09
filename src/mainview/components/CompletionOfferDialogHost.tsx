@@ -34,7 +34,7 @@ export default function CompletionOfferDialogHost({ ready, projects, onOpenTask 
 		}
 		if (!ready) return;
 		for (const offer of offers) {
-			if (!offerAsksInDialog(offer, style) || asked.current.has(offer.id)) continue;
+			if (!offerAsksInDialog(style) || asked.current.has(offer.id)) continue;
 			const controller = new AbortController();
 			asked.current.set(offer.id, controller);
 			void askInDialog(offer, controller.signal, latest.current);

@@ -175,18 +175,6 @@ describe("TaskCompletionStrip", () => {
 		expect(clearanceNodes.has(strip)).toBe(false);
 	});
 
-	it("keeps the user's own ask at the top-right, under the ✓ they clicked, and below the ZOOMED badge", async () => {
-		render(
-			<I18nProvider>
-				<TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" belowZoomBadge />
-			</I18nProvider>,
-		);
-		await act(async () => { void offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "completed" }); });
-		const strip = screen.getByTestId("task-completion-strip");
-		expect(strip.className).toContain("top-11");
-		expect(strip.className).not.toContain("bottom-1");
-	});
-
 	it("shows nothing while the dialog style asks for merge and agent offers", async () => {
 		setCompletionOfferStyle("dialog");
 		render(
@@ -221,81 +209,6 @@ describe("TaskCompletionStrip", () => {
 		await expect(answer).resolves.toBe(false);
 	});
 
-	describe("the user's own Complete/Cancel", () => {
-		async function userAsk(status: "completed" | "cancelled") {
-			let answer!: Promise<CompletionOfferAnswer | null>;
-			await act(async () => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status }); });
-			return { answer };
-		}
-
-		it("focuses Keep open, keeps the dialog's subject card and footer, and answers without arming", async () => {
-			renderStrip({ ...worktreeTask, seq: 68, title: "Fix the thing", overview: "What it is about" } as Task);
-			const { answer } = await userAsk("completed");
-			await act(async () => {});
-			expect(document.activeElement).toHaveTextContent("Keep open");
-			expect(screen.getByText("Complete task?")).toBeInTheDocument();
-			expect(screen.getByText("Fix the thing")).toBeInTheDocument();
-			expect(screen.getByText("What it is about")).toBeInTheDocument();
-			expect(screen.getByText("The worktree and branch will be deleted. Continue?")).toBeInTheDocument();
-			expect(screen.queryByText("I'll complete it myself")).not.toBeInTheDocument();
-			fireEvent.click(screen.getByTestId("task-completion-strip-complete"));
-			await act(async () => {});
-			await expect(answer).resolves.toBe(true);
-		});
-
-		it("Esc keeps the task open", async () => {
-			renderStrip();
-			const { answer } = await userAsk("cancelled");
-			await act(async () => {});
-			expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Cancel task");
-			fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-			await expect(answer).resolves.toBe(false);
-		});
-
-		it("shows the unsaved-work warning before Cancel task", async () => {
-			vi.mocked(api.request.getUnsavedWork).mockResolvedValue({ ...clean, insertions: 3, deletions: 1 });
-			renderStrip();
-			await userAsk("cancelled");
-			await act(async () => {});
-			expect(screen.getByTestId("task-completion-strip-warning")).toBeInTheDocument();
-		});
-
-		it("hands focus back to where it was once answered", async () => {
-			const trigger = document.createElement("button");
-			document.body.appendChild(trigger);
-			trigger.focus();
-			renderStrip();
-			await userAsk("completed");
-			await act(async () => {});
-			expect(document.activeElement).toHaveTextContent("Keep open");
-			fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-			await act(async () => { vi.advanceTimersByTime(50); });
-			expect(document.activeElement).toBe(trigger);
-			trigger.remove();
-		});
-
-		it("hands focus back to the control that asked, even if it lost focus before the card mounted", async () => {
-			const trigger = document.createElement("button");
-			document.body.appendChild(trigger);
-			renderStrip();
-			let answer!: Promise<CompletionOfferAnswer | null>;
-			await act(async () => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "completed", returnFocus: trigger }); });
-			await act(async () => {});
-			fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
-			await expect(answer).resolves.toBe(false);
-			await act(async () => { vi.advanceTimersByTime(50); });
-			expect(document.activeElement).toBe(trigger);
-			trigger.remove();
-		});
-
-		it("floats under the inspector instead of pushing the task view down", async () => {
-			renderStrip();
-			await userAsk("completed");
-			const float = screen.getByTestId("task-completion-strip-float");
-			expect(float.className).toContain("h-0");
-			expect(float).toContainElement(screen.getByTestId("task-completion-strip"));
-		});
-	});
 });
 
 describe("agentPaneInsets", () => {

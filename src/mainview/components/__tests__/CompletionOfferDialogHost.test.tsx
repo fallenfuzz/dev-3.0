@@ -25,7 +25,7 @@ function renderHost(ready = true) {
 /** Wrapped, because an async function would flatten the answer promise and wait on it. */
 async function offer(kind: CompletionOfferKind): Promise<{ answer: Promise<CompletionOfferAnswer | null> }> {
 	let answer!: Promise<CompletionOfferAnswer | null>;
-	await act(async () => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind, branchName: "feat/x", status: "completed" }); });
+	await act(async () => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind, branchName: "feat/x" }); });
 	return { answer };
 }
 
@@ -88,7 +88,7 @@ describe("CompletionOfferDialogHost", () => {
 		await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
 	});
 
-	it("leaves offers on the task on the inline style, and the user's own ask always", async () => {
+	it("leaves offers on the task on the inline style, and moves them into the dialog on a switch", async () => {
 		setCompletionOfferStyle("inline");
 		renderHost();
 		await offer("agent");
@@ -97,8 +97,5 @@ describe("CompletionOfferDialogHost", () => {
 		// Switching the setting moves a waiting offer into the dialog.
 		await act(async () => { setCompletionOfferStyle("dialog"); });
 		await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-		await offer("user");
-		await act(async () => {});
-		expect(confirm).toHaveBeenCalledTimes(1);
 	});
 });
