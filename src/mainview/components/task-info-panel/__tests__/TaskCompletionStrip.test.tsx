@@ -85,6 +85,19 @@ describe("TaskCompletionStrip", () => {
 		expect(screen.getByTestId("task-completion-strip-complete")).toBeEnabled();
 	});
 
+	it("says the folder is kept when the project's git workflow is off", async () => {
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={{ ...project, gitWorkflow: false } as Project} /></I18nProvider>);
+		await offer("agent");
+		expect(screen.getByText("Completing ends the terminal session. The working folder and its files are kept.")).toBeInTheDocument();
+		expect(screen.queryByText("Completing removes the worktree and ends the terminal session.")).toBeNull();
+	});
+
+	it("says the worktree goes for an own-worktree task in a workflow-off project", async () => {
+		render(<I18nProvider><TaskCompletionStrip task={{ ...worktreeTask, ownWorktree: true } as Task} project={{ ...project, gitWorkflow: false } as Project} /></I18nProvider>);
+		await offer("agent");
+		expect(screen.getByText("Completing removes the worktree and ends the terminal session.")).toBeInTheDocument();
+	});
+
 	it("lets Complete through when the check fails, with a warning", async () => {
 		vi.mocked(api.request.getUnsavedWork).mockRejectedValue(new Error("git gone"));
 		renderStrip();
@@ -138,6 +151,18 @@ describe("TaskCompletionStrip", () => {
 		expect(strips).toHaveLength(1);
 		expect(screen.getByTestId("viewport")).toContainElement(strips[0]!);
 		expect(strips[0]!.className).toContain("absolute");
+	});
+
+	it("drops below the tmux ZOOMED badge, which holds the same corner", async () => {
+		render(
+			<I18nProvider>
+				<TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" belowZoomBadge />
+			</I18nProvider>,
+		);
+		await offer("merge");
+		const strip = screen.getByTestId("task-completion-strip");
+		expect(strip.className).toContain("top-11");
+		expect(strip.className).not.toContain("top-2");
 	});
 
 	it("keeps toasts below it, so a toast never covers its buttons", async () => {
@@ -198,6 +223,42 @@ describe("TaskCompletionStrip", () => {
 			await userAsk("cancelled");
 			await act(async () => {});
 			expect(screen.getByTestId("task-completion-strip-warning")).toBeInTheDocument();
+		});
+
+		it("hands focus back to where it was once answered", async () => {
+			const trigger = document.createElement("button");
+			document.body.appendChild(trigger);
+			trigger.focus();
+			renderStrip();
+			await userAsk("completed");
+			await act(async () => {});
+			expect(document.activeElement).toHaveTextContent("Keep open");
+			fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+			await act(async () => { vi.advanceTimersByTime(50); });
+			expect(document.activeElement).toBe(trigger);
+			trigger.remove();
+		});
+
+		it("hands focus back to the control that asked, even if it lost focus before the card mounted", async () => {
+			const trigger = document.createElement("button");
+			document.body.appendChild(trigger);
+			renderStrip();
+			let answer!: Promise<CompletionOfferAnswer | null>;
+			await act(async () => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "completed", returnFocus: trigger }); });
+			await act(async () => {});
+			fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
+			await expect(answer).resolves.toBe(false);
+			await act(async () => { vi.advanceTimersByTime(50); });
+			expect(document.activeElement).toBe(trigger);
+			trigger.remove();
+		});
+
+		it("floats under the inspector instead of pushing the task view down", async () => {
+			renderStrip();
+			await userAsk("completed");
+			const float = screen.getByTestId("task-completion-strip-float");
+			expect(float.className).toContain("h-0");
+			expect(float).toContainElement(screen.getByTestId("task-completion-strip"));
 		});
 	});
 });

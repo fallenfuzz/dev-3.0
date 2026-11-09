@@ -233,7 +233,7 @@ vi.mock("../completion-offers", async (importOriginal) => ({
 
 vi.mock("../confirm", () => ({
 	confirm: vi.fn().mockResolvedValue(false),
-	ConfirmHost: () => null,
+	ConfirmHost: () => <div data-testid="confirm-host" />,
 	// The stubbed host is always "mounted" here — the real readiness wait is
 	// covered in confirm.test.tsx against the real ConfirmHost.
 	whenConfirmHostMounted: vi.fn().mockResolvedValue(true),
@@ -838,6 +838,38 @@ describe("App keyboard shortcuts", () => {
 			await userEvent.click(screen.getByRole("button", { name: "Exit full screen" }));
 			expect(screen.queryByTestId("terminal-immersive-chrome")).not.toBeInTheDocument();
 			expect(screen.getByTestId("project-screen")).toHaveAttribute("data-active-task-id", "t1");
+		});
+
+		// Agents block on these answers, so immersive must not hide the hosts that ask:
+		// with no ConfirmHost mounted, confirm() declines on the user's behalf.
+		it("keeps confirmations and agent requests answerable in immersive mode", async () => {
+			vi.mocked(api.request.getProjects).mockResolvedValue(projects);
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "task", projectId: "p1", taskId: "t1" }),
+			});
+
+			await renderApp();
+			await userEvent.keyboard("{F11}");
+			expect(screen.getByTestId("terminal-immersive-chrome")).toBeInTheDocument();
+			expect(screen.getByTestId("confirm-host")).toBeInTheDocument();
+
+			await act(async () => {
+				window.dispatchEvent(new CustomEvent("rpc:agentLaunchRequested", {
+					detail: {
+						requestId: "launch-immersive",
+						taskId: "t1",
+						projectId: "p1",
+						taskTitle: "Peer task",
+						targetStatus: "in-progress",
+						scratch: false,
+						requesterSeq: 42,
+						requesterTitle: "Asking task",
+						subject: { seqLabel: "7", projectName: "Alpha", overview: "Waiting to start." },
+					},
+				}));
+			});
+			expect(screen.getByRole("dialog", { name: /Peer task|Start/i })).toBeInTheDocument();
+			expect(screen.getByTestId("terminal-immersive-chrome")).toBeInTheDocument();
 		});
 
 		it("Cmd/Ctrl+Shift+F toggles immersive mode on a task terminal", async () => {
@@ -4514,6 +4546,34 @@ describe("App keyboard shortcuts", () => {
 			// The winning client already answered the blocked CLI; this one must not
 			// send a second (declining) answer.
 			expect(api.request.respondToAgentCompletionRequest).not.toHaveBeenCalled();
+		});
+
+		it("withdraws the offer's bell once another client answers it", async () => {
+			vi.mocked(api.request.getProjects).mockResolvedValue([
+				{ id: "p1", name: "Alpha", path: "/a", setupScript: "", devScript: "", cleanupScript: "", defaultBaseBranch: "main", createdAt: "" },
+			]);
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p1" }),
+			});
+			vi.mocked(offerCompletion).mockImplementation(((opts: { signal?: AbortSignal }) =>
+				new Promise<boolean>((resolve) => {
+					opts.signal?.addEventListener("abort", () => resolve(false));
+				})) as never);
+
+			await renderApp();
+			await act(async () => {
+				window.dispatchEvent(new CustomEvent("rpc:agentCompletionRequested", {
+					detail: { requestId: "req-bell", taskId: "t-overflow", projectId: "p1", taskTitle: "Some task" },
+				}));
+			});
+			await waitFor(() => expect(screen.getByTestId("project-screen")).toHaveAttribute("data-bell-count", "1"));
+
+			await act(async () => {
+				window.dispatchEvent(new CustomEvent("rpc:agentRequestResolved", {
+					detail: { requestId: "req-bell", kind: "complete", taskId: "t-overflow", projectId: "p1" },
+				}));
+			});
+			await waitFor(() => expect(screen.getByTestId("project-screen")).toHaveAttribute("data-bell-count", "0"));
 		});
 
 		it("closes the launch dialog without answering", async () => {

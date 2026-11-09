@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import type { GlobalSettings, Project, Task, TaskDiffResponse } from "../../shared/types";
 import { LOCAL_MERGE_SHARED_FOLDER_ERROR, MAX_TASK_NOTES_KEPT, OWN_WORKTREE_NOT_A_REPO_ERROR, buildTaskDialogSubject, getPreparingStageProgress, resolveTaskCompareBaseBranch } from "../../shared/types";
 import { ENV_UNSET } from "../../shared/agent-accounts";
+import { ptyWsUrl } from "../pty-server-access";
 import * as agentAccounts from "../agent-accounts";
 import { chooseTaskCodexConversations } from "../codex-task-selection";
 import {
@@ -455,7 +456,7 @@ import * as accountRouter from "../account-router";
 import * as workspaceGuard from "../task-workspace-guard";
 import * as updater from "../updater";
 import { setupAgentHooks } from "../agent-hooks";
-import { CLAUDE_MANAGED_SETTINGS_PATHS } from "../rate-limit-monitor";
+import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../rate-limit-monitor";
 import { loadSettings, loadSettingsSync, saveSettings } from "../settings";
 import * as repoConfig from "../repo-config";
 import * as cowClone from "../cow-clone";
@@ -4911,7 +4912,7 @@ describe("activateTask", () => {
 			"",
 			"/tmp/wt",
 			undefined,
-			{ resume: true, projectEnv: {}, protocolMode: "worktree" },
+			{ resume: true, protocolMode: "worktree", projectEnv: {} },
 		);
 	});
 
@@ -4982,7 +4983,7 @@ describe("activateTask", () => {
 			"builtin-claude",
 			null,
 			expect.objectContaining({ worktreePath: "/tmp/wt" }),
-			{ resume: true, projectEnv: {}, protocolMode: "worktree" },
+			{ resume: true, protocolMode: "worktree", projectEnv: {} },
 		);
 		expect(agents.resolveCommandForProject).not.toHaveBeenCalled();
 	});
@@ -7787,7 +7788,7 @@ describe("handlers.getPtyUrl", () => {
 		vi.mocked(pty.getPtyPort).mockReturnValue(9999);
 
 		const result = await handlers.getPtyUrl({ taskId: "task-1" });
-		expect(result).toEqual({ url: "ws://localhost:9999?session=task-1" });
+		expect(result).toEqual({ url: ptyWsUrl(9999, "task-1") });
 	});
 
 	it("leaves a settling native session alone instead of probing and tearing it down", async () => {
@@ -7799,7 +7800,7 @@ describe("handlers.getPtyUrl", () => {
 
 		const result = await handlers.getPtyUrl({ taskId: "task-1" });
 
-		expect(result).toEqual({ url: "ws://localhost:9999?session=task-1" });
+		expect(result).toEqual({ url: ptyWsUrl(9999, "task-1") });
 		expect(pty.destroySessionAwaited).not.toHaveBeenCalled();
 		expect(pty.tmuxSessionExists).not.toHaveBeenCalled();
 		expect(pty.createSession).not.toHaveBeenCalled();
@@ -8012,7 +8013,7 @@ describe("handlers.getPtyUrl", () => {
 		const result = await handlers.getPtyUrl({ taskId: "task-1", resume: true });
 
 		expect(pty.destroySession).not.toHaveBeenCalled();
-		expect(result).toEqual({ url: "ws://localhost:9999?session=task-1" });
+		expect(result).toEqual({ url: ptyWsUrl(9999, "task-1") });
 	});
 
 	it("destroys dead sessions when tmux is gone (stale check)", async () => {
@@ -10950,7 +10951,7 @@ describe("handlers.getProjectPtyUrl", () => {
 			"dev3",
 			"project",
 		);
-		expect(url).toBe(`ws://localhost:9999?session=project-${project.id}`);
+		expect(url).toBe(ptyWsUrl(9999, `project-${project.id}`));
 	});
 
 	it("reuses existing session without creating a new one", async () => {
@@ -12652,26 +12653,6 @@ describe("resumeTask gives every Claude pane its own conversation (#1950)", () =
 		expect([MAIN, NEWEST]).not.toContain(options[2].sessionId);
 	});
 
-	it("exports the project env in a resumed split pane, which would otherwise inherit the main pane's", async () => {
-		seedStore([NEWEST, MAIN]);
-		(data.loadProjects as any).mockResolvedValue([makeProject({ env: { ANTHROPIC_BASE_URL: "https://project.example" } } as never)]);
-		(data.getTask as any).mockResolvedValue(makeTask({
-			worktreePath: WORKTREE,
-			sessionState: { panes: [claudePane(MAIN), claudePane(NEWEST), claudePane("never-prompted")] },
-		}));
-		const realWrite = (globalThis as any).Bun.write;
-		const write = vi.fn().mockResolvedValue(undefined);
-		(globalThis as any).Bun.write = write;
-		try {
-			await handlers.resumeTask({ taskId: "task-1" });
-		} finally {
-			(globalThis as any).Bun.write = realWrite;
-		}
-
-		const pane = write.mock.calls.find(([path]) => String(path) === dev3TaskTempPath("task-1", "resume-pane-1.sh"));
-		expect(String(pane?.[1])).toContain("https://project.example");
-	});
-
 	it("resumes every pane of a shared-folder task with the shared-folder protocol", async () => {
 		seedStore([NEWEST, MAIN]);
 		(data.loadProjects as any).mockResolvedValue([makeProject({ gitWorkflow: false })]);
@@ -12684,6 +12665,27 @@ describe("resumeTask gives every Claude pane its own conversation (#1950)", () =
 
 		const modes = (agents.resolveCommandForAgent as any).mock.calls.map((call: any[]) => call[3]?.protocolMode);
 		expect(modes).toEqual(["shared-folder", "shared-folder", "shared-folder"]);
+	});
+
+	it("exports the project env in a resumed split pane, which would otherwise inherit the main pane's", async () => {
+		seedStore([NEWEST, MAIN]);
+		(data.loadProjects as any).mockResolvedValue([makeProject({ env: { ANTHROPIC_BASE_URL: "https://project.example" } } as never)]);
+		(data.getTask as any).mockResolvedValue(makeTask({
+			worktreePath: WORKTREE,
+			sessionState: { panes: [claudePane(MAIN), claudePane(NEWEST), claudePane("never-prompted")] },
+		}));
+
+		const realWrite = (globalThis as any).Bun.write;
+		const write = vi.fn().mockResolvedValue(undefined);
+		(globalThis as any).Bun.write = write;
+		try {
+			await handlers.resumeTask({ taskId: "task-1" });
+		} finally {
+			(globalThis as any).Bun.write = realWrite;
+		}
+
+		const pane = write.mock.calls.find(([path]) => String(path) === dev3TaskTempPath("task-1", "resume-pane-1.sh"));
+		expect(String(pane?.[1])).toContain("https://project.example");
 	});
 
 	it("reports a pane that started over as `fresh-session`, and resumes it for the CLI too", async () => {
@@ -12805,6 +12807,24 @@ describe("restartTask (start fresh) floors the Codex scan", () => {
 	});
 });
 
+describe("restartTask with a pane that ran the global default", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("resolves the current default instead of pinning the one that ran", async () => {
+		const project = makeProject();
+		const task = makeTask({ sessionState: { panes: [{ agentCmd: "claude", agentId: "builtin-claude", configId: "claude-default", sessionId: null, agentFromDefault: true }] } });
+		mockTaskWrites(task);
+		vi.mocked(data.loadProjects).mockResolvedValue([project]);
+		vi.mocked(data.loadVirtualProjects).mockResolvedValue([]);
+		vi.mocked(pty.hasSession).mockReturnValue(false);
+
+		await handlers.restartTask({ taskId: task.id });
+
+		expect(agents.resolveCommandForProject).toHaveBeenCalled();
+		expect(agents.resolveCommandForAgent).not.toHaveBeenCalled();
+	});
+});
+
 describe("column agents and the AWS profile", () => {
 	beforeEach(() => vi.clearAllMocks());
 
@@ -12820,7 +12840,6 @@ describe("column agents and the AWS profile", () => {
 		await launchColumnAgent(project, task, config as never, { paneTitle: "AI Review" }).catch(() => undefined);
 		expect(agents.resolveCommandForAgent).toHaveBeenCalledWith("claude-bedrock", "c", expect.anything(), expect.objectContaining({ bedrockProfile: expected }));
 	});
-
 });
 
 describe("resume reuses the AWS profile a pane launched with", () => {
@@ -12893,24 +12912,6 @@ describe("resume reuses the AWS profile a pane launched with", () => {
 		} finally {
 			resolve.mockImplementation(original!);
 		}
-	});
-});
-
-describe("restartTask with a pane that ran the global default", () => {
-	beforeEach(() => vi.clearAllMocks());
-
-	it("resolves the current default instead of pinning the one that ran", async () => {
-		const project = makeProject();
-		const task = makeTask({ sessionState: { panes: [{ agentCmd: "claude", agentId: "builtin-claude", configId: "claude-default", sessionId: null, agentFromDefault: true }] } });
-		mockTaskWrites(task);
-		vi.mocked(data.loadProjects).mockResolvedValue([project]);
-		vi.mocked(data.loadVirtualProjects).mockResolvedValue([]);
-		vi.mocked(pty.hasSession).mockReturnValue(false);
-
-		await handlers.restartTask({ taskId: task.id });
-
-		expect(agents.resolveCommandForProject).toHaveBeenCalled();
-		expect(agents.resolveCommandForAgent).not.toHaveBeenCalled();
 	});
 });
 
@@ -13778,7 +13779,7 @@ describe("launchTaskPty", () => {
 		}
 	});
 
-	it.each(CLAUDE_MANAGED_SETTINGS_PATHS)("swaps the managed --settings file %s for the one setupAgentHooks built", async (managedPath) => {
+	it("swaps the managed --settings file for the one setupAgentHooks built", async () => {
 		const project = makeProject();
 		const task = makeTask();
 		const writeSpy = vi.spyOn(Bun, "write").mockResolvedValue(undefined as never);
@@ -13788,7 +13789,7 @@ describe("launchTaskPty", () => {
 			stderr: new Uint8Array(),
 		});
 		(agents.resolveCommandForAgent as any).mockResolvedValueOnce({
-			command: `claude --settings ${managedPath} -- 'Run the task'`,
+			command: `claude --settings ${CLAUDE_STATUSLINE_SETTINGS_PATH} -- 'Run the task'`,
 			extraEnv: {},
 			agent: { baseCommand: "claude" },
 			config: {},
@@ -13798,11 +13799,11 @@ describe("launchTaskPty", () => {
 		try {
 			await launchTaskPty(project, task, "/home/me/notes", "builtin-claude", "claude-default");
 
-			expect(setupAgentHooks).toHaveBeenCalledWith("/home/me/notes", "claude", expect.objectContaining({ claudeSettingsFile: managedPath }));
+			expect(setupAgentHooks).toHaveBeenCalledWith("/home/me/notes", "claude", expect.objectContaining({ claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH }));
 			const runCall = writeSpy.mock.calls.find(([path]) => String(path).endsWith("-run.sh"));
 			const script = String(runCall?.[1] ?? "");
 			expect(script).toContain("claude --settings /home/me/.dev3.0/data/agent-hooks/claude-folder-settings-abc.json -- 'Run the task'");
-			expect(script).not.toContain(managedPath);
+			expect(script).not.toContain(CLAUDE_STATUSLINE_SETTINGS_PATH);
 		} finally {
 			writeSpy.mockRestore();
 		}

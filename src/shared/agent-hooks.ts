@@ -2,9 +2,9 @@
  * Hook-building logic shared between the backend (bun/) and CLI.
  */
 
-import { isInProjectTaskPath, parseInProjectTaskPath } from "./project-storage";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { isInProjectTaskPath, parseInProjectTaskPath } from "./project-storage";
 import { join } from "node:path";
 import type { PermissionMode, TaskStatus } from "./types";
 import { CLI_EXIT_CODE_APP_NOT_RUNNING } from "./cli-exit-codes";
@@ -501,18 +501,6 @@ function mergeHookMaps(
 }
 
 /**
- * True when `folder` is a working directory dev3 created and removes with the
- * task (a worktree or an ops folder). Anywhere else - a gitless project folder,
- * a chosen ops folder - the hooks outlive the task and must stay inert.
- */
-export function isDev3OwnedFolder(folder: string, env: Record<string, string | undefined> = process.env): boolean {
-	const normalize = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
-	const target = normalize(folder);
-	const home = normalize(resolveDev3Home(env));
-	return [`${home}/worktrees/`, `${home}/ops/`].some((root) => target.startsWith(root)) || isInProjectTaskPath(target);
-}
-
-/**
  * Skip the hook outside a dev3 pane. A plain `claude` session in a folder that
  * keeps these hooks has no task to move, and the CLI would print its usage error
  * on every event. Windows keeps the bare command: no POSIX shell to test the env.
@@ -530,6 +518,17 @@ function withTaskEnvGuard(command: string, dialect: HookCliDialect): string {
 function claudePostToolCommand(workingCmd: string, dialect: HookCliDialect): string {
 	if (!dialect.posixShell) return workingCmd;
 	return `${dialect.cli} ${CLAUDE_POST_TOOL_HOOK_SUBCOMMAND} || ${workingCmd}`;
+}
+
+/**
+ * True when `folder` is a working directory dev3 created and removes with the
+ * task: a worktree or ops folder under the dev3 home, or an in-project task dir.
+ */
+export function isDev3OwnedFolder(folder: string, env: Record<string, string | undefined> = process.env): boolean {
+	const normalize = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+	const target = normalize(folder);
+	const home = normalize(resolveDev3Home(env));
+	return [`${home}/worktrees/`, `${home}/ops/`].some((root) => target.startsWith(root)) || isInProjectTaskPath(target);
 }
 
 export function buildClaudeHooks(

@@ -220,9 +220,10 @@ describe("TaskDetailModal", () => {
 			const user = userEvent.setup();
 
 			await user.click(screen.getByText("Edit"));
-			await user.type(screen.getByRole("textbox"), " changed");
+			await user.type(screen.getByRole("textbox"), " changed{Enter}second line");
 
 			expect(container.querySelector("#task-detail-title")).toHaveTextContent("My custom title");
+			expect(screen.queryByText("original changed second line", { selector: "span" })).not.toBeInTheDocument();
 		});
 
 		it("previews the generated title while editing a task without a custom title", async () => {
@@ -266,7 +267,7 @@ describe("TaskDetailModal", () => {
 			const user = userEvent.setup();
 
 			await user.click(screen.getByText("Edit"));
-			expect(screen.getByText("Save").closest(".sticky")).toHaveClass("bottom-0");
+			expect(screen.getByText("Save").closest(".sticky")).toHaveClass("bottom-0", "-mx-6");
 		});
 
 		it("uploads an image dropped into the edit textarea and appends the saved path", async () => {

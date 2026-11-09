@@ -23,8 +23,8 @@ import type { HandoffPreview, SpawnAgentResult } from "../../../shared/conversat
 import { splitTaskPane, AuxPaneUnavailableError, type AuxPaneHandle } from "../../task-aux-panes";
 import { getPushMessage, AGENT_ENV_DEFAULTS, buildAgentEnv, buildCmdScript, generatedScriptLaunch, generatedScriptName, log, writeLaunchScript } from "../shared-pure";
 import { applyAgentHooksToCommand, applyModelVersionNotice, ensureAgentTrust, notifyBedrockProfileMissing } from "./task-launch";
-import { rememberVariantBedrockProfile } from "../../bedrock-profile-pref";
 import { rootProjectFor } from "../../ops-worktree";
+import { rememberVariantBedrockProfile } from "../../bedrock-profile-pref";
 
 export async function spawnAgentInTask(params: {
 	prompt?: string;
@@ -92,8 +92,8 @@ export async function spawnAgentInTask(params: {
 	const cmdOptions: agents.CommandOptions = {
 		sessionId: freshSessionId,
 		accountId: params.accountId,
-		bedrockProfile: params.bedrockProfile !== undefined ? params.bedrockProfile : task.bedrockProfile,
 		projectEnv,
+		bedrockProfile: params.bedrockProfile !== undefined ? params.bedrockProfile : task.bedrockProfile,
 		autoRouting: await autoRoutingContext(project, reservationKey, projectEnv),
 		protocolMode: taskProtocolMode(project, task),
 	};

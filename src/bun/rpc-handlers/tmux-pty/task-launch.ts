@@ -19,7 +19,7 @@ import { getUserShell } from "../../shell-env";
 import { agentInstallCommand } from "../../../shared/agent-install";
 import { resolveAgentLaunchBinary } from "../../agent-launch-availability";
 import { setupAgentHooks } from "../../agent-hooks";
-import { CLAUDE_MANAGED_SETTINGS_PATHS } from "../../rate-limit-monitor";
+import { CLAUDE_STATUSLINE_SETTINGS_PATH } from "../../rate-limit-monitor";
 import { quoteIfUnsafe } from "../../../shared/agent-adapters/shell";
 import { ensureArtifactTemplateEnv } from "../../artifact-template";
 import { tmux, DEFAULT_TMUX_SOCKET, TmuxError, taskSessionName } from "../../tmux";
@@ -102,14 +102,12 @@ async function persistInitialAgentPaneId(
 
 const STALE_ACCOUNT_NOTICE_WINDOW_MS = 60_000;
 const staleAccountNoticeAt = new Map<string, number>();
+const awsProfileNoticeAt = new Map<string, number>();
 
 export function resetStaleAccountNoticesForTests(): void {
 	staleAccountNoticeAt.clear();
+	awsProfileNoticeAt.clear();
 }
-
-/** Tell the user a stored Claude account was removed and the launch used the default one.
- *  Once per task per window: a resume relaunches every pane, and each may carry the same id. */
-const awsProfileNoticeAt = new Map<string, number>();
 
 /** Tell the user a launch ran without its picked AWS profile (once per window per task). */
 export async function notifyBedrockProfileMissing(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
@@ -126,6 +124,8 @@ export async function notifyBedrockProfileMissing(task: Pick<Task, "id" | "proje
 	});
 }
 
+/** Tell the user a stored Claude account was removed and the launch used the default one.
+ *  Once per task per window: a resume relaunches every pane, and each may carry the same id. */
 export async function notifyStaleAccountDropped(task: Pick<Task, "id" | "projectId">, now = Date.now()): Promise<void> {
 	const last = staleAccountNoticeAt.get(task.id);
 	if (last !== undefined && now - last < STALE_ACCOUNT_NOTICE_WINDOW_MS) return;
@@ -212,11 +212,11 @@ export async function applyAgentHooksToCommand(
 	},
 ): Promise<string> {
 	try {
-		const managedPath = CLAUDE_MANAGED_SETTINGS_PATHS.find((p) => command.includes(`--settings ${quoteIfUnsafe(p)}`));
-		const managedArg = managedPath ? `--settings ${quoteIfUnsafe(managedPath)}` : "";
+		const managedArg = `--settings ${quoteIfUnsafe(CLAUDE_STATUSLINE_SETTINGS_PATH)}`;
+		const passesManaged = command.includes(managedArg);
 		const launch = await setupAgentHooks(worktreePath, baseCommand, {
 			...options,
-			...(managedPath ? { claudeSettingsFile: managedPath } : {}),
+			...(passesManaged ? { claudeSettingsFile: CLAUDE_STATUSLINE_SETTINGS_PATH } : {}),
 		});
 		let next = command;
 		if (launch?.claudeSettingsFile) {
@@ -408,8 +408,8 @@ export async function launchTaskPty(
 	let accountPick: agents.ResolvedAgentCommand["accountPick"];
 	let staleAccountDropped = false;
 	let freshLaunchSessionId: string | null = null;
-	let launchBedrockProfile: string | null | undefined;
 	let agentFromDefault = false;
+	let launchBedrockProfile: string | null | undefined;
 
 	try {
 		// Recovery carries the pane's account alongside its session id. Older pane
@@ -418,8 +418,8 @@ export async function launchTaskPty(
 			accountId,
 			accountFromStore: typeof accountId === "string" ? true : undefined,
 			bedrockProfile,
-			projectEnv,
 			protocolMode: taskProtocolMode(project, task),
+			projectEnv,
 		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
@@ -478,8 +478,6 @@ export async function launchTaskPty(
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
-			launchBedrockProfile = resolved.resolvedBedrockProfile;
-			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 			// No pick runs the global default. Name it on the pane only: the task keeps
 			// following the default on its next launch.
 			if (resolved.agent) {
@@ -487,6 +485,8 @@ export async function launchTaskPty(
 				configId = resolved.config?.id ?? null;
 				agentFromDefault = true;
 			}
+			launchBedrockProfile = resolved.resolvedBedrockProfile;
+			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		}
 		// A removed account the pin replaced must not be stored again.
 		if (staleAccountDropped && launchAccountId === accountId) launchAccountId = undefined;
@@ -519,8 +519,8 @@ export async function launchTaskPty(
 					? codexAccountIdForHome(extraEnv.CODEX_HOME) : undefined) ?? launchAccountId,
 				agentFamily: resolvedAgentFamily,
 				sessionOriginCwd: carriedOriginCwd,
-				...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
 				agentFromDefault: agentFromDefault || carriedDefault || undefined,
+				...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
 			};
 			mainPaneEntry = paneEntry;
 			const sessionState = { panes: [paneEntry, ...(resume ? task.sessionState?.panes.slice(1).map((pane) => ({ ...pane, paneId: null })) ?? [] : [])] };
@@ -639,8 +639,8 @@ export async function launchTaskPty(
 			?? allAgents.find((agent) => agent.baseCommand === resolvedBaseCmd);
 		// A path cached for a previous base command must not vouch for the new
 		// one; a path the user set is theirs and always counts.
-		const { binaryName, resolvedPath: binaryPath } = resolveAgentLaunchBinary(matchedAgent?.id ?? launchedAgentId, resolvedBaseCmd, settings);
-		if (!binaryPath) {
+		const { binaryName, resolvedPath: binaryPath, unverifiable } = resolveAgentLaunchBinary(matchedAgent?.id ?? launchedAgentId, resolvedBaseCmd, settings);
+		if (!binaryPath && !unverifiable) {
 			// Only reachable past the launch-boundary check (a resume, or a binary
 			// removed mid-preparation): the pane waits for the install instead.
 			const installCmd = (matchedAgent && agentInstallCommand(matchedAgent, process.platform))
@@ -659,7 +659,7 @@ export async function launchTaskPty(
 			await writeLaunchScript(retryScriptPath, retryScript);
 			tmuxCmd = buildScriptRunnerCommand(retryScriptPath, { shellPath: userShell });
 			log.info("Replaced tmuxCmd with agent-check retry wrapper");
-		} else if (binaryName === "codex") {
+		} else if (binaryPath && binaryName === "codex") {
 			const launched = withResolvedCodexBinary(tmuxCmd, binaryName, binaryPath);
 			if (launched !== tmuxCmd) log.info("Codex launched by its resolved path", { binaryPath });
 			tmuxCmd = launched;

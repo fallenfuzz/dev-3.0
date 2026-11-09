@@ -16,9 +16,9 @@ import { spawn } from "./spawn";
 import { DEV3_HOME } from "./paths";
 import { listDiffSnapshots, readDiffSnapshot, writeDiffSnapshot } from "./diff-snapshots";
 import { projectStorageKey } from "../shared/project-storage-key";
+import { startBranchMissingMessage } from "../shared/preparation-failure";
 import { allProjectWorktreesRoots, taskDirFor } from "../shared/project-storage";
 import { ensureInProjectStorageDirs } from "./in-project-storage";
-import { startBranchMissingMessage } from "../shared/preparation-failure";
 import * as github from "./github";
 
 const log = createLogger("git");

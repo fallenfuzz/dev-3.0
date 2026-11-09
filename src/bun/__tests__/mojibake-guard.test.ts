@@ -26,15 +26,10 @@ const RUN = /(?:[\u00c2\u00c3][\u0080-\u00bf])+/g;
 
 const TEXT_FILE = /\.(ts|tsx|js|jsx|css|html|json|md|yml|yaml|sh|ps1)$/;
 
-/** Tracked text files, minus symlinks: a link's blob is a path, and its target may sit outside the repo. */
 function trackedTextFiles(): string[] {
-	const ls = spawnSync("git", ["ls-files", "-s", "-z"], { cwd: REPO, encoding: "utf8" });
+	const ls = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "utf8" });
 	if (ls.status !== 0) throw new Error(`git ls-files failed: ${ls.stderr}`);
-	return ls.stdout
-		.split("\0")
-		.filter((entry) => entry && !entry.startsWith("120000 "))
-		.map((entry) => entry.slice(entry.indexOf("\t") + 1))
-		.filter((path) => TEXT_FILE.test(path));
+	return ls.stdout.split("\0").filter((path) => path && TEXT_FILE.test(path));
 }
 
 /** Reads a string's code units back as bytes and decodes them as UTF-8, or null. */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Project, Task } from "../../../shared/types";
+import { taskUsesWorktree, type Project, type Task } from "../../../shared/types";
 import { useT } from "../../i18n";
 import { api } from "../../rpc";
 import { OPEN_SETTINGS_SECTION_EVENT } from "../../state";
@@ -18,26 +18,54 @@ type GitCheck = { state: "skipped" } | { state: "checking" } | { state: "done"; 
 /**
  * The task's pending completion offer. An unsolicited one never takes focus or
  * keys, so an offer that lands while the user types cannot steal a keystroke; the
- * user's own Complete/Cancel focuses Keep open instead. It never covers the board. `overlay` floats it over the top-right of a live terminal viewport,
- * so the terminal keeps its size; `inline` is the row under the inspector, used
- * only where no terminal viewport hosts the overlay (a session-ended screen).
+ * user's own Complete/Cancel focuses Keep open instead. It never covers the board.
+ * `overlay` floats it over the top-right of a live terminal viewport, so the
+ * terminal keeps its size; `inline` is the row under the inspector, used only
+ * where no terminal viewport hosts the overlay (a session-ended screen).
  */
-export default function TaskCompletionStrip({ task, project, variant = "inline" }: { task: Task; project: Project; variant?: "inline" | "overlay" }) {
+export default function TaskCompletionStrip({ task, project, variant = "inline", belowZoomBadge = false }: {
+	task: Task; project: Project; variant?: "inline" | "overlay";
+	/** The tmux ZOOMED badge holds the same corner; the overlay drops below it while it shows. */
+	belowZoomBadge?: boolean;
+}) {
 	const offer = useCompletionOffer(task.id);
 	const hosted = useCompletionOverlayHosted(task.id);
 	useEffect(() => registerCompletionStrip(task.id), [task.id]);
 	useEffect(() => (variant === "overlay" ? registerCompletionOverlayHost(task.id) : undefined), [task.id, variant]);
 	if (!offer || (variant === "inline" && hosted)) return null;
-	return <Strip key={offer.id} offer={offer} task={task} project={project} overlay={variant === "overlay"} />;
+	// The user's ask carries a full subject card: inline it would push the whole
+	// task view down, so it floats from a zero-height anchor instead.
+	if (variant === "inline" && offer.kind === "user") {
+		return (
+			<div className="relative z-30 h-0" data-testid="task-completion-strip-float">
+				<Strip key={offer.id} offer={offer} task={task} project={project} overlay belowZoomBadge={false} />
+			</div>
+		);
+	}
+	return <Strip key={offer.id} offer={offer} task={task} project={project} overlay={variant === "overlay"} belowZoomBadge={belowZoomBadge} />;
 }
 
-function Strip({ offer, task, project, overlay }: { offer: CompletionOffer; task: Task; project: Project; overlay: boolean }) {
+function Strip({ offer, task, project, overlay, belowZoomBadge }: { offer: CompletionOffer; task: Task; project: Project; overlay: boolean; belowZoomBadge: boolean }) {
 	const t = useT();
 	// The user's own click asked for this one, so it answers at once and owns focus.
 	const isUser = offer.kind === "user";
 	const armedRef = useRef(isUser);
 	const keepOpenRef = useRef<HTMLButtonElement>(null);
-	useEffect(() => { if (isUser) keepOpenRef.current?.focus(); }, [isUser]);
+	useEffect(() => {
+		if (!isUser) return;
+		const mounted = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		keepOpenRef.current?.focus();
+		// Hand focus back once the answer settles (the ✓ re-enables a frame later),
+		// as the modal's focus trap does — unless the user already moved it.
+		return () => {
+			requestAnimationFrame(() => {
+				const active = document.activeElement;
+				if (active && active !== document.body) return;
+				const target = [offer.returnFocus, mounted].find((el) => el?.isConnected && el !== document.body);
+				target?.focus();
+			});
+		};
+	}, [isUser, offer.returnFocus]);
 	const skipGit = completionSkipsGitCheck(task, project);
 	const [git, setGit] = useState<GitCheck>(skipGit ? { state: "skipped" } : { state: "checking" });
 
@@ -87,7 +115,7 @@ function Strip({ offer, task, project, overlay }: { offer: CompletionOffer; task
 	// The user's own ask keeps the exact footer of the dialog it replaces.
 	const note = isUser
 		? t(task.worktreePath ? "task.warnCompletionFooter" : isCancel ? "task.confirmCancelFooter" : "task.confirmCompleteFooter")
-		: t(task.worktreePath ? "completionStrip.worktreeNote" : "completionStrip.sessionNote");
+		: t(!taskUsesWorktree(project, task) ? "completionStrip.folderNote" : task.worktreePath ? "completionStrip.worktreeNote" : "completionStrip.sessionNote");
 
 	return (
 		<div
@@ -99,7 +127,7 @@ function Strip({ offer, task, project, overlay }: { offer: CompletionOffer; task
 			data-help-id="task.completion-strip"
 			className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 text-sm ${
 				overlay
-					? "absolute top-2 right-3 z-20 w-[min(40rem,calc(100%-1.5rem))] rounded-xl border bg-overlay shadow-lg"
+					? `absolute ${belowZoomBadge ? "top-11" : "top-2"} right-3 z-20 w-[min(40rem,calc(100%-1.5rem))] rounded-xl border bg-overlay shadow-lg`
 					: "flex-shrink-0 border-b bg-raised"
 			} ${isAgent ? "border-accent/40" : isUser ? "border-edge" : "border-success/30"}`}
 		>

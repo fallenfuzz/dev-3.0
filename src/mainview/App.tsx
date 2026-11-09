@@ -835,14 +835,17 @@ function App() {
 	// A completion offer waits on its task's strip. Where no strip is on screen
 	// (another task, the board, immersive fullscreen) the bell and a toast carry it.
 	// The toast carries its own source line and click: the resolver only knows the open project's tasks.
+	// Returns the bell's withdrawal, for once the offer settles — possibly on another client.
 	const announceCompletionOffer = (offer: {
 		taskId: string; projectId: string; taskTitle?: string; subject?: TaskDialogSubject; toastText: string; reason: string;
-	}) => {
-		const { taskId, projectId, taskTitle, subject } = offer;
-		dispatch({ type: "addBell", taskId, reason: offer.reason });
-		if (isCompletionStripMounted(taskId)) return;
+	}): (() => void) => {
+		const { taskId, projectId, taskTitle, subject, reason } = offer;
+		dispatch({ type: "addBell", taskId, reason });
+		const withdrawBell = () => dispatch({ type: "removeBellReason", taskId, reason });
+		if (isCompletionStripMounted(taskId)) return withdrawBell;
 		const context = subject ? [`#${subject.seqLabel}`, subject.projectName, taskTitle].filter(Boolean).join(" · ") : taskTitle;
 		toast.info(offer.toastText, { taskId, context, onClick: () => openTaskFromNotification(taskId, projectId) });
+		return withdrawBell;
 	};
 
 	// Drive document.title from the current route so the browser tab shows the
@@ -1973,7 +1976,7 @@ function App() {
 				taskId: string | null;
 				projectId: string | null;
 				message: string;
-				messageKey?: "kanban.launchAccountRemoved" | "kanban.launchAwsProfileMissing";
+				messageKey?: "kanban.launchAccountRemoved" | "kanban.launchAwsProfileMissing" | "kanban.awsProfilesChangedFromCli";
 				level: "info" | "success" | "error";
 				durationMs?: number;
 				taskSeq?: number;
@@ -2311,60 +2314,67 @@ function App() {
 			// poller before pushing, so this path does not re-reserve. The shared
 			// primitive owns the dialog copy, context card, notify/suppress gate,
 			// cross-client abort, once-guard de-dup, manual opt-out and dismiss.
-			await offerMergeCompletion({
-				context: { taskId, projectId, taskTitle, branchName, subject },
-				t,
-				fingerprint: fingerprint ?? null,
-				shouldPrompt,
-				shouldNotify,
-				onOffered: () => announceCompletionOffer({
-					taskId, projectId, taskTitle, subject,
-					toastText: t("app.completionOfferMergedToast"), reason: t("completionStrip.mergedTitle"),
-				}),
-				onComplete: () => {
-					// Sound first, exactly like `moveTaskToStatus` does for the board
-					// surfaces — this handler is a hand-rolled move and used to leave the
-					// chime to the backend push, which lands after the whole teardown.
-					const playedLocally = playTaskCompletionSound("completed");
-					// If the user is currently inside this task's view, leave it BEFORE
-					// the worktree is destroyed (otherwise TaskTerminal reacts to
-					// ptyDied / missing worktree and shows the "session ended / restart
-					// session" screen). routeAfterTaskClosed sends the user back to their
-					// configured home surface: fullscreen open-mode → the board, split
-					// open-mode → the split task view (task deselected). A Kanban board is
-					// left untouched.
-					const openMode = getTaskOpenMode();
-					const dest = routeAfterTaskClosed(routeRef.current, taskId, openMode);
-					if (dest) navigate(dest);
-					dispatch({
-						type: "updateTask",
-						task: {
-							id: taskId,
-							projectId,
-							status: "completed",
-							worktreePath: null,
-							branchName: null,
-							movedAt: new Date().toISOString(),
-						} as any,
-					});
-					dispatch({ type: "clearBell", taskId });
-					trackEvent("task_moved", { from_status: "review-by-user", to_status: "completed" });
-					api.request.moveTask({
-						taskId,
-						projectId,
-						newStatus: "completed",
-						clientPlayedSound: playedLocally,
-					}).catch(() => {
+			let withdrawBell: (() => void) | undefined;
+			try {
+				await offerMergeCompletion({
+					context: { taskId, projectId, taskTitle, branchName, subject },
+					t,
+					fingerprint: fingerprint ?? null,
+					shouldPrompt,
+					shouldNotify,
+					onOffered: () => {
+						withdrawBell = announceCompletionOffer({
+							taskId, projectId, taskTitle, subject,
+							toastText: t("app.completionOfferMergedToast"), reason: t("completionStrip.mergedTitle"),
+						});
+					},
+					onComplete: () => {
+						// Sound first, exactly like `moveTaskToStatus` does for the board
+						// surfaces — this handler is a hand-rolled move and used to leave the
+						// chime to the backend push, which lands after the whole teardown.
+						const playedLocally = playTaskCompletionSound("completed");
+						// If the user is currently inside this task's view, leave it BEFORE
+						// the worktree is destroyed (otherwise TaskTerminal reacts to
+						// ptyDied / missing worktree and shows the "session ended / restart
+						// session" screen). routeAfterTaskClosed sends the user back to their
+						// configured home surface: fullscreen open-mode → the board, split
+						// open-mode → the split task view (task deselected). A Kanban board is
+						// left untouched.
+						const openMode = getTaskOpenMode();
+						const dest = routeAfterTaskClosed(routeRef.current, taskId, openMode);
+						if (dest) navigate(dest);
+						dispatch({
+							type: "updateTask",
+							task: {
+								id: taskId,
+								projectId,
+								status: "completed",
+								worktreePath: null,
+								branchName: null,
+								movedAt: new Date().toISOString(),
+							} as any,
+						});
+						dispatch({ type: "clearBell", taskId });
+						trackEvent("task_moved", { from_status: "review-by-user", to_status: "completed" });
 						api.request.moveTask({
 							taskId,
 							projectId,
 							newStatus: "completed",
-							force: true,
 							clientPlayedSound: playedLocally,
-						}).catch((err) => console.error("moveTask (branch-merged) failed:", err));
-					});
-				},
-			});
+						}).catch(() => {
+							api.request.moveTask({
+								taskId,
+								projectId,
+								newStatus: "completed",
+								force: true,
+								clientPlayedSound: playedLocally,
+							}).catch((err) => console.error("moveTask (branch-merged) failed:", err));
+						});
+					},
+				});
+			} finally {
+				withdrawBell?.();
+			}
 		}
 		window.addEventListener("rpc:branchMerged", onBranchMerged);
 
@@ -2436,10 +2446,11 @@ function App() {
 				showing.delete(requestId);
 				return;
 			}
+			let withdrawBell: (() => void) | undefined;
 			try {
 				const isNew = !hasCompletionOffer(taskId, "agent");
 				const answer = offerCompletion({ taskId, projectId, kind: "agent", signal: abort.signal });
-				if (isNew) announceCompletionOffer({
+				if (isNew) withdrawBell = announceCompletionOffer({
 					taskId, projectId, taskTitle, subject,
 					toastText: t("app.completionOfferAgentToast"), reason: t("completionStrip.agentTitle"),
 				});
@@ -2450,6 +2461,7 @@ function App() {
 			} catch (err) {
 				console.error("[App] agent completion offer failed:", err);
 			} finally {
+				withdrawBell?.();
 				abort.cleanup();
 				showing.delete(requestId);
 			}
@@ -2498,7 +2510,7 @@ function App() {
 			window.removeEventListener("rpc:agentCompletionRequested", onAgentCompletionRequested);
 			window.removeEventListener(RPC_STATUS_EVENT, onRpcStatus);
 		};
-	}, [dispatch, navigate, t]);
+	}, [dispatch, navigate, t, keepsTaskFolder]);
 
 	// Agent-initiated CANCELLATION and RESET requests. Same blocked-CLI contract as the
 	// completion effect above, deliberately its own dialog: cancelling throws the
@@ -3938,17 +3950,6 @@ function App() {
 				onClose={() => setShortcutsModal((s) => ({ ...s, open: false }))}
 			/>
 			{updatePreviewOpen && <UpdatePopoverSimulatorModal onClose={() => setUpdatePreviewOpen(false)} />}
-			<ConfirmHost onBusyChange={setConfirmBusy} />
-			{!confirmBusy && pendingAgentRequest && ("env" in pendingAgentRequest ? (
-				<SecretRequestModal key={pendingAgentRequest.requestId} request={pendingAgentRequest}
-					onDone={() => setAgentRequests((queue) => queue.filter((request) => request.requestId !== pendingAgentRequest.requestId))} />
-			) : (
-				<AgentLaunchRequestModal
-					key={pendingAgentRequest.requestId}
-					request={pendingAgentRequest}
-					onRespond={(approved, launch) => respondToLaunchRequest(pendingAgentRequest, approved, launch)}
-				/>
-			))}
 			{artifactViewer && (
 				<TaskArtifactViewer
 					taskId={artifactViewer.taskId}
@@ -3999,6 +4000,19 @@ function App() {
 			</>
 			)}
 			{launchLocationIssue && <LaunchLocationGate issue={launchLocationIssue} />}
+			{/* Agents block on these answers, and confirm() declines when no host is
+			    mounted — so the hosts stay up in immersive fullscreen too. */}
+			<ConfirmHost onBusyChange={setConfirmBusy} />
+			{!confirmBusy && pendingAgentRequest && ("env" in pendingAgentRequest ? (
+				<SecretRequestModal key={pendingAgentRequest.requestId} request={pendingAgentRequest}
+					onDone={() => setAgentRequests((queue) => queue.filter((request) => request.requestId !== pendingAgentRequest.requestId))} />
+			) : (
+				<AgentLaunchRequestModal
+					key={pendingAgentRequest.requestId}
+					request={pendingAgentRequest}
+					onRespond={(approved, launch) => respondToLaunchRequest(pendingAgentRequest, approved, launch)}
+				/>
+			))}
 			{/* File preview opens from Cmd/Ctrl+Click in ANY terminal, including the
 			    immersive fullscreen one, so it lives outside the chrome conditional. */}
 			{filePreview && (

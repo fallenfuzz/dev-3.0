@@ -33,6 +33,8 @@ export interface AgentLaunchChoice {
 	variants: LaunchVariant[];
 	/** undefined → the request's `defaultPriority`; otherwise the user's pick. */
 	priority?: TaskPriority;
+	/** Resume requests only: the Claude account to resume on. undefined keeps each pane's saved one; null is the system login. */
+	resumeAccountId?: string | null;
 }
 
 /** A one-shot deferred launch persisted on a `todo` task. See {@link Task.scheduledLaunch}. */
@@ -96,11 +98,6 @@ export interface TaskDialogSubject {
 }
 
 /**
- * An agent asking the user for permission to complete its own task — the payload
- * of the `agentCompletionRequested` push, and of `listPendingCompletionRequests`
- * for a renderer that connected after the push went out.
- */
-/**
  * A merge completion offer the user has not answered, as `listPendingMergeOffers`
  * returns it to a renderer that connected after the one-shot `branchMerged` push.
  */
@@ -113,6 +110,11 @@ export interface PendingMergeOffer {
 	subject: TaskDialogSubject;
 }
 
+/**
+ * An agent asking the user for permission to complete its own task — the payload
+ * of the `agentCompletionRequested` push, and of `listPendingCompletionRequests`
+ * for a renderer that connected after the push went out.
+ */
 export interface AgentCompletionRequest {
 	requestId: string;
 	taskId: string;
@@ -151,8 +153,9 @@ export interface AgentCancellationRequest {
 export interface AgentLaunchRequest {
 	/** CLI +Agent request: one pane, not a task/variant launch. */
 	spawn?: { choice: LaunchVariant; prompt?: string; handoff: boolean };
-	/** `dev3 agent resume`: restore these saved panes exactly — the dialog offers no agent choice. */
-	resume?: { panes: ResumeDialogPane[] };
+	/** `dev3 agent resume`: restore these saved panes. The dialog offers no agent choice, only the
+	 *  Claude account; `accountId` is the current pick (undefined keeps each pane's saved account). */
+	resume?: { panes: ResumeDialogPane[]; accountId?: string | null };
 	/** `dev3 task hibernate` / `dev3 task wake --shell`: act on the task's session — the dialog offers no agent choice. */
 	sessionAction?: AgentSessionAction;
 	/**

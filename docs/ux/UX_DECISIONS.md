@@ -436,9 +436,7 @@ Folded: one toast anatomy, origin resolved once at emit by `ToastHost` — owned
 - **Status:** Implemented. Evidence: `GlobalHeader.tsx`, `ux-architecture.yaml` global_header.allowed.
 ## 2026-07-03 — Inline help: one registry, three layers (Tooltip / HelpSpot / help mode)
 
-- **Rule:** Help content lives in a `src/mainview/help.ts` registry (declare-as-data, like `keymap.ts`/`tips.ts`); a fast `Tooltip` primitive progressively replaces native `title=` on icon controls; a ghost (i) `HelpSpot` → rich read-only `HelpCard` is allowed only in header-bearing sections (≤1 each); dense headerless zones (inspector quickbars, task card) are covered by a screen-wide help-mode overlay (`⇧⌘/`, Help menu, palette, kebab on narrow) via `data-help-id` — never by permanent icons. Bible §5.4.
-- **Why:** Native `title=` (~227 usages) is slow and control-scoped, and per-section (i) icons everywhere would be toolbar-button-creep wearing a help hat. Rejected: (i) in every zone (creep); help-mode-only (no ambient discoverability); tooltip-migration-only (explains buttons, not sections).
-- **Status:** Observed. Evidence: bible §5.4, yaml `surfaces.inline_help`, `help.ts`, `Tooltip.tsx`, `HelpSpot.tsx`, `HelpCard.tsx`, `HelpOverlay.tsx`.
+Folded: one `help.ts` registry, Tooltip, header-only HelpSpot, help-mode overlay for headerless zones - owned by `PRODUCT_UX_BIBLE.md` §5.4 and yaml `surfaces.inline_help`.
 
 ## 2026-07-03 — Close Pane: two-step visual pane picker (no new button; destructive gets spatial friction)
 
@@ -737,6 +735,10 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 ## 2026-10-16 — A hibernated rail trades ✓ for ✕ Cancel
 - **Rule/why:** a parked task is one the user walked away from; complete stays in Move to. Rejected ✓+✕ (weak) and the hover-only header ✕. yaml `lifecycle`.
 
+## 2026-10-02 - Git workflow is a project property, switched on the Board tab
+- **Rule:** `Project.gitWorkflow=false` hides the git domain but keeps the real folder and config. Board-tab ToggleSwitch beside Privacy, refused while a task is live; AddProject's folder pane has the same switch (a non-git folder with it on gets an inline offer); no dashboard badge. 2026-10-22: CreateTask's Working folder radiogroup (Project folder / Own worktree, To Do only) gives one task `ownWorktree`: its own Git bar, no local merge, columns unchanged.
+- **Why:** project-record state like `sensitive`. Rejected: a per-task coding toggle (columns are board-level), an inspector worktree toggle, a third AddProject kind, a "No git" badge. Records: `per-project-git-workflow-switch`, `own-worktree-in-a-gitless-project`.
+
 ## 2026-10-31 — Epics: a global object with no destination of its own
 - **Rule:** chip above the card title (click filters `epic:`), an Epic row in the detail metadata grid, optional New Task field, management in Settings → Tasks & Board → Epics; a cross-board footnote reuses the lineage notice. Bible §3.
 - **Why:** a nav item or board header button would spend a budget for an occasional job. `decisions/2026/10/31/global-epics.md`.
@@ -744,3 +746,7 @@ Folded: screens, not URL routes (the `Route` union in `state.ts`) — owned by `
 ## 2026-11-05 — Task/PR references render inline where agent text appears
 - **Rule:** `<seq:N>` / `<pr:N>` become inline links in description, notes, overview, traffic detail, transcripts and the terminal; toasts and clickable list rows stay plain. Bible §10.
 - **Why:** one token beats four prose forms and `#N` collides with GitHub. Rejected chips under the text (loses the sentence). `decisions/2026/11/05/canonical-task-pr-reference-tokens.md`.
+
+## 2026-11-07 — Start after lives in Launch later, shown in the timer slot
+- **Rule:** "After task" is a third mode of the launch modal's Launch later panel (task picker + completed/merged, agent from the variant row); the card chip shares the deferred-timer slot with a Start now / Remove popover, and the To Do context menu opens that panel ("Start after…") or removes it. Yaml `deferred_timer_chip`.
+- **Why:** it is a deferred launch like Start in. The context menu only opens the same panel, never a second picker; rejected an × on the chip (the card strip is full). `decisions/2026/11/05/start-after-conditional-launch.md`.

@@ -73,7 +73,7 @@ describe("buildClaudeHooks", () => {
 		expect(cmd).not.toContain("review-by-user");
 	});
 
-	it("PostToolUse goes through the post-tool adapter, which moves the status and drains held messages", () => {
+	it("PostToolUse resumes work after AskUserQuestion receives an answer", () => {
 		const hooks = buildClaudeHooks();
 
 		expect(hooks).toHaveProperty("PostToolUse");
@@ -255,8 +255,10 @@ describe("buildClaudeHooks", () => {
 	it("working hooks keep the move guard before the offline fallback", () => {
 		const hooks = buildClaudeHooks();
 
-		const cmd = hooks.PreToolUse[0].hooks[0].command;
-		expect(cmd).toContain("--status in-progress --if-status-not review-by-ai || [ $? -eq 2 ]");
+		for (const event of ["PreToolUse", "PostToolUse"] as const) {
+			const cmd = hooks[event][0].hooks[0].command;
+			expect(cmd).toContain("--status in-progress --if-status-not review-by-ai || [ $? -eq 2 ]");
+		}
 	});
 
 	it("PermissionRequest hook also tolerates app-offline", () => {
@@ -345,7 +347,7 @@ describe("mergeClaudeHooks", () => {
 
 		expect(hooks.PostToolUse).toHaveLength(2);
 		expect(hooks.PostToolUse[0].hooks[0].command).toBe("echo post");
-		expect(hooks.PostToolUse[1].hooks[0].command).toContain("hook claude-post-tool");
+		expect(hooks.PostToolUse[1].hooks[0].command).toContain("--status in-progress");
 		expect(hooks.PreToolUse).toHaveLength(1);
 		expect(hooks.PermissionRequest).toHaveLength(1);
 		expect(hooks.Stop).toHaveLength(2);
@@ -628,7 +630,8 @@ describe("writeClaudeHooks", () => {
 
 		expect(hooks.PreToolUse[0].hooks[0].command).toContain("--if-status-not review-by-ai");
 		expect(hooks.PreToolUse[0].hooks[0].command).not.toContain("review-by-user");
-		expect(hooks.PostToolUse[0].hooks[0].command).toContain("hook claude-post-tool");
+		expect(hooks.PostToolUse[0].hooks[0].command).toContain("--if-status-not review-by-ai");
+		expect(hooks.PostToolUse[0].hooks[0].command).not.toContain("review-by-user");
 		expect(hooks.UserPromptSubmit[0].hooks[0].command).toContain("hook claude-prompt");
 		expect(hooks.UserPromptSubmit[0].hooks[0].command).not.toContain("review-by-user");
 	});
@@ -1656,21 +1659,6 @@ describe("Claude hooks outside a dev3-owned folder", () => {
 	});
 });
 
-describe("isDev3OwnedFolder", () => {
-	const env = { DEV3_HOME: "/home/u/.dev3.0" };
-
-	it("owns home worktrees, ops folders and in-project task dirs", () => {
-		expect(isDev3OwnedFolder("/home/u/.dev3.0/worktrees/p/abcd1234/worktree", env)).toBe(true);
-		expect(isDev3OwnedFolder("/home/u/.dev3.0/ops/board/abcd1234/work", env)).toBe(true);
-		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees/abcd1234/worktree", env)).toBe(true);
-	});
-
-	it("does not own a project folder or its in-project root", () => {
-		expect(isDev3OwnedFolder("/home/u/acme", env)).toBe(false);
-		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees", env)).toBe(false);
-	});
-});
-
 describe("ensureParentClaudeMdExcluded", () => {
 	it("adds the main checkout's memory files once and keeps the user's own entries", () => {
 		const first = ensureParentClaudeMdExcluded({ claudeMdExcludes: ["/x/CLAUDE.md"] }, "/home/u/acme");
@@ -1714,5 +1702,21 @@ describe("writeClaudeHooks in an in-project worktree", () => {
 		writeFileSync(join(project, ".claude", ".claude.json"), "{}");
 		writeClaudeHooks(worktree);
 		expect(excludes()).toEqual([`${project}/CLAUDE.md`, `${project}/CLAUDE.local.md`]);
+	});
+});
+
+describe("isDev3OwnedFolder", () => {
+	const env = { DEV3_HOME: "/home/u/.dev3.0" };
+
+	it("owns home worktrees, ops folders and in-project task dirs", () => {
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/worktrees/p/abcd1234/worktree", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/ops/board/abcd1234/work", env)).toBe(true);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees/abcd1234/worktree", env)).toBe(true);
+	});
+
+	it("does not own a project folder, the worktrees root or the in-project root", () => {
+		expect(isDev3OwnedFolder("/home/u/acme", env)).toBe(false);
+		expect(isDev3OwnedFolder("/home/u/.dev3.0/worktrees", env)).toBe(false);
+		expect(isDev3OwnedFolder("/home/u/acme/.dev3/worktrees", env)).toBe(false);
 	});
 });

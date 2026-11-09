@@ -8,7 +8,7 @@ import type {
 	Task,
 	TaskPRStatusCache,
 } from "../../shared/types";
-import { buildTaskDialogSubject, getTaskTitle, taskUsesWorktree, resolveTaskCompareBaseBranch, taskCompletesManually } from "../../shared/types";
+import { buildTaskDialogSubject, getTaskTitle, resolveTaskCompareBaseBranch, taskCompletesManually, taskUsesWorktree } from "../../shared/types";
 import { savedPrMergedFromBranch } from "../../shared/task-pull-requests";
 import * as data from "../data";
 import * as git from "../git";

@@ -8,6 +8,7 @@ import type { AgentCheckResult, AgentModelAvailability, CodingAgent, ConfigSourc
 import { SHELL_FALLBACK_ORDER, type ShellFlavor, shellCandidatePaths } from "../../shared/posix-shell";
 import { getUserShell, resolveUserShell, setShellPreference } from "../shell-env";
 import * as data from "../data";
+import * as git from "../git";
 import * as agents from "../agents";
 import { resolveModelAvailability } from "../agent-available-models";
 import { getAgentDirLiveModels } from "../agent-dir-live-models";
@@ -17,7 +18,6 @@ import * as github from "../github";
 import * as updater from "../updater";
 import * as rosetta from "../rosetta";
 import * as repoConfig from "../repo-config";
-import * as git from "../git";
 import * as pty from "../pty-server";
 import { tmux } from "../tmux";
 import { setTmuxPaneDimming, setTmuxPaneTitles, writeTmuxConfigs } from "../tmux/config";
@@ -43,7 +43,7 @@ import { agentBinaryPathOverride, brokenCustomPath, enforcedCustomBinaryPaths, i
 import { agentAlternativeInstallCommand, agentInstallCommand } from "../../shared/agent-install";
 import { harnessReadinessFrom } from "../harness-readiness";
 import { validateEnvMap } from "../../shared/env-text";
-import { GIT_WORKFLOW_NOT_A_REPO_ERROR, STORAGE_TRACKED_CONFLICT_ERROR, gitWorkflowSwitchBlocker, hasGitWorkflow, storageSwitchBlocker, normalizeProjectName, PROJECT_NAME_MAX_LENGTH, repoConfigEnabled } from "../../shared/types";
+import { GIT_WORKFLOW_NOT_A_REPO_ERROR, gitWorkflowSwitchBlocker, hasGitWorkflow, normalizeProjectName, PROJECT_NAME_MAX_LENGTH, repoConfigEnabled, STORAGE_TRACKED_CONFLICT_ERROR, storageSwitchBlocker } from "../../shared/types";
 
 import { writeShellInit } from "../shell-init";
 import { previewShellPrompt } from "../shell-prompt-preview";

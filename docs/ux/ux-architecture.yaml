@@ -73,10 +73,10 @@ ux_architecture:
       owns: ["task", "custom_column", "label", "project_settings"]
       common_actions: ["add", "clone", "open_settings", "reorder", "remove", "pull_main"]
       kind:   # observed: Project.kind discriminator
-        git: "Repo-backed project; tasks get a git worktree + branch (default when kind absent)."
-        virtual: "An 'Operations' board: tasks run agent + shell in a managed or chosen folder; no worktree/branch/PR, review columns hidden; an attached repo (Task.attachedRepo) adds read-only diff+review. Stored in ~/.dev3.0/virtual-projects.json. One built-in board hosts the Quick-shell operation (⇧⌘`)."
-        git_workflow_off: "Not a kind: gitWorkflow=false (Board tab, refused while a task runs, or AddProject). Tasks share the folder; review columns, variants hidden. Task.ownWorktree: CreateTask radiogroup."
-      evidence: ["src/shared/types.ts (Project.kind, hasGitWorkflow)", "src/mainview/components/ActivityOverview.tsx", "src/mainview/components/AddProjectModal.tsx", "src/bun/data.ts (addVirtualProject)", "decisions/2026/06/24/virtual-operations-board-identity.md"]
+        git: "Repo-backed; tasks get a worktree + branch (default)."
+        virtual: "Operations board: agent + shell in a managed/chosen folder; no worktree/branch/PR or review columns; Task.attachedRepo adds read-only diff+review. In ~/.dev3.0/virtual-projects.json; built-in board hosts Quick-shell (⇧⌘`)."
+        git_workflow_off: "Not a kind: gitWorkflow=false. Shared folder unless Task.ownWorktree; review columns, variants off."
+      evidence: ["src/shared/types.ts", "src/mainview/components/ActivityOverview.tsx", "src/mainview/components/AddProjectModal.tsx", "src/bun/data.ts (addVirtualProject)", "decisions/2026/06/24/virtual-operations-board-identity.md"]
     extension:
       label: "Extension"
       observed: true
@@ -269,7 +269,7 @@ ux_architecture:
       forbidden: ["durable_global_configuration"]
       evidence: ["board-views/kanban/KanbanView.tsx", "board-views/kanban/KanbanColumn.tsx"]
     board_view_table:
-      purpose: "builtin:table — every board task as sortable virtualised rows."
+      purpose: "builtin:table — every board task as sortable virtualised rows; spare width at the row end shows the task overview (read-only, not a column)."
       allowed: ["header_sort", "inline_status_priority_labels", "context_menu", "open_task", "column_toggles_in_view_options"]
       forbidden: ["bulk_actions", "durable_global_configuration"]
       evidence: ["board-views/table/"]
@@ -297,9 +297,9 @@ ux_architecture:
         actions: "A reserved strip at the very bottom of the bar (min-height 36px) so signals can never squeeze actions out. Max 4 visible, rest to the context menu."
       rail_label: "Short uppercase status form, max 8 upright letters (status.rail.* keys per locale; custom columns clipped to 8 chars). Upright means writing-mode: vertical-rl + text-orientation: upright — never rotated 90deg. The full column label lives in the rail's accessible name and tooltip."
       age_stamps: "TaskAgeStamps, shared with the sidebar row: muted created age + freshness-tinted last status change. Why: decisions/2026/11/07/task-age-stamps-freshness.md."
-      deferred_timer_chip: "One shared countdown-chip slot (popover with cancel / run-now, 30s re-render) for deferred agent interactions. Content depends on state and they NEVER coexist: scheduledLaunch or launchAfter (\"Starts after #N\", refused while a scheduledLaunch exists) on a `todo` card, scheduledMessages on a live-agent card. launchAfter is set in the launch modal's Launch later panel (mode After task); the To Do card's context menu opens that panel (Start after…) or removes the condition. Do not add a second timer badge class."
+      deferred_timer_chip: "One shared countdown-chip slot (popover: cancel / run-now, 30s re-render) for deferred agent work; states NEVER coexist: scheduledLaunch or launchAfter (\"Starts after #N\") on a `todo` card, scheduledMessages on a live-agent card. launchAfter: Launch later > After task or the card menu. No 2nd timer badge."
       variant_dots: "Max 3 status dots (self — ring-highlighted — + lowest-variantIndex siblings; NO +N counter), always a clickable button opening SiblingPopover — the group overview: per-variant title, agent/config, status, current-variant marker; dead variants greyed, non-navigable. Same pattern on sidebar cards; do not fork the mechanic per surface."
-      dev_server_control: "The card's ONE split control (open | stop), in the actions strip, leading. Renders only for an active, non-hibernated task with a worktree and a resolved devScript. Left half opens the lowest dev port; right half stops the server (risk INK, never a danger fill, no confirmation). Port is the label; extra ports, uptime and any port conflict live in the hover popover. State colours follow the 2026-06-29 dev-server token decision: green = running only, spinner = transient start, neutral dashed = stopped, danger ink = port conflict. On narrow it sheds to the icon-only open target and Stop moves to the context menu. No second split control may be added to the card."
+      dev_server_control: "The card's ONE split control (open | stop), in the actions strip, leading. Renders only for an active, non-hibernated task with a worktree and a resolved devScript. Left half opens the lowest dev port; right half stops the server (risk INK, never a danger fill, no confirmation — a dev server loses no data and restart is one click). Port is the label; extra ports, uptime and any port conflict live in the hover popover. State colours follow the 2026-06-29 dev-server token decision: green = running only, spinner = transient start, neutral dashed = stopped, danger ink = port conflict. On narrow it sheds to the icon-only open target and Stop moves to the context menu. No second split control may be added to the card."
       visible_budget:
         max_inline_actions: 4   # reconciled with zone_model.actions (was 2, which shipped code already exceeded)
         overflow_to: "context_menu"
@@ -326,10 +326,11 @@ ux_architecture:
       purpose: "Inspector for the active task: git actions, dev server, scripts, notes, pane controls, open-in."
       allowed: ["object_action", "git_action", "dev_server_action", "metadata", "notes_preview", "secondary_edit"]
       forbidden: ["global_destination", "cross_project_action", "uncapped_note_list"]
-      note: "Densest surface (34K): the main complexity-budget risk."
+      note: "This panel is the densest surface (34K). It is the main complexity-budget risk in the app."
       evidence: ["src/mainview/components/TaskInfoPanel.tsx", "src/mainview/components/task-info-panel/*"]
       completion_strip:
-        rule: "Merge, agent or own Complete: one card at the live terminal's top-right (else inspector row). No modal, no resize. Unsolicited: no focus; own: Keep open focused. Gated on unsaved work. Off task: toast, marker; own: anchored confirm."
+        rule: "A completion ask (merge, agent, or the user's own Complete on the open task) floats as one card over the top-right of the live terminal (row under the inspector if none); never a modal or a toast with an action, never resizes the terminal. Unsolicited: no focus, 600 ms click arming; Complete gated on the unsaved-work check. Elsewhere: bell, a toast that opens the task, card and sidebar marker."
+        actions: { complete: "destructive", keep_open: "secondary", manual_completion: "ghost (merge)", settings: "icon (merge)" }
         evidence: ["src/mainview/completion-offers.ts", "src/mainview/components/task-info-panel/TaskCompletionStrip.tsx"]
       bar_model:
         layout: "2x2"  # two rows; each row split into left|right by a flex-1 spacer

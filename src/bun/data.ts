@@ -980,9 +980,9 @@ export async function addTask(
 			...(extras?.titleEditedByUser ? { titleEditedByUser: true } : {}),
 			...(extras?.opsWorkDir ? { opsWorkDir: extras.opsWorkDir } : {}),
 			...(extras?.ownWorktree ? { ownWorktree: true } : {}),
-			...(storesInProject(project) ? { taskDirLocation: "project" as const } : {}),
 			...(extras?.attachedRepo ? { attachedRepo: extras.attachedRepo } : {}),
 			...(extras?.opsWorktree ? { opsWorktree: true } : {}),
+			...(storesInProject(project) ? { taskDirLocation: "project" as const } : {}),
 			...(extras?.notes && extras.notes.length > 0 ? { notes: extras.notes } : {}),
 			...(extras?.overview ? { overview: extras.overview } : {}),
 			...(extras?.userOverview ? { userOverview: extras.userOverview } : {}),
@@ -1272,8 +1272,8 @@ export async function moveTaskToProject(
 				attachedRepo: null,
 				opsWorktree: undefined,
 				scheduledLaunch: null,
-				taskDirLocation: storesInProject(targetProject) ? "project" : undefined,
 				launchAfter: null,
+				taskDirLocation: storesInProject(targetProject) ? "project" : undefined,
 				updatedAt: now,
 			};
 
