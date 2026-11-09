@@ -33,7 +33,7 @@ import { timeAgo } from "../utils/timeAgo";
 import { useIsControlHidden } from "../hooks/useIsControlHidden";
 import { CAROUSEL_MAX_WIDTH } from "./MobileBoardCarousel";
 import DashboardCoordinatorRows from "./DashboardCoordinatorRows";
-import ReadyToCompleteSection from "./ReadyToCompleteSection";
+import ReadyToCompleteCard from "./ReadyToCompleteCard";
 import { coordinatorCandidates } from "../utils/coordinatorFinder";
 
 interface ActivityOverviewProps {
@@ -41,7 +41,7 @@ interface ActivityOverviewProps {
 	dispatch: Dispatch<AppAction>;
 	navigate: (route: Route) => void;
 	bellCounts: Map<string, number>;
-	/** Live CPU/RSS per task, so the ready-to-complete list can show what each waiting task holds. */
+	/** Live CPU/RSS per task (short-id keyed), for the memory the waiting tasks hold. */
 	resourceUsage?: Map<string, ResourceUsage>;
 	onRemoveProject?: (projectId: string) => void | Promise<void>;
 	onOpenAddProject?: (spaceIds?: string[]) => void;
@@ -915,12 +915,7 @@ function ActivityOverview({ projects, dispatch, navigate, bellCounts, resourceUs
 					</svg>
 				</button>
 				)}
-				<ReadyToCompleteSection
-					projects={projects}
-					tasksByProject={tasksByProject}
-					usage={resourceUsage ?? EMPTY_USAGE}
-					onOpenTask={(task, project) => navigate({ screen: "project", projectId: project.id, activeTaskId: task.id })}
-				/>
+				<ReadyToCompleteCard usage={resourceUsage ?? EMPTY_USAGE} navigate={navigate} />
 				{/* Stacks below `md`: the count plus both actions do not fit one phone
 				    row, and letting them overflow pushed `Add project` off-screen. */}
 				<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-4">

@@ -329,9 +329,9 @@ ux_architecture:
       note: "This panel is the densest surface (34K). It is the main complexity-budget risk in the app."
       evidence: ["src/mainview/components/TaskInfoPanel.tsx", "src/mainview/components/task-info-panel/*"]
       completion_strip:
-        rule: "Merge and agent asks follow completionOfferStyle: 'dialog' (default) asks through confirm() (CompletionOfferDialogHost); 'inline' floats a one-line bar at the bottom-right of the agent's pane (the whole terminal if one pane or zoomed; row under the inspector if none), at most two rows tall, buttons fixed while the note opens upward on hover/focus, never resizes the terminal. The user's own Complete on the open task is a full card at the top-right, under the inspector ✓. Unsolicited on the task: no focus, 600 ms click arming. Complete is always gated on the unsaved-work check. Card and sidebar marker in both styles; inline adds a toast that opens the task. Every waiting merge/agent ask across projects is also a row in the dashboard's 'Ready to complete' section (hidden when empty): Keep open, Complete (same check), and a confirmed 'Complete all' that keeps open any task that would lose work."
+        rule: "Merge/agent completion asks follow completionOfferStyle: 'dialog' (default) = confirm() via CompletionOfferDialogHost; 'inline' = a one-line bar, bottom-right of the agent's pane (whole terminal if one pane or zoomed; row under the inspector if no terminal), max two rows, buttons fixed while the note opens upward, never resizes the terminal. No focus, 600 ms arming, Complete gated on the unsaved-work check. Card + sidebar marker in both. The user's own Complete is not an offer (popover.own_click_confirm)."
         actions: { complete: "destructive", keep_open: "secondary", manual_completion: "ghost (merge)", settings: "icon (merge)" }
-        evidence: ["src/mainview/completion-offers.ts", "src/mainview/components/task-info-panel/TaskCompletionStrip.tsx", "src/mainview/components/CompletionOfferDialogHost.tsx", "src/mainview/components/ReadyToCompleteSection.tsx"]
+        evidence: ["src/mainview/completion-offers.ts", "src/mainview/components/task-info-panel/TaskCompletionStrip.tsx", "src/mainview/components/CompletionOfferDialogHost.tsx"]
       bar_model:
         layout: "2x2"  # two rows; each row split into left|right by a flex-1 spacer
         rationale: "Wide desktop width is used instead of stacking more rows; the panel has a hard height budget (MAX_RATIO=0.33). One bar = one action domain. Panel chrome is not a bar."
@@ -435,6 +435,7 @@ ux_architecture:
         cleared_by: ["reset_review button", "delete_comment"]
         rule: "Clipboard is transport, not store. Leaving the surface does NOT discard the review — no discard-on-close guard."
       evidence: ["src/mainview/components/TaskDiffViewer.tsx", "task-inline-diff.ts", "TaskDiffViewer.css"]
+    completions_screen: { purpose: "Every task waiting for a merge/agent completion answer, across projects", allowed: [count, held_memory, search, project_scope, sort, select_and_complete (one confirm, per-task loss check), keep_open, complete, open_task], forbidden: [configuration, header_button], entry: "dashboard card (only while an ask waits), palette view-completions", evidence: ["ReadyToCompleteScreen.tsx", "decisions/2026/11/09/ready-to-complete-screen.md"] }
     sessions_screen: { purpose: "Agent sessions table; per-source rows (Claude now)", allowed: [kpis, sort, search, project_scope, account_scope, row_details, open_task], forbidden: [mutation, configuration], entry: "strip link, palette, View menu, kebab" }
     modal:
       purpose: "Focused create/confirm flows."
@@ -442,14 +443,15 @@ ux_architecture:
       forbidden: ["primary_navigation", "persistent_dashboard"]
       observed: ["CreateTaskModal", "AddProjectModal", "TaskDetailModal", "LaunchVariantsModal", "SpawnAgentModal", "AgentLaunchRequestModal", "SecretRequestModal", "GitPullErrorModal", "FolderPickerModal", "AccountLoginModal"]
       agent_request:
-        rule: "Agent requests share an accent border, AI badge and autofocused decline. Severity follows the action: destructive only for destroying state. Input beyond yes/no uses its own modal; confirm() stays boolean. Requests queue, one dialog at a time. Completion requests follow the completionOfferStyle setting: this modal by default, or inline on their task (task_info_panel.completion_strip)."
-        identity: ["accent border", "AI agent request badge", "autofocused decline (modal only)"]
+        rule: "Agent requests share an accent border, AI badge and autofocused decline. Severity follows the action: destructive only for destroying state. Input beyond yes/no uses its own modal; confirm() stays boolean. Requests queue, one dialog at a time. Completion requests follow completionOfferStyle (task_info_panel.completion_strip)."
+        identity: ["accent border", "AI agent request badge", "autofocused decline"]
         severity_by_action: { destroys_state: "destructive", creates_state: "primary" }
-        observed: ["agentLaunchRequested → AgentLaunchRequestModal (primary)", "secretRequested → SecretRequestModal (primary; explicit approval only, masked input, no output)"]
+        observed: ["agentCompletionRequested → confirm() (destructive)", "agentLaunchRequested → AgentLaunchRequestModal (primary)", "secretRequested → SecretRequestModal (primary; explicit approval only, masked input, no output)"]
       evidence: ["src/mainview/components/*Modal.tsx", "src/mainview/confirm.tsx"]
     popover:
       purpose: "Lightweight contextual preview/hint anchored to an element."
       allowed: ["preview", "hint", "quick_action", "remediation", "own_click_confirm"]
+      own_click_confirm: "The user's own one-click ✓/Cancel on a card, sidebar or Activity row: confirm({ anchor }) beside the button, no dim layer. Merge, agent and anchorless asks stay the modal."
       forbidden: ["multi_step_flow", "primary_destination"]
       observed: ["SiblingPopover", "TerminalPreviewPopover", "StuckPreparationPopover"]
       evidence: ["src/mainview/components/*Popover.tsx"]

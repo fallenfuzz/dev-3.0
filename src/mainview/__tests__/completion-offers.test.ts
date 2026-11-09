@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { _resetCompletionOffersForTests, isCompletionOfferOnScreen, offerCompletion, pickCompletionOffer, registerCompletionStrip, registerWaitingOffersList, useCompletionOffers } from "../completion-offers";
+import { _resetCompletionOffersForTests, offerCompletion, offerSettledSignal, pickCompletionOffer, useCompletionOffers } from "../completion-offers";
 import { renderHook, act } from "@testing-library/react";
 
 afterEach(() => _resetCompletionOffersForTests());
@@ -60,38 +60,18 @@ describe("completion offers", () => {
 		expect(pickCompletionOffer(result.current, "t2")?.kind).toBe("merge");
 		expect(pickCompletionOffer(result.current, "t3")).toBeNull();
 	});
-
-	it("shows the user's own ask first, and markers skip it", () => {
-		void offerCompletion({ taskId: "t1", projectId: "p1", kind: "agent" });
-		void offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "completed" });
-		const { result } = renderHook(() => useCompletionOffers());
-		expect(pickCompletionOffer(result.current, "t1")?.kind).toBe("user");
-		expect(pickCompletionOffer(result.current, "t1", true)?.kind).toBe("agent");
-	});
-
-	it("withdraws the user's own ask when the last task view closes, and keeps unsolicited ones", async () => {
-		const first = registerCompletionStrip("t1");
-		const second = registerCompletionStrip("t1");
-		const user = offerCompletion({ taskId: "t1", projectId: "p1", kind: "user", status: "cancelled" });
-		void offerCompletion({ taskId: "t1", projectId: "p1", kind: "merge" });
-		const { result } = renderHook(() => useCompletionOffers());
-		act(() => first());
-		expect(result.current).toHaveLength(2);
-		act(() => second());
-		await expect(user).resolves.toBe(false);
-		expect(result.current.map((o) => o.kind)).toEqual(["merge"]);
-	});
 });
 
-describe("isCompletionOfferOnScreen", () => {
-	it("is true while the task's strip or the dashboard's waiting list is mounted", () => {
-		expect(isCompletionOfferOnScreen("t1")).toBe(false);
-		const unregisterStrip = registerCompletionStrip("t1");
-		expect(isCompletionOfferOnScreen("t1")).toBe(true);
-		unregisterStrip();
-		const unregisterList = registerWaitingOffersList();
-		expect(isCompletionOfferOnScreen("t2")).toBe(true);
-		unregisterList();
-		expect(isCompletionOfferOnScreen("t2")).toBe(false);
+describe("offerSettledSignal", () => {
+	it("aborts once the offer is answered, so a modal asking it can close", async () => {
+		let answer!: Promise<unknown>;
+		act(() => { answer = offerCompletion({ taskId: "t1", projectId: "p1", kind: "agent" }); });
+		const { result } = renderHook(() => useCompletionOffers());
+		const signal = offerSettledSignal(result.current[0]!.id);
+		expect(signal.aborted).toBe(false);
+		act(() => result.current[0]!.answer(true));
+		await answer;
+		expect(signal.aborted).toBe(true);
+		expect(offerSettledSignal("gone").aborted).toBe(true);
 	});
 });

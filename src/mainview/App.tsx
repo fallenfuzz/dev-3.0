@@ -53,6 +53,7 @@ import { setToastSuppressed, taskToastContext, ToastHost, toast, type ToastEntry
 import { toastClearanceRef } from "./toast-clearance";
 import { getCompletionOfferStyle, hasCompletionOffer, isCompletionOfferOnScreen, offerCompletion, setCompletionOfferStyle } from "./completion-offers";
 import CompletionOfferDialogHost from "./components/CompletionOfferDialogHost";
+import ReadyToCompleteScreen from "./components/ReadyToCompleteScreen";
 import { agentMessageToast, type AgentMessageDetail, type AgentToastEnd } from "./agent-message-toast";
 import { showStaleAgentPathToast, type StaleAgentPathDetail } from "./stale-agent-path-toast";
 import { useSpaces } from "./useSpaces";
@@ -833,8 +834,8 @@ function App() {
 		routeRef.current = state.route;
 	}, [state.route]);
 
-	// A completion offer asks in the dialog, or waits on its task's strip and the
-	// dashboard list. Where neither is on screen the bell and a toast carry it.
+	// A completion offer asks in the dialog, or waits on its task's strip. Where no
+	// strip is on screen (another task, the board, immersive fullscreen) the bell and a toast carry it.
 	// The toast carries its own source line and click: the resolver only knows the open project's tasks.
 	// Returns the bell's withdrawal, for once the offer settles — possibly on another client.
 	const announceCompletionOffer = (offer: {
@@ -3294,6 +3295,7 @@ function App() {
 			case "settings": return t("settings.screenTitle");
 			case "changelog": return t("changelog.screenTitle");
 			case "stats": return t("stats.title");
+			case "completions": return t("completions.title");
 			case "sessions": return t("sessions.title");
 			case "agent-traffic": return t("traffic.label");
 			default: return "";
@@ -4168,6 +4170,14 @@ function App() {
 						navigate={navigate}
 						goBack={() => dispatch({ type: "goBack" })}
 						canGoBack={state.historyIndex > 0}
+					/>
+				);
+			case "completions":
+				return (
+					<ReadyToCompleteScreen
+						projects={state.projects}
+						usage={state.taskResourceUsage}
+						navigate={navigate}
 					/>
 				);
 			case "sessions":
