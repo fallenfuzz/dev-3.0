@@ -419,6 +419,7 @@ export async function launchTaskPty(
 			accountFromStore: typeof accountId === "string" ? true : undefined,
 			bedrockProfile,
 			protocolMode: taskProtocolMode(project, task),
+			projectEnv,
 		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
@@ -487,6 +488,8 @@ export async function launchTaskPty(
 			launchBedrockProfile = resolved.resolvedBedrockProfile;
 			if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		}
+		// A removed account the pin replaced must not be stored again.
+		if (staleAccountDropped && launchAccountId === accountId) launchAccountId = undefined;
 		if (staleAccountDropped) await notifyStaleAccountDropped(task);
 
 		if (opts?.codexHome) extraEnv.CODEX_HOME = opts.codexHome;
@@ -875,6 +878,7 @@ export async function launchColumnAgent(
 		// the default, which routes when the default is Auto.
 		const resolved = await agents.resolveCommandForAgent(agentId, configId, ctx, {
 			skipSystemPrompt: true,
+			projectEnv,
 			autoRouting: await autoRoutingContext(project, reservationKey, projectEnv),
 			// The column's own pick, else the AWS account the task itself runs on.
 			bedrockProfile: agentConfig.bedrockProfile !== undefined ? agentConfig.bedrockProfile : task.bedrockProfile,

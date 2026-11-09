@@ -44,7 +44,7 @@ export default function ResumeAccountPicker({
 	panes: readonly ResumablePane[];
 	agents: readonly CodingAgent[];
 	value: string | null | undefined;
-	onChange: (accountId: string | null) => void;
+	onChange: (accountId: string | null | undefined) => void;
 	projectId?: string;
 }) {
 	const t = useT();
