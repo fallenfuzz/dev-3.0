@@ -8744,6 +8744,7 @@ describe("handlers.getAppVersion", () => {
 			channel: "beta",
 			buildChannel: "dev",
 			leanProtocolForcedByEnv: process.env.DEV3_LEAN_PROTOCOL === "1",
+			projectClaudeFolderSupported: process.platform === "darwin",
 		});
 	});
 });
@@ -12653,20 +12654,6 @@ describe("resumeTask gives every Claude pane its own conversation (#1950)", () =
 		expect([MAIN, NEWEST]).not.toContain(options[2].sessionId);
 	});
 
-	it("resumes every pane of a shared-folder task with the shared-folder protocol", async () => {
-		seedStore([NEWEST, MAIN]);
-		(data.loadProjects as any).mockResolvedValue([makeProject({ gitWorkflow: false })]);
-		(data.getTask as any).mockResolvedValue(makeTask({
-			worktreePath: WORKTREE,
-			sessionState: { panes: [claudePane(MAIN), claudePane(NEWEST), claudePane("never-prompted")] },
-		}));
-
-		await handlers.resumeTask({ taskId: "task-1" });
-
-		const modes = (agents.resolveCommandForAgent as any).mock.calls.map((call: any[]) => call[3]?.protocolMode);
-		expect(modes).toEqual(["shared-folder", "shared-folder", "shared-folder"]);
-	});
-
 	it("exports the project env in a resumed split pane, which would otherwise inherit the main pane's", async () => {
 		seedStore([NEWEST, MAIN]);
 		(data.loadProjects as any).mockResolvedValue([makeProject({ env: { ANTHROPIC_BASE_URL: "https://project.example" } } as never)]);
@@ -12686,6 +12673,20 @@ describe("resumeTask gives every Claude pane its own conversation (#1950)", () =
 
 		const pane = write.mock.calls.find(([path]) => String(path) === dev3TaskTempPath("task-1", "resume-pane-1.sh"));
 		expect(String(pane?.[1])).toContain("https://project.example");
+	});
+
+	it("resumes every pane of a shared-folder task with the shared-folder protocol", async () => {
+		seedStore([NEWEST, MAIN]);
+		(data.loadProjects as any).mockResolvedValue([makeProject({ gitWorkflow: false })]);
+		(data.getTask as any).mockResolvedValue(makeTask({
+			worktreePath: WORKTREE,
+			sessionState: { panes: [claudePane(MAIN), claudePane(NEWEST), claudePane("never-prompted")] },
+		}));
+
+		await handlers.resumeTask({ taskId: "task-1" });
+
+		const modes = (agents.resolveCommandForAgent as any).mock.calls.map((call: any[]) => call[3]?.protocolMode);
+		expect(modes).toEqual(["shared-folder", "shared-folder", "shared-folder"]);
 	});
 
 	it("reports a pane that started over as `fresh-session`, and resumes it for the CLI too", async () => {

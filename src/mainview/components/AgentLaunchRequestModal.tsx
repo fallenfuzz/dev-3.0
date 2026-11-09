@@ -181,7 +181,7 @@ function AgentLaunchRequestModal({ request, onRespond }: AgentLaunchRequestModal
 
 	// A resume offers one choice: the Claude account. undefined keeps each pane's saved one.
 	const [resumeAccount, setResumeAccount] = useState<string | null | undefined>(request.resume?.accountId);
-	function updateResumeAccount(accountId: string | null | undefined) {
+	function updateResumeAccount(accountId: string | null) {
 		setResumeAccount(accountId);
 		reportChoice({ variants: [], resumeAccountId: accountId });
 	}

@@ -711,8 +711,7 @@ describe("FilePreviewModal audio and video", () => {
 		expect(getFileMediaUrl).not.toHaveBeenCalled();
 		expect(screen.queryByTestId("file-preview-video")).not.toBeInTheDocument();
 		// One line of text is a notice, not a stage: no screen-wide dialog, no Expand.
-		// The shrink lands one commit after the message, via the child's onUnplayable effect.
-		await waitFor(() => expect(screen.getByRole("dialog")).toHaveAttribute("data-size", "notice"));
+		expect(screen.getByRole("dialog")).toHaveAttribute("data-size", "notice");
 		expect(screen.queryByTestId("file-preview-expand")).not.toBeInTheDocument();
 		expect(screen.getByText("Download")).toBeInTheDocument();
 	});

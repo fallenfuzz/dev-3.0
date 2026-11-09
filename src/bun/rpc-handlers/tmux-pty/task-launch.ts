@@ -417,9 +417,9 @@ export async function launchTaskPty(
 		const cmdOptions: agents.CommandOptions = {
 			accountId,
 			accountFromStore: typeof accountId === "string" ? true : undefined,
+			projectEnv,
 			bedrockProfile,
 			protocolMode: taskProtocolMode(project, task),
-			projectEnv,
 		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {

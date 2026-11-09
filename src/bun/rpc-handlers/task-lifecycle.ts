@@ -2,7 +2,7 @@ import type { ReviewedPullRequest, AgentCancellationRequest, AgentCompletionRequ
 import { rememberVariantBedrockProfile } from "../bedrock-profile-pref";
 import type { TerminalBackendIdentity } from "../../shared/terminal-backend-identity";
 import { isTaskSoundEnabled } from "../../shared/task-sound-statuses";
-import { ACTIVE_STATUSES, BUILTIN_OPS_BOARD_NAME, DRAFT_TASK_ACTIVATION_ERROR, hasGitWorkflow, LAUNCH_AFTER_UNTIL, normalizeTaskType, OWN_WORKTREE_NOT_A_REPO_ERROR, reviewTaskTitle, taskUsesWorktree } from "../../shared/types";
+import { ACTIVE_STATUSES, BUILTIN_OPS_BOARD_NAME, DRAFT_TASK_ACTIVATION_ERROR, LAUNCH_AFTER_UNTIL, hasGitWorkflow, normalizeTaskType, OWN_WORKTREE_NOT_A_REPO_ERROR, reviewTaskTitle, taskUsesWorktree } from "../../shared/types";
 import { armLaunchAfter, clearLaunchAfter, startLaunchAfterNow } from "../launch-after";
 import * as data from "../data";
 import { loadTaskLineage } from "../task-lineage";
