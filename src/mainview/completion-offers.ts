@@ -33,6 +33,8 @@ export interface CompletionOffer {
 	staysOnTask?: boolean;
 	/** When this client raised it (epoch ms), so a waiting list can show how long it has waited. */
 	offeredAt: number;
+	/** The task has no terminal view to hold a bar (To Do): the offer asks in the dialog in either style. */
+	noTaskView?: boolean;
 	answer: (answer: CompletionOfferAnswer) => void;
 }
 
@@ -44,6 +46,7 @@ export interface OfferCompletionParams {
 	reason?: ApprovalReason;
 	dialogInfo?: ConfirmOptions["info"];
 	keepsFolder?: boolean;
+	noTaskView?: boolean;
 	/** Aborting withdraws the offer and resolves `false` (answered on another client). */
 	signal?: AbortSignal;
 }
@@ -98,6 +101,7 @@ export function offerCompletion(params: OfferCompletionParams): Promise<Completi
 			...(params.dialogInfo ? { dialogInfo: params.dialogInfo } : {}),
 			...(params.keepsFolder !== undefined ? { keepsFolder: params.keepsFolder } : {}),
 			offeredAt: Date.now(),
+			...(params.noTaskView ? { noTaskView: true } : {}),
 			answer: settle,
 		}];
 		emit();
@@ -120,8 +124,12 @@ export function getCompletionOfferStyle(): CompletionOfferStyle {
 	return style;
 }
 
-/** Whether the offer asks in the app-level dialog rather than on its task. */
-export function offerAsksInDialog(offer: Pick<CompletionOffer, "staysOnTask">, current: CompletionOfferStyle = style): boolean {
+/**
+ * Whether the offer asks in the app-level dialog rather than on its task. An offer
+ * for a task with no terminal view always does: the bar would have nowhere to show.
+ */
+export function offerAsksInDialog(offer: Pick<CompletionOffer, "staysOnTask" | "noTaskView">, current: CompletionOfferStyle = style): boolean {
+	if (offer.noTaskView) return true;
 	return current === "dialog" && !offer.staysOnTask;
 }
 
