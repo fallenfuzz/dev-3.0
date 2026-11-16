@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Task, UnsavedWork } from "../../../../shared/types";
 import { I18nProvider } from "../../../i18n";
@@ -7,8 +7,8 @@ vi.mock("../../../rpc", () => ({ api: { request: { getUnsavedWork: vi.fn(), task
 vi.mock("../../../toast", () => ({ toast: { error: vi.fn() } }));
 
 import { api } from "../../../rpc";
-import { _resetCompletionOffersForTests, isCompletionOfferOnScreen, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
-import TaskCompletionStrip, { COMPLETION_STRIP_ARM_MS, agentPanePlacement } from "../TaskCompletionStrip";
+import { _resetCompletionOffersForTests, isCompletionStripMounted, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
+import TaskCompletionStrip, { COMPLETION_BAR_HOVER_OPEN_MS, COMPLETION_STRIP_ARM_MS, agentPanePlacement } from "../TaskCompletionStrip";
 import type { TaskPaneInfo, TaskPaneState } from "../../../../shared/task-panes";
 import { clearanceNodes } from "../../../toast-clearance";
 import { PANE_STATE_EVENT } from "../../../pane-state-bus";
@@ -145,9 +145,9 @@ describe("TaskCompletionStrip", () => {
 
 	it("registers itself so callers know the offer is on screen", async () => {
 		const { unmount } = renderStrip();
-		expect(isCompletionOfferOnScreen("t1")).toBe(true);
+		expect(isCompletionStripMounted("t1")).toBe(true);
 		unmount();
-		expect(isCompletionOfferOnScreen("t1")).toBe(false);
+		expect(isCompletionStripMounted("t1")).toBe(false);
 	});
 
 	it("floats over a live terminal and the inline row stands down, so nothing resizes", async () => {
@@ -217,6 +217,45 @@ describe("TaskCompletionStrip", () => {
 		expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Complete anyway");
 		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
 		await expect(answer).resolves.toBe(true);
+	});
+
+	it("opens the could-not-check note on the first Complete click when the check fails, and completes on the second", async () => {
+		vi.mocked(api.request.getUnsavedWork).mockRejectedValue(new Error("git gone"));
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		const { answer } = await offer("merge");
+		await arm();
+		const details = screen.getByTestId("task-completion-strip-details");
+		expect(within(details).getByText("Could not check the branch for unsaved work.")).toBeInTheDocument();
+		expect(details.className).toContain("hidden");
+		let settled = false;
+		void answer.then(() => { settled = true; });
+		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
+		expect(settled).toBe(false);
+		expect(screen.getByTestId("task-completion-strip")).toBeInTheDocument();
+		expect(details.className).not.toContain("hidden");
+		expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Complete anyway");
+		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
+		await expect(answer).resolves.toBe(true);
+	});
+
+	it("opens the bar's panel only after the pointer rests on it, so a passing pointer never covers the input row", async () => {
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		await offer("merge");
+		const strip = screen.getByTestId("task-completion-strip");
+		const details = screen.getByTestId("task-completion-strip-details");
+		fireEvent.mouseEnter(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS - 50); });
+		fireEvent.mouseLeave(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS); });
+		expect(details.className).toContain("hidden");
+		fireEvent.mouseEnter(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS - 1); });
+		expect(details.className).toContain("hidden");
+		await act(async () => { vi.advanceTimersByTime(1); });
+		expect(details.className).not.toContain("hidden");
+		expect(screen.queryByTestId("task-completion-strip-more")).toBeNull();
+		fireEvent.mouseLeave(strip);
+		expect(details.className).toContain("hidden");
 	});
 
 	it("completes a clean task from the bar in one click and cues the hover panel", async () => {
@@ -306,6 +345,10 @@ describe("agentPanePlacement", () => {
 		({ paneId: `%${index}`, index, label: "", active: false, zoomed: false, rect: { x, y: 0, width, height: 1 } });
 	const state = (panes: TaskPaneInfo[], agentPaneId: string | null, zoomedPaneId: string | null = null) =>
 		({ backend: "tmux", panes, activePaneId: null, zoomedPaneId, agentPaneId, layout: null, layoutPreset: null, capabilities: [] }) as TaskPaneState;
+	const panes = [pane(1, 0, 0.5), pane(2, 0.5, 0.5)];
+	const publish = (next: TaskPaneState) => act(() => {
+		window.dispatchEvent(new CustomEvent(PANE_STATE_EVENT, { detail: { taskId: "t1", state: next } }));
+	});
 
 	it("frames the agent's pane wherever it sits in a split task", () => {
 		expect(agentPanePlacement(state([pane(1, 0, 0.6), pane(2, 0.6, 0.4)], "%2"))).toEqual({ left: "60%", right: "0%", top: "0%", bottom: "0%" });
@@ -315,18 +358,23 @@ describe("agentPanePlacement", () => {
 	it("uses the whole terminal for one pane, the agent zoomed, a gone or unknown agent pane, or no state yet", () => {
 		expect(agentPanePlacement(null)).toBe("terminal");
 		expect(agentPanePlacement(state([pane(1, 0, 1)], "%1"))).toBe("terminal");
-		expect(agentPanePlacement(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%2", "%2"))).toBe("terminal");
-		expect(agentPanePlacement(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], null))).toBe("terminal");
-		expect(agentPanePlacement({ ...state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], null), agentPaneId: undefined })).toBe("terminal");
+		expect(agentPanePlacement(state(panes, "%2", "%2"))).toBe("terminal");
+		expect(agentPanePlacement(state(panes, null))).toBe("terminal");
+	});
+
+	it("frames the first pane when the backend reports no agentPaneId", () => {
+		const legacy = (zoomedPaneId: string | null = null) => ({ ...state([pane(2, 0.6, 0.4), pane(1, 0, 0.6)], null, zoomedPaneId), agentPaneId: undefined });
+		expect(agentPanePlacement(legacy())).toEqual({ left: "0%", right: "40%", top: "0%", bottom: "0%" });
+		expect(agentPanePlacement(legacy("%1"))).toBe("terminal");
 	});
 
 	it("is hidden while another pane is zoomed over the agent, or the agent sits in another window", () => {
-		expect(agentPanePlacement(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%1", "%2"))).toBe("hidden");
-		expect(agentPanePlacement(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%9"))).toBe("hidden");
+		expect(agentPanePlacement(state(panes, "%1", "%2"))).toBe("hidden");
+		expect(agentPanePlacement(state(panes, "%9"))).toBe("hidden");
 	});
 
-	it("keeps the bar over the terminal while the agent is out of view, and Show agent reveals its pane", async () => {
-		vi.mocked(api.request.taskPaneAction).mockResolvedValue(state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%1"));
+	it("keeps the bar over the terminal while the agent is out of view, and one Show agent click reveals its pane once", async () => {
+		vi.mocked(api.request.taskPaneAction).mockResolvedValue(state(panes, "%1"));
 		render(
 			<I18nProvider>
 				<div data-testid="inspector"><TaskCompletionStrip task={worktreeTask} project={project} /></div>
@@ -334,10 +382,6 @@ describe("agentPanePlacement", () => {
 			</I18nProvider>,
 		);
 		await offer("agent");
-		const publish = (next: TaskPaneState) => act(() => {
-			window.dispatchEvent(new CustomEvent(PANE_STATE_EVENT, { detail: { taskId: "t1", state: next } }));
-		});
-		const panes = [pane(1, 0, 0.5), pane(2, 0.5, 0.5)];
 		publish(state(panes, "%1", "%2"));
 		// Zooming never moves the offer into the inspector, so nothing shifts and the terminal keeps its size.
 		expect(screen.getByTestId("inspector")).toBeEmptyDOMElement();
@@ -345,6 +389,7 @@ describe("agentPanePlacement", () => {
 		expect(screen.getByTestId("viewport")).toContainElement(bar);
 		expect(screen.getByTestId("task-completion-strip-pane")).toHaveStyle({ inset: "0" });
 		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Show agent" })); });
+		expect(api.request.taskPaneAction).toHaveBeenCalledTimes(1);
 		expect(api.request.taskPaneAction).toHaveBeenCalledWith({ taskId: "t1", action: { kind: "reveal", paneId: "%1" } });
 		publish(state(panes, "%1"));
 		expect(screen.getByTestId("task-completion-strip")).toBe(bar);
@@ -352,13 +397,19 @@ describe("agentPanePlacement", () => {
 		expect(screen.queryByRole("button", { name: "Show agent" })).not.toBeInTheDocument();
 	});
 
+	it("offers Show agent while the agent's pane sits in another tmux window", async () => {
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		await offer("agent");
+		publish(state(panes, "%7"));
+		expect(screen.getByTestId("task-completion-strip-pane")).toHaveStyle({ inset: "0" });
+		expect(screen.getByRole("button", { name: "Show agent" })).toBeInTheDocument();
+	});
+
 	it("says so in a toast when Show agent fails", async () => {
 		vi.mocked(api.request.taskPaneAction).mockRejectedValue(new Error("pane %1 not found"));
 		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
 		await offer("agent");
-		act(() => {
-			window.dispatchEvent(new CustomEvent(PANE_STATE_EVENT, { detail: { taskId: "t1", state: state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%1", "%2") } }));
-		});
+		publish(state(panes, "%1", "%2"));
 		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Show agent" })); });
 		expect(toast.error).toHaveBeenCalledWith("Could not show the agent: pane %1 not found", { taskId: "t1" });
 	});
@@ -366,9 +417,7 @@ describe("agentPanePlacement", () => {
 	it("offers no Show agent on a merge offer or while the agent is in view", async () => {
 		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
 		await offer("merge");
-		act(() => {
-			window.dispatchEvent(new CustomEvent(PANE_STATE_EVENT, { detail: { taskId: "t1", state: state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%1", "%2") } }));
-		});
+		publish(state(panes, "%1", "%2"));
 		expect(screen.queryByRole("button", { name: "Show agent" })).not.toBeInTheDocument();
 	});
 });

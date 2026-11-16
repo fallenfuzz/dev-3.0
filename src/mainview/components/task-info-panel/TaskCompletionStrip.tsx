@@ -17,6 +17,9 @@ import type { TaskPaneState } from "../../../shared/task-panes";
 /** Pointer clicks count only after this long, so a click aimed at what was there before cannot answer. */
 export const COMPLETION_STRIP_ARM_MS = 600;
 
+/** The bar's panel opens only after the pointer rests this long, so a pointer passing the corner never covers the input row. */
+export const COMPLETION_BAR_HOVER_OPEN_MS = 150;
+
 type GitCheck = { state: "skipped" } | { state: "checking" } | { state: "done"; warning: string | null } | { state: "unknown" };
 
 /**
@@ -38,8 +41,7 @@ export default function TaskCompletionStrip({ task, project, variant = "inline" 
 	if (!offer || (variant === "inline" && hosted)) return null;
 	if (variant === "inline") return <Strip key={offer.id} offer={offer} task={task} project={project} bar={false} />;
 	const placement = agentPanePlacement(paneState);
-	const agentPaneId = paneState?.agentPaneId;
-	const revealPaneId = placement === "hidden" && offer.kind === "agent" ? agentPaneId ?? undefined : undefined;
+	const revealPaneId = placement === "hidden" && offer.kind === "agent" ? paneState?.agentPaneId ?? undefined : undefined;
 	// Always the same wrapper, so splitting, zooming or switching windows never remounts the bar.
 	const insets = typeof placement === "string" ? { inset: 0 } : placement;
 	return (
@@ -57,8 +59,11 @@ export default function TaskCompletionStrip({ task, project, variant = "inline" 
  * offers to show the agent.
  */
 export function agentPanePlacement(state: TaskPaneState | null): CSSProperties | "terminal" | "hidden" {
-	if (!state?.agentPaneId) return "terminal";
-	const agent = state.panes.find((pane) => pane.paneId === state.agentPaneId);
+	if (!state) return "terminal";
+	// A backend that does not report agentPaneId yet: the agent runs in the first pane.
+	const agentPaneId = state.agentPaneId === undefined ? [...state.panes].sort((a, b) => a.index - b.index)[0]?.paneId : state.agentPaneId;
+	if (!agentPaneId) return "terminal";
+	const agent = state.panes.find((pane) => pane.paneId === agentPaneId);
 	if (!agent) return "hidden";
 	if (state.zoomedPaneId) return state.zoomedPaneId === agent.paneId ? "terminal" : "hidden";
 	if (state.panes.length < 2) return "terminal";
@@ -85,15 +90,23 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 	offer: CompletionOffer; task: Task; project: Project; bar: boolean; revealPaneId?: string;
 }) {
 	const t = useT();
-	const onReveal = revealPaneId ? () => {
+	const reveal = () => {
+		if (!revealPaneId) return;
 		runPaneAction(task.id, { kind: "reveal", paneId: revealPaneId }).catch((err) => {
 			toast.error(t("completionStrip.showAgentFailed", { error: err instanceof Error ? err.message : String(err) }), { taskId: task.id });
 		});
-	} : undefined;
+	};
 	const armedRef = useRef(false);
 	const skipGit = completionSkipsGitCheck(task, project);
 	const [git, setGit] = useState<GitCheck>(skipGit ? { state: "skipped" } : { state: "checking" });
 	const [lossAcknowledged, setLossAcknowledged] = useState(false);
+	const [hoverOpen, setHoverOpen] = useState(false);
+	const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const cancelHoverOpen = () => {
+		if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+		hoverTimerRef.current = null;
+	};
+	useEffect(() => cancelHoverOpen, []);
 
 	// Filled after mount: a live region announces a change, not the text it was born with.
 	const [announcement, setAnnouncement] = useState("");
@@ -134,8 +147,9 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 		if (!liveRef.current) return;
 		setGit(next);
 		const fresh = next.state === "done" ? next.warning : null;
-		// The bar sits where a stray click lands, so losing work there always takes a second click.
-		if (fresh && (fresh !== shown || (bar && !lossAcknowledged))) {
+		// The bar sits where a stray click lands, so losing work there always takes a second click,
+		// and so does a check that failed: its note waits in the panel.
+		if ((fresh && (fresh !== shown || (bar && !lossAcknowledged))) || (bar && next.state === "unknown" && !lossAcknowledged)) {
 			setLossAcknowledged(true);
 			return;
 		}
@@ -206,7 +220,7 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 					checking ? "bg-fg-muted/40 cursor-not-allowed" : "bg-danger-fill hover:bg-danger-fill-hover"
 				}`}
 			>
-				{t(bar && lossAcknowledged && warning ? "completionStrip.completeAnyway" : "app.branchMergedComplete")}
+				{t(bar && lossAcknowledged && (warning || git.state === "unknown") ? "completionStrip.completeAnyway" : "app.branchMergedComplete")}
 			</button>
 		</>
 	);
@@ -216,8 +230,9 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 		// settings link wait in the panel, so no locale truncates the title.
 		const barTitle = isAgent ? title : t("completionStrip.mergedBarTitle");
 		const alert = warning ? "text-danger" : git.state === "unknown" ? "text-warning-strong" : null;
-		// Opened at rest it would cover the input row, so the warning opens on the first Complete click.
-		const detailsOpen = lossAcknowledged && !!warning;
+		// Opened at rest it would cover the input row, so the warning or the failed-check note opens on the first Complete click.
+		const detailsOpen = lossAcknowledged && (!!warning || git.state === "unknown");
+		const panelOpen = detailsOpen || hoverOpen;
 		return (
 			<div
 				role="region"
@@ -225,12 +240,17 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 				data-testid="task-completion-strip"
 				data-help-id="task.completion-strip"
 				data-layout="terminal"
+				onMouseEnter={() => {
+					cancelHoverOpen();
+					hoverTimerRef.current = setTimeout(() => setHoverOpen(true), COMPLETION_BAR_HOVER_OPEN_MS);
+				}}
+				onMouseLeave={() => { cancelHoverOpen(); setHoverOpen(false); }}
 				// On a wide terminal the corner is far from the prompt, so the bar stops within 72rem of the pane's left edge.
 				className={`group absolute bottom-1 right-[max(0.75rem,calc(100%-72rem))] z-20 flex max-w-[min(40rem,calc(100%-1.5rem))] flex-col items-end text-sm px-2 py-1 rounded-xl border bg-overlay shadow-lg ${border}`}
 			>
 				{liveRegion}
-				{/* Opens upward on hover or focus, and after a Complete click that would lose work; a pointer without hover always sees it. */}
-				<div className={`w-full items-end gap-3 pb-1.5 ${detailsOpen ? "flex" : "hidden group-hover:flex group-focus-within:flex [@media(hover:none)]:flex"}`} data-testid="task-completion-strip-details">
+				{/* Opens upward after a short hover, on focus, and after a Complete click that would lose work; a pointer without hover always sees it. */}
+				<div className={`w-full items-end gap-3 pb-1.5 ${panelOpen ? "flex" : "hidden group-focus-within:flex [@media(hover:none)]:flex"}`} data-testid="task-completion-strip-details">
 					<div className="flex min-w-0 flex-1 flex-col gap-1">
 						{noteLine}
 						{reasonLine}
@@ -243,9 +263,9 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 					<div className="flex min-w-0 flex-1 items-center gap-2">
 						{mark}
 						<div className="truncate font-medium text-fg" title={title}>{barTitle}</div>
-						{!detailsOpen && (
+						{!panelOpen && (
 							// The cue that more opens above on hover.
-							<svg aria-hidden data-testid="task-completion-strip-more" viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-fg-3 group-hover:hidden group-focus-within:hidden [@media(hover:none)]:hidden" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5 6 4.5 9 7.5" /></svg>
+							<svg aria-hidden data-testid="task-completion-strip-more" viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-fg-3 group-focus-within:hidden [@media(hover:none)]:hidden" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5 6 4.5 9 7.5" /></svg>
 						)}
 						{alert && (
 							<span className={`shrink-0 font-semibold ${alert}`} title={warning ?? t("task.branchStateUnknown")} data-testid="task-completion-strip-alert">
@@ -255,10 +275,10 @@ function Strip({ offer, task, project, bar, revealPaneId }: {
 						)}
 					</div>
 					<div className="flex shrink-0 items-center gap-2">
-						{onReveal && (
+						{revealPaneId && (
 							<button
 								type="button"
-								onClick={onReveal}
+								onClick={reveal}
 								aria-label={t("completionStrip.showAgent")}
 								title={t("completionStrip.showAgentHint")}
 								data-testid="task-completion-strip-show-agent"
