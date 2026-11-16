@@ -2,7 +2,7 @@ import InterfaceOnboarding from "./components/InterfaceOnboarding";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAppState, canGoBack, routeTaskId, routeShowsTaskWorkspace, projectIdForRoute, routeSpaceId, routeAfterTaskClosed, taskOpenRoute, getTaskOpenMode, OPEN_SETTINGS_SECTION_EVENT, type OpenSettingsSectionDetail, type NavigateOptions, type Route } from "./state";
 import { lastProjectForSpace, rememberProjectForSpace } from "./utils/spaceBoardMemory";
-import { digitTargets, mixedEntryId, type MixedEntry } from "./utils/digitOrder";
+import { digitTargets, isDigitTargetOnScreen, mixedEntryId, type MixedEntry } from "./utils/digitOrder";
 import { useMixedPending, withPendingMixedOrder } from "./mixed-order-store";
 import { api, isElectrobun, getRpcConnectionState } from "./rpc";
 import { ignoreStartupReadFailure, startupRead } from "./startup-read";
@@ -28,7 +28,7 @@ import { setShortcutOverrides } from "./keymap-store";
 import { syncTerminalBidiFromGlobalSettings } from "./terminal-bidi/flag";
 import { adjustZoom, applyZoom, mobileDensityForRoute, setMobileDensity, ZOOM_STEP, DEFAULT_ZOOM } from "./zoom";
 import { useViewport } from "./hooks/useViewport";
-import { useMobile } from "./hooks/useMobile";
+import { useMobileBrowser } from "./hooks/useMobileBrowser";
 import { useAndroidBackGuard } from "./hooks/useAndroidBackGuard";
 import GlobalHeader from "./components/GlobalHeader";
 import AppMenuBar from "./components/AppMenuBar";
@@ -199,6 +199,11 @@ function findVisibleSearchInput(): HTMLElement | null {
 	return null;
 }
 
+// An opaque band touching the top edge makes Safari 26+ extend a solid colour under its
+// Liquid Glass status bar instead of blurring the header. Nothing here scrolls: `sticky`
+// only satisfies WebKit's fixed/sticky heuristic. It also carries the status-bar inset.
+const MOBILE_BROWSER_TOP_BAND = "sticky top-0 z-30 w-full shrink-0 bg-base pt-[env(safe-area-inset-top,0px)]";
+
 function App() {
 	const [state, dispatch] = useAppState();
 	const handleToastOverflow = useCallback((entry: ToastEntry) => {
@@ -258,11 +263,11 @@ function App() {
 	// Android hardware/gesture Back drives in-app navigation in mobile remote
 	// mode: close the topmost layer → route back → double-back-to-exit toast.
 	// Reads history depth through a ref so the popstate handler stays stable.
-	const isMobileDevice = useMobile();
+	const mobileBrowser = useMobileBrowser();
 	const historyIndexRef = useRef(state.historyIndex);
 	historyIndexRef.current = state.historyIndex;
 	useAndroidBackGuard({
-		enabled: isMobileDevice && !isElectrobun,
+		enabled: mobileBrowser,
 		routeBack: () => {
 			if (historyIndexRef.current <= 0) return false;
 			dispatch({ type: "goBack" });
@@ -1238,11 +1243,12 @@ function App() {
 		(n: number, view: "project" | "task" | "preserve") => {
 			const target = digitTargetList[n - 1];
 			if (!target) return; // out of range — no-op
+			if (view === "preserve" && isDigitTargetOnScreen(target, state.route)) return;
 			const { projectId, spaceId } = digitTargetBoard(target);
 			if (view === "preserve") navigateToProject(projectId, spaceId);
 			else goToProjectView(projectId, view, spaceId);
 		},
-		[digitTargetList, digitTargetBoard, navigateToProject, goToProjectView],
+		[digitTargetList, digitTargetBoard, navigateToProject, goToProjectView, state.route],
 	);
 	const armGoToVerb = useCallback(() => {
 		goToModeRef.current = { stage: "verb" };
@@ -1720,13 +1726,14 @@ function App() {
 				//  - "fullscreen" users have no task to show full-page after a switch, so
 				//                 dropping them into a split they never use is jarring —
 				//                 land on the Kanban board instead (pre-#619 behavior).
+				// The board already on screen is a no-op, so the selection stays; a
+				// full-page task is not a board, so its own digit still leads to one.
 				// Built-in Operations board is reached via Cmd+0, not Cmd+1..9.
-				const target = digitTargetList[parseInt(e.key, 10) - 1];
-				if (target) {
+				const n = parseInt(e.key, 10);
+				if (digitTargetList[n - 1]) {
 					e.preventDefault();
 					e.stopPropagation();
-					const { projectId, spaceId } = digitTargetBoard(target);
-					navigateToProject(projectId, spaceId);
+					goToProjectIndex(n, "preserve");
 				}
 			} else if (matchesShortcut(e, "task-hints")) {
 				// Vimium-style hint navigation. Works on any screen that has hint
@@ -1891,8 +1898,8 @@ function App() {
 		return () => window.removeEventListener("rpc:taskUpdated", onTaskUpdated);
 	}, [dispatch]);
 
-	// A task left a project's board (moved to another project). Scoped to the
-	// source project so a window viewing the TARGET keeps the just-added card.
+	// A task left a project's board (deleted, or moved to another project). Scoped to
+	// the source project so a window viewing a move's TARGET keeps the just-added card.
 	useEffect(() => {
 		function onTaskRemoved(e: Event) {
 			const { taskId, projectId } = (e as CustomEvent).detail;
@@ -3329,12 +3336,14 @@ function App() {
 
 	return (
 		<div className="h-full w-full flex flex-col">
-			{/* Reserves the iOS status-bar inset (viewport-fit=cover); zero height everywhere else. */}
-			<div aria-hidden className="shrink-0 bg-base" style={{ height: "env(safe-area-inset-top, 0px)" }} />
+			{/* Elsewhere this reserves the iOS status-bar inset (viewport-fit=cover); zero height on desktop. */}
+			{!mobileBrowser && <div aria-hidden className="shrink-0 bg-base" style={{ height: "env(safe-area-inset-top, 0px)" }} />}
 			{terminalImmersiveVisible ? (
-				<TerminalImmersiveChrome onExit={() => setTerminalImmersiveActive(false)} />
+				<div className={mobileBrowser ? MOBILE_BROWSER_TOP_BAND : undefined}>
+					<TerminalImmersiveChrome onExit={() => setTerminalImmersiveActive(false)} />
+				</div>
 			) : (
-				<header ref={toastClearanceRef} aria-label={t("nav.appHeader")}>
+				<header ref={toastClearanceRef} aria-label={t("nav.appHeader")} className={mobileBrowser ? MOBILE_BROWSER_TOP_BAND : undefined}>
 					{!isElectrobun && <AppMenuBar context={menuContext} onAction={handleMenuBarAction} />}
 					<GlobalHeader
 						route={route}

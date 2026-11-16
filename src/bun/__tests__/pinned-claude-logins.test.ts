@@ -14,6 +14,7 @@ vi.mock("../agent-accounts", () => ({
 		planLabel: null,
 		accountId: null,
 	})),
+	claudeAccountForConfigDir: vi.fn(() => null),
 }));
 
 import * as data from "../data";
@@ -47,6 +48,7 @@ describe("listPinnedClaudeLogins", () => {
 				configDir: "/work/shared/.claude",
 				identity: expect.objectContaining({ email: "shared@example.com" }),
 				projectNames: ["a", "b"],
+				accountId: null,
 			},
 		]);
 	});
