@@ -4,6 +4,7 @@ import type { Project, Task, UnsavedWork } from "../../../../shared/types";
 import { I18nProvider } from "../../../i18n";
 
 vi.mock("../../../rpc", () => ({ api: { request: { getUnsavedWork: vi.fn(), taskPaneAction: vi.fn() } } }));
+vi.mock("../../../toast", () => ({ toast: { error: vi.fn() } }));
 
 import { api } from "../../../rpc";
 import { _resetCompletionOffersForTests, isCompletionOfferOnScreen, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
@@ -11,6 +12,7 @@ import TaskCompletionStrip, { COMPLETION_STRIP_ARM_MS, agentPanePlacement } from
 import type { TaskPaneInfo, TaskPaneState } from "../../../../shared/task-panes";
 import { clearanceNodes } from "../../../toast-clearance";
 import { PANE_STATE_EVENT } from "../../../pane-state-bus";
+import { toast } from "../../../toast";
 
 const project = { id: "p1", name: "Alpha", path: "/a" } as Project;
 const worktreeTask = { id: "t1", projectId: "p1", worktreePath: "/wt/t1", branchName: "feat/x", status: "review-by-user" } as Task;
@@ -348,6 +350,17 @@ describe("agentPanePlacement", () => {
 		expect(screen.getByTestId("task-completion-strip")).toBe(bar);
 		expect(screen.getByTestId("task-completion-strip-pane")).toHaveStyle({ left: "0%", right: "50%" });
 		expect(screen.queryByRole("button", { name: "Show agent" })).not.toBeInTheDocument();
+	});
+
+	it("says so in a toast when Show agent fails", async () => {
+		vi.mocked(api.request.taskPaneAction).mockRejectedValue(new Error("pane %1 not found"));
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		await offer("agent");
+		act(() => {
+			window.dispatchEvent(new CustomEvent(PANE_STATE_EVENT, { detail: { taskId: "t1", state: state([pane(1, 0, 0.5), pane(2, 0.5, 0.5)], "%1", "%2") } }));
+		});
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Show agent" })); });
+		expect(toast.error).toHaveBeenCalledWith("Could not show the agent: pane %1 not found", { taskId: "t1" });
 	});
 
 	it("offers no Show agent on a merge offer or while the agent is in view", async () => {

@@ -30,6 +30,7 @@ const common = {
 	"completionStrip.keepOpen": "Оставить открытой",
 	"completionStrip.showAgent": "Показать агента",
 	"completionStrip.showAgentHint": "Показать панель агента, чтобы прочитать его отчёт",
+	"completionStrip.showAgentFailed": "Не удалось показать агента: {error}",
 	"completionStrip.completeAnyway": "Всё равно завершить",
 	"completionStrip.keepOpenMergeHint": "Оставить открытой и спросить снова после следующего merge.",
 	"completionStrip.keepOpenAgentHint": "Отказать агенту. Он продолжит работать в этой сессии.",

@@ -30,6 +30,7 @@ const common = {
 	"completionStrip.keepOpen": "Mantener abierta",
 	"completionStrip.showAgent": "Mostrar agente",
 	"completionStrip.showAgentHint": "Muestra el panel del agente para leer lo que informa",
+	"completionStrip.showAgentFailed": "No se pudo mostrar el agente: {error}",
 	"completionStrip.completeAnyway": "Completar de todos modos",
 	"completionStrip.keepOpenMergeHint": "Mantenerla abierta y volver a preguntar tras la próxima fusión.",
 	"completionStrip.keepOpenAgentHint": "Decirle que no al agente. Sigue trabajando en esta sesión.",

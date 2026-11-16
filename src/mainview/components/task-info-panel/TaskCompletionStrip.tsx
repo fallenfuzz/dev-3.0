@@ -11,6 +11,7 @@ import { toastClearanceRef } from "../../toast-clearance";
 import { completionSkipsGitCheck, unsavedWorkWarning } from "../../utils/confirmTaskCompletion";
 import { useTaskPaneState } from "../../hooks/useTaskPaneState";
 import { runPaneAction } from "../../pane-state-bus";
+import { toast } from "../../toast";
 import type { TaskPaneState } from "../../../shared/task-panes";
 
 /** Pointer clicks count only after this long, so a click aimed at what was there before cannot answer. */
@@ -38,14 +39,12 @@ export default function TaskCompletionStrip({ task, project, variant = "inline" 
 	if (variant === "inline") return <Strip key={offer.id} offer={offer} task={task} project={project} bar={false} />;
 	const placement = agentPanePlacement(paneState);
 	const agentPaneId = paneState?.agentPaneId;
-	const reveal = placement === "hidden" && agentPaneId && offer.kind === "agent"
-		? () => void runPaneAction(task.id, { kind: "reveal", paneId: agentPaneId }).catch(() => undefined)
-		: undefined;
+	const revealPaneId = placement === "hidden" && offer.kind === "agent" ? agentPaneId ?? undefined : undefined;
 	// Always the same wrapper, so splitting, zooming or switching windows never remounts the bar.
 	const insets = typeof placement === "string" ? { inset: 0 } : placement;
 	return (
 		<div className="pointer-events-none absolute z-20 [&>*]:pointer-events-auto" style={insets} data-testid="task-completion-strip-pane">
-			<Strip key={offer.id} offer={offer} task={task} project={project} bar onReveal={reveal} />
+			<Strip key={offer.id} offer={offer} task={task} project={project} bar revealPaneId={revealPaneId} />
 		</div>
 	);
 }
@@ -82,10 +81,15 @@ export function completionOfferNote(task: Task, project: Project, t: TFunction):
  * input box. Its note, any unsaved-work warning and a merge's secondary controls open
  * upward on hover, focus, or a Complete click that would lose work; the answers stay put.
  */
-function Strip({ offer, task, project, bar, onReveal }: {
-	offer: CompletionOffer; task: Task; project: Project; bar: boolean; onReveal?: () => void;
+function Strip({ offer, task, project, bar, revealPaneId }: {
+	offer: CompletionOffer; task: Task; project: Project; bar: boolean; revealPaneId?: string;
 }) {
 	const t = useT();
+	const onReveal = revealPaneId ? () => {
+		runPaneAction(task.id, { kind: "reveal", paneId: revealPaneId }).catch((err) => {
+			toast.error(t("completionStrip.showAgentFailed", { error: err instanceof Error ? err.message : String(err) }), { taskId: task.id });
+		});
+	} : undefined;
 	const armedRef = useRef(false);
 	const skipGit = completionSkipsGitCheck(task, project);
 	const [git, setGit] = useState<GitCheck>(skipGit ? { state: "skipped" } : { state: "checking" });
