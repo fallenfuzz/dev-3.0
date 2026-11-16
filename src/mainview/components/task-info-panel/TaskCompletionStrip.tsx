@@ -117,8 +117,9 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 		if (!liveRef.current) return;
 		setGit(next);
 		const fresh = next.state === "done" ? next.warning : null;
-		// The bar sits where a stray click lands, so losing work there always takes a second click.
-		if (fresh && (fresh !== shown || (bar && !lossAcknowledged))) {
+		// The bar sits where a stray click lands, so losing work there always takes a second click,
+		// and so does a check that failed: its note waits in the panel.
+		if ((fresh && (fresh !== shown || (bar && !lossAcknowledged))) || (bar && next.state === "unknown" && !lossAcknowledged)) {
 			setLossAcknowledged(true);
 			return;
 		}
@@ -189,7 +190,7 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 					checking ? "bg-fg-muted/40 cursor-not-allowed" : "bg-danger-fill hover:bg-danger-fill-hover"
 				}`}
 			>
-				{t(bar && lossAcknowledged && warning ? "completionStrip.completeAnyway" : "app.branchMergedComplete")}
+				{t(bar && lossAcknowledged && (warning || git.state === "unknown") ? "completionStrip.completeAnyway" : "app.branchMergedComplete")}
 			</button>
 		</>
 	);
@@ -199,8 +200,8 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 		// settings link wait in the panel, so no locale truncates the title.
 		const barTitle = isAgent ? title : t("completionStrip.mergedBarTitle");
 		const alert = warning ? "text-danger" : git.state === "unknown" ? "text-warning-strong" : null;
-		// Opened at rest it would cover the input row, so the warning opens on the first Complete click.
-		const detailsOpen = lossAcknowledged && !!warning;
+		// Opened at rest it would cover the input row, so the warning or the failed-check note opens on the first Complete click.
+		const detailsOpen = lossAcknowledged && (!!warning || git.state === "unknown");
 		return (
 			<div
 				role="region"

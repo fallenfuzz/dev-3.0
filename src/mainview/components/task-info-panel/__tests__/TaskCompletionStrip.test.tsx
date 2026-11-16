@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Task, UnsavedWork } from "../../../../shared/types";
 import { I18nProvider } from "../../../i18n";
@@ -211,6 +211,25 @@ describe("TaskCompletionStrip", () => {
 		expect(details.className).not.toContain("hidden");
 		expect(screen.queryByTestId("task-completion-strip-more")).toBeNull();
 		expect(screen.getByTestId("task-completion-strip-alert")).not.toHaveTextContent(/3/);
+		expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Complete anyway");
+		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
+		await expect(answer).resolves.toBe(true);
+	});
+
+	it("opens the could-not-check note on the first Complete click when the check fails, and completes on the second", async () => {
+		vi.mocked(api.request.getUnsavedWork).mockRejectedValue(new Error("git gone"));
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		const { answer } = await offer("merge");
+		await arm();
+		const details = screen.getByTestId("task-completion-strip-details");
+		expect(within(details).getByText("Could not check the branch for unsaved work.")).toBeInTheDocument();
+		expect(details.className).toContain("hidden");
+		let settled = false;
+		void answer.then(() => { settled = true; });
+		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
+		expect(settled).toBe(false);
+		expect(screen.getByTestId("task-completion-strip")).toBeInTheDocument();
+		expect(details.className).not.toContain("hidden");
 		expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Complete anyway");
 		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
 		await expect(answer).resolves.toBe(true);
