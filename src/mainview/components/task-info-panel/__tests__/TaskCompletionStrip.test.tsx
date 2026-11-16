@@ -7,7 +7,7 @@ vi.mock("../../../rpc", () => ({ api: { request: { getUnsavedWork: vi.fn(), task
 vi.mock("../../../toast", () => ({ toast: { error: vi.fn() } }));
 
 import { api } from "../../../rpc";
-import { _resetCompletionOffersForTests, isCompletionStripMounted, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
+import { _resetCompletionOffersForTests, isCompletionOfferOnScreen, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
 import TaskCompletionStrip, { COMPLETION_BAR_HOVER_OPEN_MS, COMPLETION_STRIP_ARM_MS, agentPanePlacement } from "../TaskCompletionStrip";
 import type { TaskPaneInfo, TaskPaneState } from "../../../../shared/task-panes";
 import { clearanceNodes } from "../../../toast-clearance";
@@ -145,9 +145,9 @@ describe("TaskCompletionStrip", () => {
 
 	it("registers itself so callers know the offer is on screen", async () => {
 		const { unmount } = renderStrip();
-		expect(isCompletionStripMounted("t1")).toBe(true);
+		expect(isCompletionOfferOnScreen("t1")).toBe(true);
 		unmount();
-		expect(isCompletionStripMounted("t1")).toBe(false);
+		expect(isCompletionOfferOnScreen("t1")).toBe(false);
 	});
 
 	it("floats over a live terminal and the inline row stands down, so nothing resizes", async () => {
