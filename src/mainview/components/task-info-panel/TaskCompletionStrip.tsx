@@ -15,6 +15,9 @@ import type { TaskPaneState } from "../../../shared/task-panes";
 /** Pointer clicks count only after this long, so a click aimed at what was there before cannot answer. */
 export const COMPLETION_STRIP_ARM_MS = 600;
 
+/** The bar's panel opens only after the pointer rests this long, so a pointer passing the corner never covers the input row. */
+export const COMPLETION_BAR_HOVER_OPEN_MS = 150;
+
 type GitCheck = { state: "skipped" } | { state: "checking" } | { state: "done"; warning: string | null } | { state: "unknown" };
 
 /**
@@ -77,6 +80,13 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 	const skipGit = completionSkipsGitCheck(task, project);
 	const [git, setGit] = useState<GitCheck>(skipGit ? { state: "skipped" } : { state: "checking" });
 	const [lossAcknowledged, setLossAcknowledged] = useState(false);
+	const [hoverOpen, setHoverOpen] = useState(false);
+	const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const cancelHoverOpen = () => {
+		if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+		hoverTimerRef.current = null;
+	};
+	useEffect(() => cancelHoverOpen, []);
 
 	// Filled after mount: a live region announces a change, not the text it was born with.
 	const [announcement, setAnnouncement] = useState("");
@@ -202,6 +212,7 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 		const alert = warning ? "text-danger" : git.state === "unknown" ? "text-warning-strong" : null;
 		// Opened at rest it would cover the input row, so the warning or the failed-check note opens on the first Complete click.
 		const detailsOpen = lossAcknowledged && (!!warning || git.state === "unknown");
+		const panelOpen = detailsOpen || hoverOpen;
 		return (
 			<div
 				role="region"
@@ -209,12 +220,17 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 				data-testid="task-completion-strip"
 				data-help-id="task.completion-strip"
 				data-layout="terminal"
+				onMouseEnter={() => {
+					cancelHoverOpen();
+					hoverTimerRef.current = setTimeout(() => setHoverOpen(true), COMPLETION_BAR_HOVER_OPEN_MS);
+				}}
+				onMouseLeave={() => { cancelHoverOpen(); setHoverOpen(false); }}
 				// On a wide terminal the corner is far from the prompt, so the bar stops within 72rem of the pane's left edge.
 				className={`group absolute bottom-1 right-[max(0.75rem,calc(100%-72rem))] z-20 flex max-w-[min(40rem,calc(100%-1.5rem))] flex-col items-end text-sm px-2 py-1 rounded-xl border bg-overlay shadow-lg ${border}`}
 			>
 				{liveRegion}
-				{/* Opens upward on hover or focus, and after a Complete click that would lose work; a pointer without hover always sees it. */}
-				<div className={`w-full items-end gap-3 pb-1.5 ${detailsOpen ? "flex" : "hidden group-hover:flex group-focus-within:flex [@media(hover:none)]:flex"}`} data-testid="task-completion-strip-details">
+				{/* Opens upward after a short hover, on focus, and after a Complete click that would lose work; a pointer without hover always sees it. */}
+				<div className={`w-full items-end gap-3 pb-1.5 ${panelOpen ? "flex" : "hidden group-focus-within:flex [@media(hover:none)]:flex"}`} data-testid="task-completion-strip-details">
 					<div className="flex min-w-0 flex-1 flex-col gap-1">
 						{noteLine}
 						{reasonLine}
@@ -227,9 +243,9 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 					<div className="flex min-w-0 flex-1 items-center gap-2">
 						{mark}
 						<div className="truncate font-medium text-fg" title={title}>{barTitle}</div>
-						{!detailsOpen && (
+						{!panelOpen && (
 							// The cue that more opens above on hover.
-							<svg aria-hidden data-testid="task-completion-strip-more" viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-fg-3 group-hover:hidden group-focus-within:hidden [@media(hover:none)]:hidden" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5 6 4.5 9 7.5" /></svg>
+							<svg aria-hidden data-testid="task-completion-strip-more" viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-fg-3 group-focus-within:hidden [@media(hover:none)]:hidden" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5 6 4.5 9 7.5" /></svg>
 						)}
 						{alert && (
 							<span className={`shrink-0 font-semibold ${alert}`} title={warning ?? t("task.branchStateUnknown")} data-testid="task-completion-strip-alert">

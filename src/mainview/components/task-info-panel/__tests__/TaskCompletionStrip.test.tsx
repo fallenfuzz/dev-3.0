@@ -7,7 +7,7 @@ vi.mock("../../../rpc", () => ({ api: { request: { getUnsavedWork: vi.fn() } } }
 
 import { api } from "../../../rpc";
 import { _resetCompletionOffersForTests, isCompletionStripMounted, offerCompletion, setCompletionOfferStyle, type CompletionOfferAnswer } from "../../../completion-offers";
-import TaskCompletionStrip, { COMPLETION_STRIP_ARM_MS, agentPaneInsets } from "../TaskCompletionStrip";
+import TaskCompletionStrip, { COMPLETION_BAR_HOVER_OPEN_MS, COMPLETION_STRIP_ARM_MS, agentPaneInsets } from "../TaskCompletionStrip";
 import type { TaskPaneInfo, TaskPaneState } from "../../../../shared/task-panes";
 import { clearanceNodes } from "../../../toast-clearance";
 
@@ -233,6 +233,26 @@ describe("TaskCompletionStrip", () => {
 		expect(screen.getByTestId("task-completion-strip-complete")).toHaveTextContent("Complete anyway");
 		await act(async () => { fireEvent.click(screen.getByTestId("task-completion-strip-complete")); });
 		await expect(answer).resolves.toBe(true);
+	});
+
+	it("opens the bar's panel only after the pointer rests on it, so a passing pointer never covers the input row", async () => {
+		render(<I18nProvider><TaskCompletionStrip task={worktreeTask} project={project} variant="overlay" /></I18nProvider>);
+		await offer("merge");
+		const strip = screen.getByTestId("task-completion-strip");
+		const details = screen.getByTestId("task-completion-strip-details");
+		fireEvent.mouseEnter(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS - 50); });
+		fireEvent.mouseLeave(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS); });
+		expect(details.className).toContain("hidden");
+		fireEvent.mouseEnter(strip);
+		await act(async () => { vi.advanceTimersByTime(COMPLETION_BAR_HOVER_OPEN_MS - 1); });
+		expect(details.className).toContain("hidden");
+		await act(async () => { vi.advanceTimersByTime(1); });
+		expect(details.className).not.toContain("hidden");
+		expect(screen.queryByTestId("task-completion-strip-more")).toBeNull();
+		fireEvent.mouseLeave(strip);
+		expect(details.className).toContain("hidden");
 	});
 
 	it("completes a clean task from the bar in one click and cues the hover panel", async () => {
