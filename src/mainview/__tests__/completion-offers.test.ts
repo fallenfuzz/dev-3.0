@@ -70,6 +70,15 @@ describe("completion offers", () => {
 		expect(result.current.map((o) => offerAsksInDialog(o))).toEqual([false, true]);
 	});
 
+	it("asks an offer for a task with no terminal view in the dialog in either style", () => {
+		const { result } = renderHook(() => useCompletionOffers());
+		act(() => setCompletionOfferStyle("inline"));
+		act(() => { void offerCompletion({ taskId: "t1", projectId: "p1", kind: "agent", noTaskView: true }); });
+		expect(offerAsksInDialog(result.current[0]!)).toBe(true);
+		act(() => setCompletionOfferStyle("dialog"));
+		expect(offerAsksInDialog(result.current[0]!)).toBe(true);
+	});
+
 	it("keepTaskOpen answers every offer on the task and no other", async () => {
 		let merge!: Promise<unknown>, agent!: Promise<unknown>, other!: Promise<unknown>;
 		act(() => {
