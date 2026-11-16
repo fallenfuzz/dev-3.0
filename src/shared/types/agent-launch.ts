@@ -124,6 +124,8 @@ export interface AgentCompletionRequest {
 	subject: TaskDialogSubject;
 	/** Why the agent asks (`--reason`), plain text. */
 	reason?: ApprovalReason;
+	/** The task has no terminal view (To Do): the ask opens the dialog whatever `completionOfferStyle` says. */
+	noTaskView?: boolean;
 }
 
 /**

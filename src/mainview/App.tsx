@@ -2497,8 +2497,9 @@ function App() {
 			taskTitle: string;
 			subject?: TaskDialogSubject;
 			reason?: ApprovalReason;
+			noTaskView?: boolean;
 		}) {
-			const { requestId, taskId, projectId, taskTitle, subject, reason } = request;
+			const { requestId, taskId, projectId, taskTitle, subject, reason, noTaskView } = request;
 			if (showing.has(requestId)) return;
 			showing.add(requestId);
 			let approved = false;
@@ -2519,9 +2520,11 @@ function App() {
 					dialogInfo: taskDialogInfoFromSubject(taskTitle, subject),
 					// Without its own worktree nothing is deleted: the folder outlives the task.
 					keepsFolder: keepsTaskFolder(projectId, subject),
+					...(noTaskView ? { noTaskView } : {}),
 					signal: abort.signal,
 				});
-				if (isNew) withdrawBell = announceCompletionOffer({
+				// A dialog ask raises no bell or toast, in either style.
+				if (isNew && !noTaskView) withdrawBell = announceCompletionOffer({
 					taskId, projectId, taskTitle, subject,
 					reason: t("completionStrip.agentTitle"),
 				});

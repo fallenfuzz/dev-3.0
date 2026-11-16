@@ -152,4 +152,18 @@ describe("CompletionOfferDialogHost", () => {
 		await act(async () => { setCompletionOfferStyle("inline"); });
 		expect(signal.aborted).toBe(true); // currently false
 	});
+
+	// A To Do task opens as its detail modal, which has no bar: the ask would be invisible.
+	it("asks an offer for a task with no terminal view in the modal under On the task, and keeps it there", async () => {
+		vi.mocked(confirm).mockReturnValue(new Promise(() => {}));
+		setCompletionOfferStyle("inline");
+		renderHost();
+		await act(async () => { void offerCompletion({ taskId: "t1", projectId: "p1", kind: "agent", noTaskView: true }); });
+		await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+		const signal = lastConfirm().signal!;
+		await act(async () => { setCompletionOfferStyle("dialog"); });
+		await act(async () => { setCompletionOfferStyle("inline"); });
+		expect(signal.aborted).toBe(false);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
 });
