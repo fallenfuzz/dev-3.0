@@ -73,11 +73,16 @@ export interface CliRequest {
 	token?: string;
 }
 
+/** A teardown that left the task folder behind after git dropped its link. */
+export const CLI_FAILURE_WORKTREE_HALF_REMOVED = "worktree-half-removed";
+
 export interface CliResponse {
 	id: string;
 	ok: boolean;
 	data?: unknown;
 	error?: string;
+	/** Machine-readable cause of a failure, for the few the CLI gives their own exit code. */
+	reason?: typeof CLI_FAILURE_WORKTREE_HALF_REMOVED;
 }
 
 // ---- RPC schema ----
@@ -2083,6 +2088,8 @@ export type AppRPCSchema = {
 		};
 		messages: {
 			taskUpdated: { projectId: string; task: Task };
+			/** A task left `projectId`: deleted, or moved to another project (which also sends `taskUpdated`). */
+			taskRemoved: { projectId: string; taskId: string };
 			projectUpdated: { project: Project };
 			/** A board-copy write failed; sent once per failure streak, cleared by the next write that succeeds. */
 			boardCopyFailed: { projectId: string; projectName: string; reason: BoardCopyFailureReason };

@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import { registerBoardViewCommandHandler, resetBoardViewCommandsForTests } from "../board-views/view-commands";
+import { MobileProvider } from "../hooks/useMobile";
 import { I18nProvider } from "../i18n";
 import type { SecretRequest } from "../../shared/secret-request";
 
@@ -1026,6 +1027,59 @@ describe("App keyboard shortcuts", () => {
 			}
 		});
 
+		it("⌘ + the digit of the board on screen keeps the selected task", async () => {
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p1", activeTaskId: "t1", taskView: true }),
+			});
+			await renderWith(false);
+			press({ key: "1", code: "Digit1", metaKey: true });
+			expect(project()).toHaveAttribute("data-project-id", "p1");
+			expect(project()).toHaveAttribute("data-active-task-id", "t1");
+		});
+
+		it("g then the digit of the board on screen keeps the selected task", async () => {
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p1", activeTaskId: "t1", taskView: true }),
+			});
+			await renderWith(false);
+			press({ key: "g", code: "KeyG" });
+			press({ key: "1", code: "Digit1" });
+			expect(project()).toHaveAttribute("data-project-id", "p1");
+			expect(project()).toHaveAttribute("data-active-task-id", "t1");
+		});
+
+		it("⌘2 on its space board, anchored on a non-first member, keeps the selected task", async () => {
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p3", spaceId: "sp_a", activeTaskId: "t1", taskView: true }),
+			});
+			await renderWith(true);
+			press({ key: "2", code: "Digit2", metaKey: true });
+			expect(project()).toHaveAttribute("data-project-id", "p3");
+			expect(project()).toHaveAttribute("data-active-task-id", "t1");
+		});
+
+		it("⌘ + the digit of another board switches to it and clears the selected task", async () => {
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p1", activeTaskId: "t1", taskView: true }),
+			});
+			await renderWith(true);
+			press({ key: "2", code: "Digit2", metaKey: true });
+			expect(project()).toHaveAttribute("data-project-id", "p2");
+			expect(project()).toHaveAttribute("data-space-id", "sp_a");
+			expect(project()).toHaveAttribute("data-active-task-id", "");
+		});
+
+		it("g then the digit of another board switches to it and clears the selected task", async () => {
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "project", projectId: "p1", activeTaskId: "t1", taskView: true }),
+			});
+			await renderWith(true);
+			press({ key: "g", code: "KeyG" });
+			press({ key: "3", code: "Digit3" });
+			expect(project()).toHaveAttribute("data-project-id", "p4");
+			expect(project()).toHaveAttribute("data-active-task-id", "");
+		});
+
 		it("digits follow the order just chosen, before the host has stored it", async () => {
 			await renderWith(true);
 			act(() => commitMixedOrder(["sp_a", "p1", "p4"]));
@@ -1416,6 +1470,23 @@ describe("App keyboard shortcuts", () => {
 			const after = screen.getByTestId("project-screen");
 			expect(after).toHaveAttribute("data-project-id", "p2");
 			expect(after).toHaveAttribute("data-task-view", "true");
+		});
+
+		it("fullscreen mode: Cmd+1 on the full-page task of that project goes to its Kanban board", async () => {
+			localStorage.setItem("dev3-task-open-mode", "fullscreen");
+			vi.mocked(api.request.getProjects).mockResolvedValue(twoProjects);
+			vi.mocked(api.request.getLastRoute).mockResolvedValue({
+				route: JSON.stringify({ screen: "task", projectId: "p1", taskId: "t1" }),
+			});
+
+			await renderApp();
+			expect(screen.getByTestId("task-screen")).toBeInTheDocument();
+
+			await userEvent.keyboard("{Meta>}1{/Meta}");
+
+			const after = screen.getByTestId("project-screen");
+			expect(after).toHaveAttribute("data-project-id", "p1");
+			expect(after).toHaveAttribute("data-task-view", "false");
 		});
 
 		it("keeps board view: Cmd+2 from the Kanban board switches project without task view", async () => {
@@ -5010,5 +5081,103 @@ describe("App navigation palettes are mutually exclusive", () => {
 		expect(openPalettes()).toEqual([]);
 		expect(document.activeElement).toBe(trigger);
 		trigger.remove();
+	});
+});
+
+describe("Browser-mode Safari top band", () => {
+	const originalScreenWidth = window.screen.width;
+
+	function setScreenWidth(width: number) {
+		Object.defineProperty(window.screen, "width", { value: width, configurable: true, writable: true });
+	}
+
+	async function renderAppWithMobile() {
+		render(
+			<I18nProvider>
+				<MobileProvider>
+					<App />
+				</MobileProvider>
+			</I18nProvider>,
+		);
+		await waitFor(() => expect(screen.queryByTestId("dashboard-screen") || screen.queryByTestId("project-screen")).toBeInTheDocument());
+		await act(async () => {
+			await Promise.resolve();
+		});
+	}
+
+	// The status-bar spacer is the aria-hidden sibling rendered right before the top chrome.
+	function hasStatusBarSpacerBefore(chrome: Element) {
+		return chrome.previousElementSibling?.getAttribute("aria-hidden") === "true";
+	}
+
+	beforeEach(() => {
+		(window as Window & { __electrobunWebviewId?: number }).__electrobunWebviewId = 1;
+		rpcTransport.isElectrobun = true;
+		fakePlatform("mac");
+		setScreenWidth(1440);
+		vi.clearAllMocks();
+		vi.mocked(api.request.checkSystemRequirements).mockResolvedValue([]);
+		vi.mocked(api.request.getProjects).mockResolvedValue([]);
+		vi.mocked(api.request.getLastRoute).mockResolvedValue({ route: null });
+		vi.mocked(api.request.listTmuxSessions).mockResolvedValue([]);
+		vi.mocked(api.request.getAllProjectTasks).mockResolvedValue([]);
+	});
+
+	afterEach(() => {
+		rpcTransport.isElectrobun = true;
+		setScreenWidth(originalScreenWidth);
+		Object.defineProperty(globalThis, "navigator", { value: realNavigator, writable: true, configurable: true });
+	});
+
+	it("makes a mobile browser header a sticky full-width opaque bg-base band without glass-header", async () => {
+		rpcTransport.isElectrobun = false;
+		setScreenWidth(390);
+		await renderAppWithMobile();
+
+		const header = screen.getByRole("banner", { name: "Application header" });
+		expect(header).toHaveClass("sticky", "top-0", "w-full", "bg-base", "pt-[env(safe-area-inset-top,0px)]");
+		expect(header.querySelector(".glass-header")).toBeNull();
+		expect(hasStatusBarSpacerBefore(header)).toBe(false);
+	});
+
+	it("wraps the mobile browser immersive chrome in the same opaque band", async () => {
+		rpcTransport.isElectrobun = false;
+		setScreenWidth(390);
+		vi.mocked(api.request.getProjects).mockResolvedValue([
+			{ id: "p1", name: "Alpha", path: "/a", setupScript: "", devScript: "", cleanupScript: "", defaultBaseBranch: "main", createdAt: "" },
+		]);
+		vi.mocked(api.request.getLastRoute).mockResolvedValue({
+			route: JSON.stringify({ screen: "project", projectId: "p1", activeTaskId: "t1" }),
+		});
+		await renderAppWithMobile();
+
+		await userEvent.keyboard("{Meta>}{Shift>}F{/Shift}{/Meta}");
+		const chrome = screen.getByTestId("terminal-immersive-chrome");
+		expect(chrome).toHaveClass("bg-base");
+		expect(chrome).not.toHaveClass("bg-raised");
+		expect(chrome.parentElement).toHaveClass("sticky", "top-0", "bg-base", "pt-[env(safe-area-inset-top,0px)]");
+		expect(hasStatusBarSpacerBefore(chrome.parentElement!)).toBe(false);
+	});
+
+	it("keeps glass-header and a static header for a desktop browser remote session", async () => {
+		rpcTransport.isElectrobun = false;
+		setScreenWidth(1440);
+		await renderAppWithMobile();
+
+		const header = screen.getByRole("banner", { name: "Application header" });
+		expect(header).not.toHaveClass("sticky", "pt-[env(safe-area-inset-top,0px)]");
+		expect(header.querySelector(".glass-header")).not.toBeNull();
+		// A wide browser can still have a top inset (an iPad home-screen app), so the spacer stays.
+		expect(hasStatusBarSpacerBefore(header)).toBe(true);
+	});
+
+	it("keeps the desktop Electrobun header static with glass-header", async () => {
+		rpcTransport.isElectrobun = true;
+		setScreenWidth(390);
+		await renderAppWithMobile();
+
+		const header = screen.getByRole("banner", { name: "Application header" });
+		expect(header).not.toHaveClass("sticky", "pt-[env(safe-area-inset-top,0px)]");
+		expect(header.querySelector(".glass-header")).not.toBeNull();
 	});
 });

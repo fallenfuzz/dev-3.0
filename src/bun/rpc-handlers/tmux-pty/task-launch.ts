@@ -333,6 +333,8 @@ export async function launchTaskPty(
 		accountId?: string | null;
 		/** AWS profile pick (see LaunchVariant); absent → the task's stored one. */
 		bedrockProfile?: string | null;
+		/** The resumed pane ran on the project folder's own login (`PaneSessionEntry.projectLogin`). */
+		projectLogin?: boolean;
 		codexHome?: string;
 		/** Open a plain shell headed by this line instead of the agent, parking the stored panes
 		 *  for a later resume: a Codex reopen that cannot pick a conversation, or a wake with a plain shell. */
@@ -407,6 +409,7 @@ export async function launchTaskPty(
 	let launchAccountId = accountId;
 	let accountPick: agents.ResolvedAgentCommand["accountPick"];
 	let staleAccountDropped = false;
+	let projectLoginKept = false;
 	let freshLaunchSessionId: string | null = null;
 	let agentFromDefault = false;
 	let launchBedrockProfile: string | null | undefined;
@@ -420,6 +423,7 @@ export async function launchTaskPty(
 			projectEnv,
 			bedrockProfile,
 			protocolMode: taskProtocolMode(project, task),
+			...(opts?.projectLogin ? { projectLogin: true } : {}),
 		};
 		let freshSessionId: string | null = null;
 		if (!resume && !skipSessionPersist && !opts?.shellNotice) {
@@ -455,6 +459,8 @@ export async function launchTaskPty(
 			resolvedAgentFamily = resolved.agentFamily;
 			resolvedLaunchModel = resolved.launchModel;
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+			projectLoginKept = !!resolved.projectLoginKept;
+			if (projectLoginKept) launchAccountId = undefined;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
 			launchBedrockProfile = resolved.resolvedBedrockProfile;
@@ -476,6 +482,8 @@ export async function launchTaskPty(
 			resolvedAgentFamily = resolved.agentFamily;
 			resolvedLaunchModel = resolved.launchModel;
 			if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+			projectLoginKept = !!resolved.projectLoginKept;
+			if (projectLoginKept) launchAccountId = undefined;
 			accountPick = resolved.accountPick;
 			staleAccountDropped = !!resolved.staleAccountDropped;
 			// No pick runs the global default. Name it on the pane only: the task keeps
@@ -515,12 +523,13 @@ export async function launchTaskPty(
 				sessionId: effectiveSessionId ?? null,
 				agentId: agentId ?? task.agentId,
 				configId: configId ?? task.configId,
-				accountId: resume && !staleAccountDropped ? accountId : (agentKey(resolvedBaseCmd, resolvedAgentFamily) === "codex"
+				accountId: resume && !staleAccountDropped && !projectLoginKept ? accountId : (agentKey(resolvedBaseCmd, resolvedAgentFamily) === "codex"
 					? codexAccountIdForHome(extraEnv.CODEX_HOME) : undefined) ?? launchAccountId,
 				agentFamily: resolvedAgentFamily,
 				sessionOriginCwd: carriedOriginCwd,
 				agentFromDefault: agentFromDefault || carriedDefault || undefined,
 				...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
+				...(projectLoginKept ? { projectLogin: true } : {}),
 			};
 			mainPaneEntry = paneEntry;
 			const sessionState = { panes: [paneEntry, ...(resume ? task.sessionState?.panes.slice(1).map((pane) => ({ ...pane, paneId: null })) ?? [] : [])] };

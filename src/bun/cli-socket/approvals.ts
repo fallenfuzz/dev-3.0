@@ -1,7 +1,7 @@
 import type { AgentMessageSource, Project, ResetKeptBranch, Task, TaskPriority, TaskResetConsent, TaskResetResult, TaskStatus } from "../../shared/types";
 import { agentReplyCommand, seqIsShared } from "../../shared/agent-message-envelope";
 import { type ExternalSenderRequester, isExternalSenderRequester } from "../../shared/external-senders";
-import { DEFAULT_PRIORITY, agentLaunchAutoApproveMs, buildTaskDialogSubject, getTaskTitle, isCoordinatorTask, isOpsWorktreeTask, taskNeedsReset, taskResetConsent } from "../../shared/types";
+import { DEFAULT_PRIORITY, agentLaunchAutoApproveMs, buildTaskDialogSubject, getTaskTitle, isCoordinatorTask, isOpsWorktreeTask, taskNeedsReset, taskResetConsent, taskUsesWorktree } from "../../shared/types";
 import { coordinatorLaunchDefault } from "../../shared/coordinator-launch";
 import { getAllAgents } from "../agents";
 import { createAgentRequest, getAgentRequestState, joinAgentRequest, setAgentRequestLaunchChoice, voidAgentRequest } from "../agent-requests";
@@ -11,10 +11,12 @@ import type { AgentLaunchChoice, LaunchVariant } from "../../shared/types";
 import { deliverLaunchHandoff } from "../agent-launch-handoff";
 import { getPushMessage, launchTaskWithAgentChoice, moveTask, resetTaskToTodo } from "../rpc-handlers";
 import { loadSettings } from "../settings";
+import { isHalfRemovedWorktree, WorktreeHalfRemovedError } from "../worktree-leftover";
 import { loadBoardTasks, resolveAgentMessageSource, resolveTaskAcrossProjects, resolveTaskFromParams } from "./task-resolution";
 import { type ApprovalReason, approvalReasonFromParams, normalizeApprovalReason } from "../../shared/approval-reason";
 import { awaitLaunchPreparation } from "./launch-preparation";
 import type { LaunchPreparationOutcome } from "../../shared/launch-preparation";
+import type { ResolvedDependency } from "../../shared/task-dependencies";
 
 export function approvalStatusOf(kind: DestructiveApprovalKind, task: Task): AgentApprovalStatus {
 	const known = getAgentRequestState(kind, task.id);
@@ -207,8 +209,16 @@ export async function requestDestructiveApproval(
 	}
 	// Every caller joined to this request lands here; a repeat move to the same
 	// status is a no-op in the lifecycle machine.
-	const updated = await moveTask({ taskId: task.id, projectId: project.id, newStatus: targetStatus });
-	return { approved: true, task: updated };
+	try {
+		const updated = await moveTask({ taskId: task.id, projectId: project.id, newStatus: targetStatus });
+		return { approved: true, task: updated };
+	} catch (err) {
+		// The lifecycle hands back only the message, so the leftover is read off disk.
+		if (task.worktreePath && taskUsesWorktree(project, task) && isHalfRemovedWorktree(task.worktreePath)) {
+			throw new WorktreeHalfRemovedError(task.worktreePath, err instanceof Error ? err.message : String(err));
+		}
+		throw err;
+	}
 }
 
 /**
@@ -256,6 +266,8 @@ type LaunchApprovalOutcome =
 		seq: number;
 		title: string;
 		launched: Array<{ variantIndex: number | null; replyCommand: string; preparation: LaunchPreparationOutcome }>;
+		/** Dependencies still open when the launch was approved. */
+		startedBlockedBy?: ResolvedDependency[];
 	};
 
 /**
@@ -299,6 +311,8 @@ export async function requestAgentLaunchApproval(opts: {
 	handoff?: boolean;
 	/** Why the requester asks (`--reason`), already normalized. */
 	reason?: ApprovalReason;
+	/** The target's open dependencies: the dialog names them, the start is still the user's call. */
+	openDependencies?: ResolvedDependency[];
 }): Promise<LaunchApprovalOutcome> {
 	const { project, task, targetStatus, requester } = opts;
 	// A coordinator's own preset preselects the dialog and is what an unwatched auto-approval launches.
@@ -354,6 +368,7 @@ export async function requestAgentLaunchApproval(opts: {
 		autoApproveAt,
 		...(suggested ? { suggested } : {}),
 		...(opts.reason ? { reason: opts.reason } : {}),
+		...(opts.openDependencies?.length ? { openDependencies: opts.openDependencies.map((d) => d.seq) } : {}),
 	});
 
 	const answer = await decision;
@@ -410,6 +425,7 @@ export async function requestAgentLaunchApproval(opts: {
 			// against its own.
 			replyCommand: launchReplyCommand(child, requester, boardTasks),
 		})),
+		...(opts.openDependencies?.length ? { startedBlockedBy: opts.openDependencies } : {}),
 	};
 }
 

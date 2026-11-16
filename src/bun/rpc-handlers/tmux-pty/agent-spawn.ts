@@ -99,6 +99,7 @@ export async function spawnAgentInTask(params: {
 	};
 	let launchAccountId = params.accountId;
 	let launchBedrockProfile: string | null | undefined;
+	let projectLogin = false;
 	rememberVariantBedrockProfile(project.id, [params]);
 
 	if (params.agentId) {
@@ -109,6 +110,8 @@ export async function spawnAgentInTask(params: {
 		resolvedAgentFamily = resolved.agentFamily;
 		resolvedLaunchModel = resolved.launchModel;
 		if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+		if (resolved.projectLoginKept) launchAccountId = undefined;
+		projectLogin = !!resolved.projectLoginKept;
 		launchBedrockProfile = resolved.resolvedBedrockProfile;
 		if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		launchedAgentId = resolved.agent?.id ?? params.agentId;
@@ -130,6 +133,8 @@ export async function spawnAgentInTask(params: {
 		resolvedAgentFamily = resolved.agentFamily;
 		resolvedLaunchModel = resolved.launchModel;
 		if (resolved.resolvedAccountId !== undefined) launchAccountId = resolved.resolvedAccountId;
+		if (resolved.projectLoginKept) launchAccountId = undefined;
+		projectLogin = !!resolved.projectLoginKept;
 		launchBedrockProfile = resolved.resolvedBedrockProfile;
 		if (resolved.bedrockProfileMissing) await notifyBedrockProfileMissing(task);
 		launchedAgentId = resolved.agent?.id ?? null;
@@ -209,9 +214,10 @@ export async function spawnAgentInTask(params: {
 		accountId: launchAccountId,
 		agentFamily: resolvedAgentFamily,
 		...(launchBedrockProfile !== undefined ? { bedrockProfile: launchBedrockProfile } : {}),
+		...(projectLogin ? { projectLogin: true } : {}),
 	};
 	if (handle.backend === "native") {
-		const { sessionId: _sessionId, paneId: _paneId, bedrockProfile: _bedrockProfile, ...attribution } = paneEntry;
+		const { sessionId: _sessionId, paneId: _paneId, bedrockProfile: _bedrockProfile, projectLogin: _projectLogin, ...attribution } = paneEntry;
 		await writeNativeAgentAttribution(scriptPath, attribution);
 	}
 	const existingPanes = task.sessionState?.panes ?? [];

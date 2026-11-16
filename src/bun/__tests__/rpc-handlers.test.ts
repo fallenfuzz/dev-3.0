@@ -12950,6 +12950,44 @@ describe("restartTask (start fresh) floors the Codex scan", () => {
 	});
 });
 
+describe("restartTask clears the agent-exited mark", () => {
+	beforeEach(() => vi.clearAllMocks());
+	const FLAG = "2026-11-13T10:00:00.000Z";
+
+	function arrangeRestart(task: Task): void {
+		mockTaskWrites(task);
+		vi.mocked(data.loadProjects).mockResolvedValue([makeProject()]);
+		vi.mocked(data.loadVirtualProjects).mockResolvedValue([]);
+		vi.mocked(pty.hasSession).mockReturnValue(false);
+	}
+
+	it("clears the flag on the current row once the agent is relaunched", async () => {
+		const task = makeTask({ agentExitedAt: FLAG, sessionState: { panes: [{ agentCmd: "claude", agentId: "builtin-claude", configId: "claude-default", sessionId: null }] } });
+		arrangeRestart(task);
+		await handlers.restartTask({ taskId: task.id });
+		expect(vi.mocked(data.updateTask).mock.calls.some((call) => "agentExitedAt" in call[2] && call[2].agentExitedAt === undefined)).toBe(true);
+		expect((await data.getTask(makeProject(), task.id)).agentExitedAt).toBeUndefined();
+	});
+
+	it("writes nothing when the current row carries no flag", async () => {
+		const task = makeTask({ sessionState: { panes: [{ agentCmd: "claude", agentId: "builtin-claude", configId: "claude-default", sessionId: null }] } });
+		arrangeRestart(task);
+		await handlers.restartTask({ taskId: task.id });
+		expect(vi.mocked(data.updateTask).mock.calls.some((call) => "agentExitedAt" in call[2])).toBe(false);
+	});
+
+	it("does not fail a successful relaunch when the clear fails", async () => {
+		const task = makeTask({ agentExitedAt: FLAG, sessionState: { panes: [{ agentCmd: "claude", agentId: "builtin-claude", configId: "claude-default", sessionId: null }] } });
+		arrangeRestart(task);
+		vi.mocked(data.updateTaskWith).mockImplementation(async (project, taskId, mutator) => {
+			const { updates } = await mutator(await data.getTask(project, taskId));
+			if ("agentExitedAt" in updates) throw new Error("disk full");
+			return { task: await data.getTask(project, taskId), result: undefined as never };
+		});
+		await expect(handlers.restartTask({ taskId: task.id })).resolves.toEqual(expect.any(String));
+	});
+});
+
 describe("restartTask with a pane that ran the global default", () => {
 	beforeEach(() => vi.clearAllMocks());
 
@@ -13058,6 +13096,35 @@ describe("resume reuses the AWS profile a pane launched with", () => {
 	});
 });
 
+describe("resume keeps a pane on the project folder's own login", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("passes the pane's mark to every resumed pane and keeps it on the panes", async () => {
+		const project = makeProject();
+		const pane = { agentCmd: "claude", agentFamily: "claude", agentId: "builtin-claude", configId: "claude-default", projectLogin: true };
+		const panes = [{ ...pane, main: true, sessionId: "00000000-0000-4000-8000-00000000a201" }, { ...pane, sessionId: "00000000-0000-4000-8000-00000000a202" }];
+		const task = makeTask({ sessionState: { panes: panes as any } });
+		mockTaskWrites(task);
+		vi.mocked(data.loadProjects).mockResolvedValue([project]);
+		vi.mocked(data.loadVirtualProjects).mockResolvedValue([]);
+		vi.mocked(pty.hasSession).mockReturnValue(false);
+		vi.mocked(pty.tmuxSessionExists).mockResolvedValue(true);
+		const resolve = vi.mocked(agents.resolveCommandForAgent);
+		const original = resolve.getMockImplementation();
+		resolve.mockResolvedValue({ command: "claude", extraEnv: {}, agentFamily: "claude", projectLoginKept: true } as any);
+		try {
+			const { resumeTaskSession } = await import("../rpc-handlers/tmux-pty");
+			await resumeTaskSession(task.id, {});
+			expect(resolve.mock.calls.length).toBe(2);
+			for (const call of resolve.mock.calls) expect(call[3]).toMatchObject({ projectLogin: true });
+			const last = vi.mocked(data.updateTask).mock.calls.map((call) => call[2]).filter((u) => u.sessionState).pop()!;
+			expect(last.sessionState!.panes.map((p) => p.projectLogin)).toEqual([true, true]);
+		} finally {
+			resolve.mockImplementation(original!);
+		}
+	});
+});
+
 describe("restartTask and resume with a stored account or a refused launch", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
@@ -13103,6 +13170,22 @@ describe("restartTask and resume with a stored account or a refused launch", () 
 			expect(cleared).toBeDefined();
 			expect(cleared!.accountId).toBeUndefined();
 			expect(vi.mocked(data.updateTask).mock.calls.some((call) => call[2].accountId === null)).toBe(false);
+		} finally {
+			resolve.mockImplementation(original!);
+		}
+	});
+
+	it("resume records no account on a pane that kept the project's own Claude folder", async () => {
+		const { project, task } = arrange();
+		await data.updateTask(project, task.id, { sessionState: { panes: [claudePanes[0], { ...claudePanes[0], sessionId: null, paneId: "%5" }] as any } });
+		const resolve = vi.mocked(agents.resolveCommandForAgent);
+		const original = resolve.getMockImplementation();
+		resolve.mockResolvedValue({ command: "claude", extraEnv: {}, agentFamily: "claude", resolvedAccountId: undefined, projectLoginKept: true } as any);
+		try {
+			const { resumeTaskSession } = await import("../rpc-handlers/tmux-pty");
+			await resumeTaskSession(task.id, {});
+			const last = vi.mocked(data.updateTask).mock.calls.map((call) => call[2]).filter((u) => u.sessionState).pop()!;
+			expect(last.sessionState!.panes.map((pane) => pane.accountId)).toEqual([undefined, undefined]);
 		} finally {
 			resolve.mockImplementation(original!);
 		}
@@ -13894,6 +13977,23 @@ describe("launchTaskPty", () => {
 		const patch = vi.mocked(data.updateTask).mock.calls.map(([, , updates]) => updates).find((u) => u.sessionState);
 		expect(patch).toMatchObject({ accountId: "acct-b", accountPick: { reason } });
 		expect(patch?.sessionState?.panes[0].accountId).toBe("acct-b");
+	});
+
+	it("marks a pane that kept the project folder's own login, and a resume passes the mark back", async () => {
+		const project = makeProject();
+		const task = makeTask({ accountId: "acct-a" });
+		vi.mocked(agents.resolveCommandForAgent).mockResolvedValueOnce({
+			command: "claude", extraEnv: {}, agent: { baseCommand: "claude" }, resolvedAccountId: undefined, projectLoginKept: true,
+		} as never);
+		await launchTaskPty(project, task, "/tmp/wt", "builtin-claude", "claude-default");
+		const pane = vi.mocked(data.updateTask).mock.calls.map(([, , updates]) => updates).find((u) => u.sessionState)!.sessionState!.panes[0];
+		expect(pane.accountId).toBeUndefined();
+		expect(pane.projectLogin).toBe(true);
+
+		await launchTaskPty(project, task, "/tmp/wt", "builtin-claude", "claude-default", false, true, { sessionId: "s-1", projectLogin: true });
+		expect(agents.resolveCommandForAgent).toHaveBeenLastCalledWith(
+			"builtin-claude", "claude-default", expect.anything(), expect.objectContaining({ resume: true, projectLogin: true }),
+		);
 	});
 
 	it("never hands a resume the routing context", async () => {
