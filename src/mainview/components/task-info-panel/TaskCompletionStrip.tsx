@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { taskUsesWorktree, type Project, type Task } from "../../../shared/types";
 import { useT, type TFunction } from "../../i18n";
 import { api } from "../../rpc";
@@ -10,6 +10,8 @@ import ApprovalReasonNote from "../ApprovalReasonNote";
 import { toastClearanceRef } from "../../toast-clearance";
 import { completionSkipsGitCheck, unsavedWorkWarning } from "../../utils/confirmTaskCompletion";
 import { useTaskPaneState } from "../../hooks/useTaskPaneState";
+import { runPaneAction } from "../../pane-state-bus";
+import { toast } from "../../toast";
 import type { TaskPaneState } from "../../../shared/task-panes";
 
 /** Pointer clicks count only after this long, so a click aimed at what was there before cannot answer. */
@@ -33,21 +35,38 @@ export default function TaskCompletionStrip({ task, project, variant = "inline" 
 }) {
 	const offer = useTaskStripOffer(task.id);
 	const hosted = useCompletionOverlayHosted(task.id);
+	const paneState = useTaskPaneState(task.id);
 	useEffect(() => registerCompletionStrip(task.id), [task.id]);
 	useEffect(() => (variant === "overlay" ? registerCompletionOverlayHost(task.id) : undefined), [task.id, variant]);
 	if (!offer || (variant === "inline" && hosted)) return null;
-	const strip = <Strip key={offer.id} offer={offer} task={task} project={project} bar={variant === "overlay"} />;
-	return variant === "overlay" ? <AgentPaneFrame taskId={task.id}>{strip}</AgentPaneFrame> : strip;
+	if (variant === "inline") return <Strip key={offer.id} offer={offer} task={task} project={project} bar={false} />;
+	const placement = agentPanePlacement(paneState);
+	const revealPaneId = placement === "hidden" && offer.kind === "agent" ? paneState?.agentPaneId ?? undefined : undefined;
+	// Always the same wrapper, so splitting, zooming or switching windows never remounts the bar.
+	const insets = typeof placement === "string" ? { inset: 0 } : placement;
+	return (
+		<div className="pointer-events-none absolute z-20 [&>*]:pointer-events-auto" style={insets} data-testid="task-completion-strip-pane">
+			<Strip key={offer.id} offer={offer} task={task} project={project} bar revealPaneId={revealPaneId} />
+		</div>
+	);
 }
 
 /**
- * The agent's pane as insets of the terminal area, so the bar sits beside the prompt
- * the agent is waiting at, not over a shell pane. The agent runs in the first pane;
- * one pane, a zoomed pane or no state yet means the whole terminal.
+ * Where the bar goes, so it sits beside the prompt the agent waits at: the agent
+ * pane's insets of the terminal area, or the whole terminal when the agent fills it
+ * or its pane is unknown or gone. "hidden" means the agent's pane is out of view, under
+ * another zoomed pane or in another tmux window: the bar spans the terminal and
+ * offers to show the agent.
  */
-export function agentPaneInsets(state: TaskPaneState | null): CSSProperties | null {
-	if (!state || state.zoomedPaneId || state.panes.length < 2) return null;
-	const agent = [...state.panes].sort((a, b) => a.index - b.index)[0]!;
+export function agentPanePlacement(state: TaskPaneState | null): CSSProperties | "terminal" | "hidden" {
+	if (!state) return "terminal";
+	// A backend that does not report agentPaneId yet: the agent runs in the first pane.
+	const agentPaneId = state.agentPaneId === undefined ? [...state.panes].sort((a, b) => a.index - b.index)[0]?.paneId : state.agentPaneId;
+	if (!agentPaneId) return "terminal";
+	const agent = state.panes.find((pane) => pane.paneId === agentPaneId);
+	if (!agent) return "hidden";
+	if (state.zoomedPaneId) return state.zoomedPaneId === agent.paneId ? "terminal" : "hidden";
+	if (state.panes.length < 2) return "terminal";
 	const pct = (value: number) => `${Math.max(0, Math.min(1, value)) * 100}%`;
 	return {
 		left: pct(agent.rect.x),
@@ -55,13 +74,6 @@ export function agentPaneInsets(state: TaskPaneState | null): CSSProperties | nu
 		top: pct(agent.rect.y),
 		bottom: pct(1 - agent.rect.y - agent.rect.height),
 	};
-}
-
-/** Confines the bar to the agent's pane; it lets clicks through everywhere but the bar. */
-function AgentPaneFrame({ taskId, children }: { taskId: string; children: ReactNode }) {
-	// Always the same wrapper, so splitting or unsplitting the pane never remounts the bar.
-	const insets = agentPaneInsets(useTaskPaneState(taskId)) ?? { inset: 0 };
-	return <div className="pointer-events-none absolute z-20 [&>*]:pointer-events-auto" style={insets} data-testid="task-completion-strip-pane">{children}</div>;
 }
 
 /** What completing removes: the worktree and the session, the session, or the session but not the folder. */
@@ -74,8 +86,16 @@ export function completionOfferNote(task: Task, project: Project, t: TFunction):
  * input box. Its note, any unsaved-work warning and a merge's secondary controls open
  * upward on hover, focus, or a Complete click that would lose work; the answers stay put.
  */
-function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Task; project: Project; bar: boolean }) {
+function Strip({ offer, task, project, bar, revealPaneId }: {
+	offer: CompletionOffer; task: Task; project: Project; bar: boolean; revealPaneId?: string;
+}) {
 	const t = useT();
+	const reveal = () => {
+		if (!revealPaneId) return;
+		runPaneAction(task.id, { kind: "reveal", paneId: revealPaneId }).catch((err) => {
+			toast.error(t("completionStrip.showAgentFailed", { error: err instanceof Error ? err.message : String(err) }), { taskId: task.id });
+		});
+	};
 	const armedRef = useRef(false);
 	const skipGit = completionSkipsGitCheck(task, project);
 	const [git, setGit] = useState<GitCheck>(skipGit ? { state: "skipped" } : { state: "checking" });
@@ -254,7 +274,21 @@ function Strip({ offer, task, project, bar }: { offer: CompletionOffer; task: Ta
 							</span>
 						)}
 					</div>
-					<div className="flex shrink-0 items-center gap-2">{answerButtons}</div>
+					<div className="flex shrink-0 items-center gap-2">
+						{revealPaneId && (
+							<button
+								type="button"
+								onClick={reveal}
+								aria-label={t("completionStrip.showAgent")}
+								title={t("completionStrip.showAgentHint")}
+								data-testid="task-completion-strip-show-agent"
+								className="grid h-6 w-6 max-md:h-11 max-md:w-11 place-items-center rounded-lg text-fg-3 hover:text-fg hover:bg-raised-hover transition-colors"
+							>
+								<svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="2" /></svg>
+							</button>
+						)}
+						{answerButtons}
+					</div>
 				</div>
 			</div>
 		);
