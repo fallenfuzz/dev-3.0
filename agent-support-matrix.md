@@ -88,6 +88,8 @@ Claiming an agent is supported here means naming both. See
 
 Injected per-worktree at task launch.
 
+Cursor imports Claude's project hooks by default. On Cursor launch, dev3 refreshes inherited pre-tool status commands to the JSON adapter; Cursor receives its native response while Claude retains normal permission checks. Existing user hooks and settings are preserved. See [imported Claude pre-tool JSON](decisions/2026/11/19/cursor-imported-claude-pre-tool-json.md).
+
 Cursor's separate accounting hooks are user-level and intentionally include local sessions outside dev3, matching Claude/Codex's global usage scope. They install only when `~/.cursor` exists or a configured Cursor agent launches, and run only while the dev3 executable exists. Remove only dev3's accounting hooks with `dev3 install-hooks --remove-cursor` before uninstalling; custom hooks/settings remain untouched. See [usage collectors for major agents](decisions/2026/10/26/usage-collectors-for-major-agents.md).
 
 ### Claude Code
@@ -339,5 +341,6 @@ toggle re-prefixes all non-overridden rows. See [decision 089](decisions/2026/07
 | `~/.copilot/settings.json` | GitHub Copilot CLI | dev3 merges its lifecycle hooks into the user's own settings file, replacing only what dev3 wrote before. Nothing is written under `~/.copilot/hooks/`, which can be root-owned on a managed machine |
 | `~/.copilot/permissions-config.json` | GitHub Copilot CLI | dev3 pre-approves its own CLI for the project, so an agent is not stopped by "Do you want to run this command?" on the status move its protocol just told it to make. Keyed by the repository's main working tree — which is what Copilot itself writes when the user approves from inside a worktree, so one entry covers every task of that project. Approvals the user granted themselves, and every other repository, are left untouched |
 | `~/.copilot/config.json` | GitHub Copilot CLI | dev3 appends the worktree's resolved path to `trustedFolders`, the only place Copilot reads folder trust from. Every other key — including `loggedInUsers` — is copied through untouched, the `//` header is preserved, and a file dev3 cannot parse is left exactly as found rather than risking the login. dev3 honours `COPILOT_HOME` rather than setting it |
+| `<project>/.claude/settings*.json` (read-only) | Claude Code | `permissions.additionalDirectories` from the project's own checkout, and from the user-scope config dir its agents read (the `CLAUDE_CONFIG_DIR` of the project's launch env, global agent env defaults included, else the server's, else `~/.claude`), are listed as the project's extra folders. Other agents get the `extraFolders` project setting and VS Code workspace folders |
 | `~/.dev3.0/data/agent-hooks/omp-status.ts` | Oh My Pi | Generated status extension, rewritten before every launch and loaded with `--hook`; reports the session's lifecycle through `dev3 hook omp` |
 | `~/.dev3.0/data/agent-hooks/pi-status.ts` | Pi | Generated status extension, rewritten before every launch and loaded with `--extension`; reports the session's lifecycle through `dev3 hook pi` |

@@ -1,3 +1,4 @@
+import type { AutoHibernateSuggestion } from "../auto-hibernate";
 import type { InterfaceOnboardingRequest, InterfaceOnboardingResponse } from "../interface-onboarding";
 import type { RPCSchema } from "electrobun/bun";
 import type { ConversationMatch } from "../conversation-search-core";
@@ -54,7 +55,7 @@ import type { PtyThroughputStats, TmuxLayout, TmuxSessionInfo, TmuxWindowEntry }
 import type { DevServerStatus, DevServerSummary } from "./dev-server";
 import type { RemoteAccessStatus, RemoteNetInterface } from "./remote";
 import type { AgentCheckResult, AgentSkillInfo, HarnessReadinessReport, LaunchLocationIssue, RequirementCheckResult, RosettaWarningInfo, TmuxRestartImpact, TmuxServerNotice } from "./environment";
-import type { ExplorerListing, FolderListing } from "./file-explorer";
+import type { ExplorerListing, FolderListing, ProjectFolder } from "./file-explorer";
 import type { AgentUsageReport, ProductivityStats } from "./usage-stats";
 
 export type RendererLogLevel = "debug" | "info" | "warn" | "error";
@@ -225,8 +226,13 @@ export type AppRPCSchema = {
 			};
 			/** One level of the file explorer tree, gated to the task worktree or project checkout. */
 			listExplorerDirectory: {
-				params: { projectId: string; taskId?: string | null; relPath?: string; insideIgnored?: boolean };
+				params: { projectId: string; taskId?: string | null; relPath?: string; insideIgnored?: boolean; folder?: string | null };
 				response: ExplorerListing;
+			};
+			/** Folders shown beside the project in the file explorer and on the dashboard. `fresh` skips the short backend cache. */
+			getProjectFolders: {
+				params: { projectId: string; withBranch?: boolean; fresh?: boolean };
+				response: ProjectFolder[];
 			};
 			listAgentSkills: {
 				params: { projectPath?: string | null };
@@ -1980,6 +1986,12 @@ export type AppRPCSchema = {
 				params: { projectId: string | null; taskId: string | null };
 				response: void;
 			};
+			getAutoHibernateSuggestion: { params: {}; response: AutoHibernateSuggestion | null };
+			presentAutoHibernateSuggestion: { params: { id: string }; response: void };
+			respondAutoHibernateSuggestion: {
+				params: { id: string; action: "hibernate" | "snooze" | "hold"; taskIds: string[] };
+				response: void;
+			};
 			/**
 			 * Renderer reports its streamer-mode state together with the projects
 			 * marked `sensitive`, so the backend can drop OS-level notifications the
@@ -2270,6 +2282,9 @@ export type AppRPCSchema = {
 			 * consumePendingDeepLinkNav pull instead — see decisions/144.
 			 */
 			openDeepLink: DeepLinkNav;
+			/** Automatic hibernation notification; the renderer owns localized copy. */
+			taskAutoHibernated: { projectId: string; taskId: string };
+			autoHibernateSuggestionChanged: { suggestion: AutoHibernateSuggestion | null };
 			/**
 			 * CLI-initiated in-app toast (`dev3 notify`). When `taskId`/`projectId`
 			 * are present the toast is clickable and navigates to that task.

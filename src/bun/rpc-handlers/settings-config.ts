@@ -1,4 +1,6 @@
 import { normalizeSimplifiedInterface } from "../../shared/simplified-interface";
+import { normalizeAutoHibernateMinutes, normalizeAutoHibernateConfirmMinutes } from "../../shared/auto-hibernate";
+import { recordAutoHibernatePolicyChange } from "../task-activity";
 import { noteInterfaceModeChange } from "../interface-onboarding";
 import { chmodSync, existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -17,6 +19,7 @@ import type { AgentLiveModels } from "../../shared/agent-live-models";
 import * as github from "../github";
 import * as updater from "../updater";
 import * as rosetta from "../rosetta";
+import { clearProjectFoldersCache } from "../project-folders";
 import * as repoConfig from "../repo-config";
 import * as pty from "../pty-server";
 import { SESSION_OVERVIEW_FORMAT, tmux } from "../tmux";
@@ -236,6 +239,7 @@ async function updateProjectSettings(params: { projectId: string } & ProjectSett
 			: {}),
 	};
 	const saved = await data.updateProject(params.projectId, updates);
+	clearProjectFoldersCache(saved.id);
 	// Return the RESOLVED project: the caller renders what will actually run,
 	// not a raw record a config file may override.
 	const updated = saved.kind === "virtual" ? saved : await repoConfig.resolveProjectConfig(saved);
@@ -260,6 +264,7 @@ async function saveRepoConfig(params: { projectId: string; worktreePath?: string
 	const configPath = params.worktreePath || project.path;
 	const config = extractConfigFromParams(params) as Dev3RepoConfig;
 	await repoConfig.saveRepoConfig(configPath, config);
+	clearProjectFoldersCache(project.id);
 	if (params.autoCommit && params.worktreePath) {
 		try {
 			const proc = spawn(["git", "-C", params.worktreePath, "add", ".dev3/config.json"]);
@@ -284,6 +289,7 @@ async function saveLocalConfig(params: { projectId: string; worktreePath?: strin
 	const configPath = params.worktreePath || project.path;
 	const config = extractConfigFromParams(params) as Dev3RepoConfig;
 	await repoConfig.saveRepoLocalConfig(configPath, config);
+	clearProjectFoldersCache(project.id);
 	log.info("← saveLocalConfig done");
 }
 
@@ -385,6 +391,15 @@ function saveGlobalSettings(params: GlobalSettings): Promise<void> {
 }
 
 async function saveGlobalSettingsNow(params: GlobalSettings): Promise<void> {
+	if (params.autoHibernateMinutes !== undefined && params.autoHibernateMinutes !== 0
+		&& normalizeAutoHibernateMinutes(params.autoHibernateMinutes) === 0) {
+		throw new Error("Hibernation suggestions must be off or a whole number of minutes from 1 to 43200.");
+	}
+	if (params.autoHibernateConfirmMinutes !== undefined && (typeof params.autoHibernateConfirmMinutes !== "number"
+		|| !Number.isInteger(params.autoHibernateConfirmMinutes) || params.autoHibernateConfirmMinutes < 1
+		|| params.autoHibernateConfirmMinutes > 43_200)) {
+		throw new Error("Hibernation confirmation must be a whole number of minutes from 1 to 43200.");
+	}
 	log.info("→ saveGlobalSettings", { params });
 	// Terminals launched after this point must use the newly chosen shell; the
 	// resolver caches for an hour, so it has to be told.
@@ -400,6 +415,10 @@ async function saveGlobalSettingsNow(params: GlobalSettings): Promise<void> {
 	// minted after the snapshot was taken, so trusting the payload erased it on every
 	// settings change and the install got a new id on every launch.
 	const stored = await loadSettings();
+	if (normalizeAutoHibernateMinutes(stored.autoHibernateMinutes) !== normalizeAutoHibernateMinutes(params.autoHibernateMinutes)
+		|| normalizeAutoHibernateConfirmMinutes(stored.autoHibernateConfirmMinutes) !== normalizeAutoHibernateConfirmMinutes(params.autoHibernateConfirmMinutes)) {
+		recordAutoHibernatePolicyChange();
+	}
 	const next: GlobalSettings = {
 		...params,
 		...normalizeSimplifiedInterface({
