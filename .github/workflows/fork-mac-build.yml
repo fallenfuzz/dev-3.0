@@ -48,7 +48,7 @@ jobs:
           bun scripts/generate-changelog.ts
           bunx vite build
           bun run build:cli
-          bunx electrobun build --env=dev
+          bun scripts/electrobun.ts build --env=dev
 
       - name: Zip app
         run: |
