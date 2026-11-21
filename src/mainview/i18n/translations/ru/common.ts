@@ -765,7 +765,10 @@ const common = {
 	"artifactViewer.reviewSendAll_other": "Отправить {count} агенту",
 	"artifactViewer.loadFailed": "Артефакт недоступен",
 	"artifactViewer.loading": "Загрузка артефакта…",
-	"artifactViewer.resize": "Изменить ширину панели артефакта",
+	"taskDock.resize": "Изменить ширину боковой панели",
+	"taskDock.tabs": "Боковые панели",
+	"taskDock.closeTab": "Закрыть «{title}»",
+	"taskDock.panelCrashed": "Эта панель перестала работать.",
 	"artifactViewer.themeMode": "Тема артефакта: {mode}",
 	"artifactViewer.themeFollow": "Как в dev3",
 	"artifactViewer.themeLight": "Светлая",
@@ -804,6 +807,8 @@ const common = {
 	"taskRef.previewMore_many": "ещё {count}",
 	"taskRef.previewMore_other": "ещё {count}",
 	"slots.more": "Ещё",
+	"destinationBody.crashed": "Этот экран не загрузился, поэтому показан встроенный.",
+	"destinationBody.extensionFailed": "Расширение {name} не загрузилось, поэтому показан встроенный экран.",
 };
 
 export default common;

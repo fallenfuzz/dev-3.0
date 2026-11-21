@@ -707,7 +707,10 @@ const common = {
 	"artifactViewer.reviewSendAll_other": "Enviar {count} al agente",
 	"artifactViewer.loadFailed": "Artefacto no disponible",
 	"artifactViewer.loading": "Cargando artefacto…",
-	"artifactViewer.resize": "Cambiar el ancho del panel del artefacto",
+	"taskDock.resize": "Cambiar el ancho del panel lateral",
+	"taskDock.tabs": "Paneles laterales",
+	"taskDock.closeTab": "Cerrar {title}",
+	"taskDock.panelCrashed": "Este panel dejó de funcionar.",
 	"artifactViewer.themeMode": "Tema del artefacto: {mode}",
 	"artifactViewer.themeFollow": "Seguir dev3",
 	"artifactViewer.themeLight": "Claro",
@@ -740,6 +743,8 @@ const common = {
 	"taskRef.previewMore_one": "{count} más",
 	"taskRef.previewMore_other": "{count} más",
 	"slots.more": "Más",
+	"destinationBody.crashed": "Esta pantalla no se pudo cargar, así que se muestra la integrada.",
+	"destinationBody.extensionFailed": "La extensión {name} no se cargó, así que se muestra la pantalla integrada.",
 };
 
 export default common;

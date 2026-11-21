@@ -46,10 +46,8 @@ import ProjectTerminal from "./components/ProjectTerminal";
 import ProjectSettings from "./components/ProjectSettings";
 import RequirementsCheck from "./components/RequirementsCheck";
 import GhWarningBanner, { isGhWarningDismissed } from "./components/GhWarningBanner";
-import Changelog from "./components/Changelog";
 import GaugeDemo from "./components/gauges/GaugeDemo";
-import ProductivityStatsView from "./components/ProductivityStatsView";
-import SessionsScreen from "./components/SessionsScreen";
+import { DestinationBody } from "./destination-bodies/DestinationBody";
 import ViewportLab from "./components/ViewportLab";
 import NativePaneLayoutLab from "./labs/native-pane/NativePaneLayoutLab";
 import { setToastSuppressed, taskToastContext, ToastHost, toast, type ToastEntry, type ToastOrigin } from "./toast";
@@ -112,6 +110,7 @@ import CoordinatorFinderModal from "./components/CoordinatorFinderModal";
 import OpenInPickerModal from "./components/OpenInPickerModal";
 import TaskImageViewer from "./components/TaskImageViewer";
 import TaskArtifactViewer from "./components/TaskArtifactViewer";
+import TaskPanelInstances from "./task-panels/TaskPanelInstances";
 import HintOverlay from "./components/HintOverlay";
 import HelpOverlay from "./components/HelpOverlay";
 import TourOverlay from "./components/TourOverlay";
@@ -4112,6 +4111,8 @@ function App() {
 			</>
 			)}
 			{launchLocationIssue && <LaunchLocationGate issue={launchLocationIssue} />}
+			{/* Task panels outlive immersive fullscreen: there they wait parked, still mounted. */}
+			<TaskPanelInstances />
 			{/* Agents block on these answers, and confirm() declines when no host is
 			    mounted — so the hosts stay up in immersive fullscreen too. */}
 			<ConfirmHost onBusyChange={setConfirmBusy} />
@@ -4266,28 +4267,29 @@ function App() {
 				return <GlobalSettings section={route.section} anchor={route.anchor} preset={route.preset} />;
 			case "changelog":
 				return (
-					<Changelog
-						navigate={navigate}
-						goBack={() => dispatch({ type: "goBack" })}
-						canGoBack={state.historyIndex > 0}
+					<DestinationBody
+						destination="changelog"
+						props={{ navigate, goBack: () => dispatch({ type: "goBack" }), canGoBack: state.historyIndex > 0 }}
 					/>
 				);
 			case "stats":
 				return (
-					<ProductivityStatsView
-						navigate={navigate}
-						goBack={() => dispatch({ type: "goBack" })}
-						canGoBack={state.historyIndex > 0}
+					<DestinationBody
+						destination="stats"
+						props={{ navigate, goBack: () => dispatch({ type: "goBack" }), canGoBack: state.historyIndex > 0 }}
 					/>
 				);
 			case "sessions":
 				return (
-					<SessionsScreen
+					<DestinationBody
 						// A new entry is a new scope: remount so the old scope state does not survive it.
 						key={route.scopeProjectId ?? "all"}
-						projectId={route.scopeProjectId ?? null}
-						projectName={state.projects.find((p) => p.id === route.scopeProjectId)?.name ?? null}
-						onOpenTask={openTaskFromNotification}
+						destination="sessions"
+						props={{
+							projectId: route.scopeProjectId ?? null,
+							projectName: state.projects.find((p) => p.id === route.scopeProjectId)?.name ?? null,
+							onOpenTask: openTaskFromNotification,
+						}}
 					/>
 				);
 			case "agent-traffic":
