@@ -132,10 +132,15 @@ export function remarkHtmlAsText() {
 	return walk;
 }
 
+/** `my\_file.py`, `src/my\_file.py`: a `\_` is an author's escape, not a Windows separator (`build\_a\_b` is one). */
+function isMarkdownEscapedPath(raw: string): boolean {
+	if (!raw.includes("\\_") || /^[A-Za-z]:|^\\\\|\\(?!_)/.test(raw)) return false;
+	return raw.includes("/") || raw.split("\\_").length === 2;
+}
+
 /**
- * Markdown source where prose paths survive parsing: `_` is escaped so
- * `src/__init__.py` is not bold `init`, and a `\` before punctuation is doubled so
- * `C:\me\.claude` keeps its backslash. Code and `<...>` autolinks stay as written.
+ * Prose paths survive Markdown: `_` is escaped (`src/__init__.py`), a `\` before punctuation
+ * is doubled (`C:\me\.claude`), an author's `\_` stays one escape; code and autolinks are kept.
  */
 export function escapePathEmphasis(body: string): string {
 	if (!body.includes("_") && !body.includes("\\")) return body;
@@ -149,7 +154,9 @@ export function escapePathEmphasis(body: string): string {
 			if (spans.some((span) => candidate.start >= span.start && candidate.start < span.end)) continue;
 			const before = line.lastIndexOf("<", candidate.start);
 			if (before >= 0 && line.indexOf(">", before) > candidate.end) continue;
-			const escaped = candidate.raw.replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\").replaceAll("_", "\\_");
+			const escaped = isMarkdownEscapedPath(candidate.raw)
+				? candidate.raw.replace(/(?<!\\)_/g, "\\_")
+				: candidate.raw.replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\").replaceAll("_", "\\_");
 			out += line.slice(cursor, candidate.start) + escaped;
 			cursor = candidate.end + 1;
 		}

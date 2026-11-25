@@ -35,6 +35,8 @@ const ON_DISK: Record<string, { path: string; kind: "file" | "directory" }> = {
 	"src/__init__.py": { path: "/repo/src/__init__.py", kind: "file" },
 	"C:\\Users\\me\\.claude\\x.md": { path: "C:\\Users\\me\\.claude\\x.md", kind: "file" },
 	"src\\_gen\\a.ts": { path: "C:\\repo\\src\\_gen\\a.ts", kind: "file" },
+	"src/my_file.py": { path: "/repo/src/my_file.py", kind: "file" },
+	"build\\_out\\_gen.ts": { path: "C:\\repo\\build\\_out\\_gen.ts", kind: "file" },
 };
 
 const wrap = (node: React.ReactNode) => render(<I18nProvider>{node}</I18nProvider>);
@@ -113,8 +115,9 @@ describe("TaskRefText path links", () => {
 
 	it("shows an absolute path by its file name but copies the whole path", async () => {
 		const { container } = wrap(<TaskRefText text="plan: /home/me/notes/plan.md" contextProjectId="p1" />);
-		const chip = await screen.findByRole("button", { name: /\/home\/me\/notes\/plan\.md/ });
+		const chip = await screen.findByRole("button", { name: /plan\.md/ });
 		expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe("plan.md");
+		expect(chip.getAttribute("aria-label")).not.toContain("/home/me");
 		expect(chip.querySelector(".sr-only")?.textContent).toBe("/home/me/notes/plan.md");
 		expect(container.textContent).toContain("/home/me/notes/plan.md");
 	});
@@ -142,15 +145,16 @@ describe("TaskRefText path links", () => {
 describe("path tokens", () => {
 	it("render as a chip showing the project path and copying the token", async () => {
 		wrap(<TaskRefText text="brief: <path:a1c9fe4e/todo/x.md>" contextProjectId="p1" />);
-		const chip = await screen.findByRole("button", { name: /\/other\/todo\/x\.md/ });
+		const chip = await screen.findByRole("button", { name: /todo\/x\.md/ });
 		expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe("todo/x.md");
+		expect(chip.getAttribute("aria-label")).not.toContain("/other/");
 		expect(chip.querySelector(".sr-only")?.textContent).toBe("<path:a1c9fe4e/todo/x.md>");
 	});
 
 	it("survive the markdown sanitizer as autolinks, bare text and code spans", async () => {
 		wrap(<TaskDescriptionMarkdown body={"A <path:a1c9fe4e/todo/x.md>. B path:a1c9fe4e/todo/x.md. C `path:a1c9fe4e/todo/x.md`."} projectId="p1" taskId="t1" />);
-		await waitFor(() => expect(screen.getAllByRole("button", { name: /\/other\/todo\/x\.md/ })).toHaveLength(3));
-		for (const chip of screen.getAllByRole("button", { name: /\/other\/todo\/x\.md/ })) {
+		await waitFor(() => expect(screen.getAllByRole("button", { name: /todo\/x\.md/ })).toHaveLength(3));
+		for (const chip of screen.getAllByRole("button", { name: /todo\/x\.md/ })) {
 			expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe("todo/x.md");
 		}
 		expect(resolveTerminalPaths.mock.calls.flatMap(([arg]) => arg.paths)).toContain("path:a1c9fe4e/todo/x.md");
@@ -179,9 +183,22 @@ describe("TaskDescriptionMarkdown path links", () => {
 
 	it("keeps a backslash before punctuation in a Windows path", async () => {
 		const { container } = wrap(<TaskDescriptionMarkdown body={"Config C:\\Users\\me\\.claude\\x.md and src\\_gen\\a.ts"} projectId="p1" taskId="t1" />);
-		await screen.findByRole("button", { name: /\.claude\\x\.md/ });
+		await screen.findByRole("button", { name: /x\.md/ });
 		await screen.findByRole("button", { name: /_gen/ });
 		expect(container.textContent).toContain("C:\\Users\\me\\.claude\\x.md");
+	});
+
+	it("reads an author's escaped underscore as one escape, not a Windows separator", async () => {
+		const { container } = wrap(<TaskDescriptionMarkdown body={"Rename my\\_file.py and src/my\\_file.py"} projectId="p1" taskId="t1" />);
+		await screen.findByRole("button", { name: /src\/my_file\.py/ });
+		expect(container.textContent).toContain("Rename my_file.py and src/my_file.py");
+		expect(container.textContent).not.toContain("\\");
+	});
+
+	it("keeps a Windows path whose only separators come before an underscore", async () => {
+		const { container } = wrap(<TaskDescriptionMarkdown body={"Built build\\_out\\_gen.ts"} projectId="p1" taskId="t1" />);
+		await screen.findByRole("button", { name: /_gen\.ts/ });
+		expect(container.textContent).toContain("build\\_out\\_gen.ts");
 	});
 
 	it("links a dunder file name that markdown would otherwise read as emphasis", async () => {
@@ -189,10 +206,19 @@ describe("TaskDescriptionMarkdown path links", () => {
 		await screen.findByRole("button", { name: /src\/__init__\.py/ });
 	});
 
+	it("leaves a token in PR Markdown as text and does not probe the disk", async () => {
+		const { container } = wrap(<CommentMarkdown body={"[setup docs](path:a1c9fe4e/todo/x.md)"} />);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(screen.queryByRole("button")).toBeNull();
+		expect(container.textContent).toContain("setup docs");
+		expect(resolveTerminalPaths).not.toHaveBeenCalled();
+	});
+
 	it("labels a token by its real path, whatever text an author wrapped it in", async () => {
-		wrap(<CommentMarkdown body={"[setup docs](path:a1c9fe4e/todo/x.md)"} />);
-		const chip = await screen.findByRole("button", { name: /\/other\/todo\/x\.md/ });
+		wrap(<TaskDescriptionMarkdown body={"[setup docs](path:a1c9fe4e/todo/x.md)"} projectId="p1" taskId="t1" />);
+		const chip = await screen.findByRole("button", { name: /todo\/x\.md/ });
 		expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe("todo/x.md");
+		expect(chip.getAttribute("aria-label")).not.toContain("/other/");
 	});
 
 	it("leaves a fenced code block alone", async () => {
