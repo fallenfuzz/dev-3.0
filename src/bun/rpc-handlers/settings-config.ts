@@ -600,6 +600,10 @@ async function getAgents(): Promise<CodingAgent[]> {
 	return all;
 }
 
+async function getAgentsStoreNotice() {
+	return agents.getAgentsStoreNotice();
+}
+
 async function saveAgents(params: { agents: CodingAgent[] }): Promise<void> {
 	log.info("→ saveAgents", { count: params.agents.length });
 	await agents.saveAllAgents(params.agents);
@@ -1056,6 +1060,7 @@ export const settingsConfigHandlers = {
 	toggleFavoriteAgent,
 	installDev3Cli,
 	getAgents,
+	getAgentsStoreNotice,
 	saveAgents,
 	getAgentAvailableModels,
 	getAgentLiveModels,
