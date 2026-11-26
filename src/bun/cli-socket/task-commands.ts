@@ -169,6 +169,7 @@ export const taskHandlers: Record<string, Handler> = {
 		path: String(params.path ?? ""),
 		name: typeof params.name === "string" ? params.name : undefined,
 		init: params.init === true,
+		noGitWorkflow: params.noGitWorkflow === true,
 		spaces: stringList(params.spaces),
 		newSpaces: stringList(params.newSpaces),
 		noSpace: params.noSpace === true,

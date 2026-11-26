@@ -1,6 +1,6 @@
 import type { ClaudeFolderNotice } from "./claude-folder-notice";
 import type { Project, Space, SpacesFile } from "./types";
-import { orderSpaces } from "./types";
+import { hasGitWorkflow, orderSpaces } from "./types";
 
 /**
  * Shapes and rules shared by the app and the `dev3` CLI for registering a
@@ -105,6 +105,8 @@ export interface CliProject {
 	path: string;
 	kind: "git" | "virtual";
 	defaultBaseBranch: string;
+	/** False when tasks share the folder with no worktree or branch each. */
+	gitWorkflow: boolean;
 	/** Every space the project belongs to, in display order. */
 	spaces: CliSpaceRef[];
 }
@@ -128,6 +130,7 @@ export function toCliProject(project: Project, file: SpacesFile): CliProject {
 		path: project.path,
 		kind: project.kind === "virtual" ? "virtual" : "git",
 		defaultBaseBranch: project.defaultBaseBranch,
+		gitWorkflow: hasGitWorkflow(project),
 		spaces: orderSpaces(file.spaces, file.order)
 			.filter((s) => s.projectIds.includes(project.id))
 			.map(toCliSpaceRef),
